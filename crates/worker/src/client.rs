@@ -179,8 +179,9 @@ impl InvokrLibraryClient {
         idempotency_key: Option<&str>,
     ) -> anyhow::Result<String> {
         let prefix = self.ctx.table_prefix.as_str();
-        let ikey = idempotency_key.unwrap_or("");
 
+        // Pass the key through as-is: `None` binds SQL NULL (not `''`), so keyless
+        // jobs don't collide on the partial unique index (juspay/invokr#55, gap #3).
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
 
@@ -200,7 +201,7 @@ impl InvokrLibraryClient {
                     &mut db,
                     endpoint,
                     ep.endpoint_type.as_str(),
-                    ikey,
+                    idempotency_key,
                     Some(&input),
                     max_attempts,
                 )
@@ -212,7 +213,7 @@ impl InvokrLibraryClient {
                     &mut db,
                     endpoint,
                     ep.endpoint_type.as_str(),
-                    ikey,
+                    idempotency_key,
                     Some(&input),
                     run_at,
                     max_attempts,
