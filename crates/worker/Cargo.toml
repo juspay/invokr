@@ -30,7 +30,9 @@ anyhow.workspace = true
 tokio-util.workspace = true
 async-trait.workspace = true
 
+actix-web.workspace = true
 metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
 
 rdkafka = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
