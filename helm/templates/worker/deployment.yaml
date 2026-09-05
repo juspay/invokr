@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "invokr.fullname" . }}-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+spec:
+  {{- if not .Values.worker.autoscaling.enabled }}
+  replicas: {{ .Values.worker.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "invokr.componentSelectorLabels" (dict "root" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include "invokr.workerConfigChecksum" . }}
+        {{- if not .Values.existingSecret }}
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.worker.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "invokr.componentLabels" (dict "root" . "component" "worker") | nindent 8 }}
+        {{- with .Values.worker.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "invokr.serviceAccountName" . }}
+      {{/* Must exceed worker_shutdown_timeout_sec so the drain completes. */}}
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "invokr.image" (dict "root" . "repository" .Values.worker.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            {{/* Ops server only. The worker serves no application traffic. */}}
+            - name: ops
+              containerPort: {{ .Values.workerConfigs.metrics_port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "invokr.fullname" . }}-cm
+            - configMapRef:
+                name: {{ include "invokr.fullname" . }}-worker-cm
+            - secretRef:
+                name: {{ include "invokr.secretName" . }}
+          livenessProbe:
+            {{/* Dependency-free, so a database outage cannot cause a restart loop. */}}
+            httpGet:
+              path: /health
+              port: ops
+            {{- toYaml .Values.worker.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{/* Checks the database and poll-loop staleness. */}}
+            httpGet:
+              path: /ready
+              port: ops
+            {{- toYaml .Values.worker.readinessProbe | nindent 12 }}
+          {{- with .Values.worker.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- include "invokr.nodeSelector" . | nindent 6 }}
+      {{- include "invokr.affinity" . | nindent 6 }}
+      {{- include "invokr.tolerations" . | nindent 6 }}

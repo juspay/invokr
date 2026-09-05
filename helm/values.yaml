@@ -1,0 +1,310 @@
+# Default values for invokr.
+#
+# Two workloads share one PostgreSQL database: `api` (HTTP, also serves the
+# dashboard) and `worker` (polls the database, no inbound traffic).
+#
+# The database MUST have pg_cron enabled at the server level
+# (shared_preload_libraries=pg_cron + a restart). Invokr delegates all CRON
+# scheduling to it -- without it, CRON jobs never fire.
+
+# -- Global values, shared with any parent chart.
+global:
+  # -- Overrides `image.registry` for every image. Set to an ECR host to pull from a mirror.
+  imageRegistry: null
+  # -- Tolerations applied to every workload unless overridden.
+  tolerations: []
+  # -- Affinity applied to every workload unless overridden.
+  affinity: {}
+  # -- Node selector applied to every workload unless overridden.
+  nodeSelector: {}
+
+image:
+  # -- Registry hosting the Invokr images.
+  registry: ghcr.io/juspay
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Image tag. Defaults to `.Chart.AppVersion`, which the release workflow
+  # keeps equal to the released semver. Set it only to pin a different build.
+  tag: ""
+
+# -- Secrets for pulling from a private registry.
+imagePullSecrets: []
+# -- Override the chart name.
+nameOverride: ""
+# -- Override the generated fullname.
+fullnameOverride: ""
+
+# ─── Configuration ──────────────────────────────────────────────────────────
+# Each key below is rendered into a ConfigMap as INVOKR_<KEY_UPPERCASED> and
+# injected via envFrom. Set a key to `null` to omit it and use the app default.
+
+# -- Non-secret settings shared by both workloads.
+configs:
+  # -- URL prefix the API is served under. Single source of truth: feeds the
+  # ingress path, probes, ServiceMonitor path and dashboard config.
+  path_prefix: /invokr
+  # -- Connection pool size, PER POD. Multiply by total replicas and compare
+  # against the database's max_connections before scaling.
+  db_pool_size: 20
+  # -- Whether secrets arrive as base64 KMS ciphertext. Requires `kms.enabled`.
+  kms_enabled: false
+
+# -- Settings for the api workload. INVOKR_LISTEN_ADDR is derived from
+# `api.service.targetPort`, not set here.
+apiConfigs:
+  # -- `api`, `dashboard` or `both`.
+  mode: both
+
+# -- Settings for the worker workload.
+workerConfigs:
+  # -- Maximum executions a single worker processes concurrently.
+  worker_max_concurrent: 50
+  # -- Poller sleep after finding no work, in milliseconds.
+  worker_poll_interval_ms: 200
+  # -- Drain grace period for in-flight executions. `worker.terminationGracePeriodSeconds` must exceed this.
+  worker_shutdown_timeout_sec: 30
+  # -- Config cache TTL, in seconds.
+  config_cache_ttl_sec: 60
+  # -- Secret cache TTL, in seconds.
+  secret_cache_ttl_sec: 300
+  # -- Worker ops server port. Serves /health, /ready and /metrics, unprefixed.
+  metrics_port: 9090
+  # -- Timeout for `/ready`'s SELECT 1, in milliseconds.
+  health_db_probe_timeout_ms: 2000
+  # -- Floor on the poll-loop staleness threshold, in milliseconds. Effective
+  # threshold is max(this, 10 x worker_poll_interval_ms).
+  health_stale_after_floor_ms: 5000
+  # -- Worker threads for the ops server.
+  health_server_workers: 1
+  # -- CRON tick interval, in seconds.
+  cron_tick_interval_sec: 1
+  # -- Maximum CRON jobs materialised per tick.
+  cron_batch_size: 100
+  # -- Promotion sweep interval, in milliseconds.
+  promote_interval_ms: 500
+  # -- Reclaim sweep interval for stuck executions, in seconds.
+  reclaim_interval_sec: 30
+  # -- Age at which a RUNNING execution is reclaimed, in seconds.
+  stuck_execution_timeout_sec: 300
+  # -- pg_cron expression for the sweep that retires expired CRON jobs.
+  reaper_cron_expression: "*/15 * * * *"
+
+# ─── Secrets ────────────────────────────────────────────────────────────────
+# Rendered into a Secret as INVOKR_<KEY_UPPERCASED>. With `kms.enabled`, these
+# are expected to be base64 KMS ciphertext rather than plaintext.
+
+secrets:
+  # -- PostgreSQL connection string. MUST be the writer endpoint -- pg_cron runs
+  # jobs only on the writer.
+  database_url: ""
+  # -- Bearer token for the REST API. Also served to the dashboard in the
+  # browser, so anyone who can load the dashboard holds full API access.
+  api_key: ""
+  # -- 32-byte hex key encrypting stored secrets at rest.
+  encryption_key: ""
+
+# -- Use an existing Secret instead of rendering one. Must contain
+# INVOKR_DATABASE_URL, INVOKR_API_KEY and INVOKR_ENCRYPTION_KEY.
+existingSecret: ""
+
+# -- Selects the `-kms` image variants, which expect `secrets` to hold base64
+# KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`.
+kms:
+  enabled: false
+
+# ─── Database ───────────────────────────────────────────────────────────────
+# Used only by the migration Job's pg_isready init container. The application
+# reads the full connection string from `secrets.database_url`.
+database:
+  # -- Database host. Required when `migration.enabled` — the Job's pg_isready
+  # check needs it, and it cannot be parsed out of the connection string.
+  host: ""
+  # -- Database port.
+  port: 5432
+  # -- Database name.
+  name: invokr_db
+  # -- Database user.
+  user: invokr
+
+# ─── Migrations ─────────────────────────────────────────────────────────────
+migration:
+  # -- Run migrations as a pre-install/pre-upgrade hook. Helm blocks on hook
+  # Jobs, so a failed migration aborts the release before any pod is replaced.
+  enabled: true
+  # -- Arguments passed to the api image to run migrations and exit.
+  args: ["migrate"]
+  # -- INVOKR_DB_MIGRATION_MODE for the Job. `run` applies pending migrations;
+  # `dry-run` prints the SQL without applying it, for review or for baselining a
+  # database whose schema was applied by hand. App pods never migrate.
+  mode: run
+  # -- Resources for the migration Job.
+  resources: {}
+  # -- Init container that waits for PostgreSQL.
+  waitForDb:
+    registry: docker.io
+    image: postgres:16-alpine
+    maxAttempts: 30
+    sleepSeconds: 5
+
+# ─── API workload ───────────────────────────────────────────────────────────
+api:
+  # -- Image repository for the API server.
+  repository: invokr-api
+  # -- Replicas when autoscaling is disabled.
+  replicaCount: 2
+  # -- Resource requests and limits.
+  resources: {}
+  # -- Extra pod annotations.
+  podAnnotations: {}
+  # -- Extra pod labels.
+  podLabels: {}
+  # -- Grace period for in-flight HTTP requests on shutdown.
+  terminationGracePeriodSeconds: 30
+  service:
+    # -- Service type.
+    type: ClusterIP
+    # -- Port the Service exposes.
+    port: 80
+    # -- Container port the API listens on.
+    targetPort: 8080
+  # -- Liveness probe. The path prefix is prepended automatically.
+  livenessProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # -- Readiness probe.
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  autoscaling:
+    # -- Enable an HPA for the API.
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 80
+    # targetMemoryUtilizationPercentage: 80
+  # -- PodDisruptionBudget. Keep `minAvailable` below `replicaCount`, or nodes
+  # become undrainable.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+  ingress:
+    # -- Expose the API through an Ingress. Leave disabled when using Istio. The
+    # dashboard is served by this same Service.
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: invokr.local
+        paths:
+          - path: /invokr
+            pathType: Prefix
+    tls: []
+
+# ─── Worker workload ────────────────────────────────────────────────────────
+worker:
+  # -- Image repository for the worker.
+  repository: invokr-worker
+  # -- Replicas when autoscaling is disabled. Executions are claimed
+  # transactionally, so running several is safe.
+  replicaCount: 2
+  # -- Resource requests and limits.
+  resources: {}
+  # -- Extra pod annotations.
+  podAnnotations: {}
+  # -- Extra pod labels.
+  podLabels: {}
+  # -- MUST exceed `workerConfigs.worker_shutdown_timeout_sec`, or SIGKILL cuts
+  # the drain short.
+  terminationGracePeriodSeconds: 45
+  # -- Liveness probe against `/health`, which checks no dependencies.
+  livenessProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # -- Readiness probe against `/ready`, which checks the database and poll-loop
+  # staleness. A saturated worker still reports ready.
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  autoscaling:
+    # -- Enable an HPA for the worker. CPU is a poor proxy for queue depth: a
+    # worker blocked on slow deliveries looks idle.
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+  # -- PodDisruptionBudget. Keep `minAvailable` below `replicaCount`, or nodes
+  # become undrainable.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+# ─── Dashboard ──────────────────────────────────────────────────────────────
+dashboard:
+  # -- Serve the web dashboard. Requires `apiConfigs.mode` to be `both` or `dashboard`.
+  enabled: true
+  # -- URL prefix the dashboard is served under.
+  pathPrefix: /dashboard
+
+# ─── Observability ──────────────────────────────────────────────────────────
+serviceMonitor:
+  # -- Create ServiceMonitors for the Prometheus Operator.
+  enabled: false
+  # -- Labels matching the operator's serviceMonitorSelector, commonly
+  # `release: kube-prometheus-stack`. The wrong label scrapes nothing, silently.
+  labels: {}
+  # -- Scrape interval.
+  interval: 30s
+  # -- Scrape timeout.
+  scrapeTimeout: 10s
+
+# ─── Service account ────────────────────────────────────────────────────────
+serviceAccount:
+  # -- Create a ServiceAccount.
+  create: true
+  # -- Automount the ServiceAccount's API credentials.
+  automount: false
+  # -- Annotations. Add the IRSA role ARN here when `kms.enabled`.
+  annotations: {}
+  # -- Name. Generated from the fullname when empty.
+  name: ""
+
+# ─── Security ───────────────────────────────────────────────────────────────
+# -- Pod-level security context. Empty because the published images do not
+# declare a non-root USER, so `runAsNonRoot` would stop every pod starting.
+podSecurityContext: {}
+# -- Container-level security context.
+securityContext: {}
+
+# ─── Istio ──────────────────────────────────────────────────────────────────
+istio:
+  # -- Enable Istio resources.
+  enabled: false
+  virtualService:
+    # -- Create a VirtualService routing to the API.
+    enabled: false
+    # -- Hosts the VirtualService matches.
+    hosts: []
+    # -- Gateways the VirtualService attaches to.
+    gateways: []
+    # -- Routing rules. The destination is set to the API service automatically.
+    http: []
+  destinationRule:
+    # -- Create a DestinationRule for the API service.
+    enabled: false
+    # -- Traffic policy.
+    trafficPolicy: {}
+
+# -- Node selector for all workloads. Overrides `global.nodeSelector`.
+nodeSelector: {}
+# -- Tolerations for all workloads. Overrides `global.tolerations`.
+tolerations: []
+# -- Affinity for all workloads. Overrides `global.affinity`.
+affinity: {}

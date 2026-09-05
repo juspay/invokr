@@ -1,0 +1,79 @@
+{{- $pathPrefix := include "invokr.pathPrefix" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "invokr.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "invokr.componentSelectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{/* Roll the pods when config changes; otherwise they never notice. */}}
+        checksum/config: {{ include "invokr.apiConfigChecksum" . }}
+        {{- if not .Values.existingSecret }}
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.api.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "invokr.componentLabels" (dict "root" . "component" "api") | nindent 8 }}
+        {{- with .Values.api.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "invokr.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "invokr.image" (dict "root" . "repository" .Values.api.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "invokr.fullname" . }}-cm
+            - configMapRef:
+                name: {{ include "invokr.fullname" . }}-api-cm
+            - secretRef:
+                name: {{ include "invokr.secretName" . }}
+          livenessProbe:
+            httpGet:
+              path: {{ $pathPrefix }}/health
+              port: http
+            {{- toYaml .Values.api.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{/* /health is static and does not check the database. */}}
+            httpGet:
+              path: {{ $pathPrefix }}/health
+              port: http
+            {{- toYaml .Values.api.readinessProbe | nindent 12 }}
+          {{- with .Values.api.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- include "invokr.nodeSelector" . | nindent 6 }}
+      {{- include "invokr.affinity" . | nindent 6 }}
+      {{- include "invokr.tolerations" . | nindent 6 }}

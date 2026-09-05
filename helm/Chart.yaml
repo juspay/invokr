@@ -1,0 +1,19 @@
+apiVersion: v2
+name: invokr
+description: A Helm chart for Invokr — a multi-tenant job scheduling and delivery service
+type: application
+
+# Both fields are rewritten by the release workflow from the tag cocogitto
+# creates, so the chart version and the app version it deploys stay equal.
+# Edit them here only to correct a mistake; releases overwrite them.
+version: 0.1.0
+appVersion: "0.1.0"
+
+home: https://github.com/juspay/invokr
+sources:
+  - https://github.com/juspay/invokr
+keywords:
+  - scheduler
+  - cron
+  - jobs
+  - webhooks

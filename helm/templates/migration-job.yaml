@@ -1,0 +1,82 @@
+{{- if .Values.migration.enabled }}
+{{/* Helm blocks on hook Jobs, so a failed migration aborts the release before
+     any pod is replaced. Runs the API image at the chart's appVersion, so it
+     cannot apply a different version's migrations than the code starting. */}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "invokr.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "migrate") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    {{/* Not hook-failed: a deleted failed Job takes its logs with it. */}}
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  {{/* Safe to retry: the migration state table makes this idempotent. */}}
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "invokr.componentLabels" (dict "root" . "component" "migrate") | nindent 8 }}
+        {{/* Without this Envoy outlives the container, the Job never
+             completes, and Helm hangs on the hook until timeout. */}}
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "invokr.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.migration.waitForDb.registry }}/{{ .Values.migration.waitForDb.image }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              attempt=0
+              until pg_isready -h "{{ .Values.database.host }}" -p "{{ .Values.database.port }}" -U "{{ .Values.database.user }}" -d "{{ .Values.database.name }}"; do
+                attempt=$((attempt+1))
+                if [ "$attempt" -ge {{ .Values.migration.waitForDb.maxAttempts }} ]; then
+                  echo "PostgreSQL did not become ready in time"
+                  exit 1
+                fi
+                echo "Waiting for PostgreSQL... attempt $attempt"
+                sleep {{ .Values.migration.waitForDb.sleepSeconds }}
+              done
+              echo "PostgreSQL is ready."
+      containers:
+        - name: migrate
+          image: {{ include "invokr.image" (dict "root" . "repository" .Values.api.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          args:
+            {{- toYaml .Values.migration.args | nindent 12 }}
+          env:
+            {{/* Set here, not in the shared ConfigMap: the app default is
+                 `none`, and only this Job should ever migrate. */}}
+            - name: INVOKR_DB_MIGRATION_MODE
+              value: {{ .Values.migration.mode | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "invokr.fullname" . }}-cm
+            - secretRef:
+                name: {{ include "invokr.secretName" . }}
+          {{- with .Values.migration.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- include "invokr.nodeSelector" . | nindent 6 }}
+      {{- include "invokr.affinity" . | nindent 6 }}
+      {{- include "invokr.tolerations" . | nindent 6 }}
+{{- end }}
