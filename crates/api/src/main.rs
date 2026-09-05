@@ -6,7 +6,7 @@
 
 use actix_cors::Cors;
 use actix_web::{error::InternalError, web, App, HttpResponse, HttpServer};
-use invokr_common::config::{AppConfig, ServerMode};
+use invokr_common::config::{AppConfig, MigrationMode, ServerMode};
 use tracing_subscriber::EnvFilter;
 
 /// Turn actix's default plaintext body-deserialization errors (e.g.
@@ -51,8 +51,24 @@ async fn main() -> anyhow::Result<()> {
         .json()
         .init();
 
+    // `app migrate` applies migrations and exits, so the same image can run as a
+    // pre-upgrade Job. Exec-form ENTRYPOINT means Kubernetes `args: ["migrate"]`
+    // appends cleanly, with no separate migration image to keep in lockstep.
+    let migrate_only = std::env::args().nth(1).as_deref() == Some("migrate");
+
     let config = AppConfig::from_env().await?;
     let pool = invokr_common::db::connect_pool(&config.db.url, config.db.pool_size).await?;
+
+    if migrate_only {
+        match config.db.migration_mode {
+            MigrationMode::Run => invokr_common::migrate::run(&pool).await?,
+            MigrationMode::DryRun => invokr_common::migrate::dry_run(&pool).await?,
+            MigrationMode::None => {
+                tracing::info!("INVOKR_DB_MIGRATION_MODE is none; nothing to do")
+            }
+        }
+        return Ok(());
+    }
 
     let metrics_handle = invokr_common::metrics::install_recorder();
 

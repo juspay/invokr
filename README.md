@@ -138,16 +138,18 @@ docker exec -i invokr-postgres-1 psql -U invokr -d postgres -c \
   "CREATE DATABASE invokr_db;"
 ```
 
-**2. Apply migrations** in order:
+**2. Apply migrations:**
 
 ```bash
-for f in migrations/20260317000000_initial.sql \
-         migrations/20260318000000_multi_tenancy.sql \
-         migrations/20260322000000_txn_based_pickup.sql \
-         migrations/20260322000001_pg_cron.sql; do
-  echo ">> applying $f"
-  docker exec -i invokr-postgres-1 psql -U invokr -d invokr_db -v ON_ERROR_STOP=1 < "$f"
-done
+INVOKR_DB_MIGRATION_MODE=run cargo run -p invokr-api -- migrate
+```
+
+The migrations are compiled into the binary, so this is the same code path a
+deployment runs. Applied versions are recorded in `_sqlx_migrations`, making
+re-runs a no-op. To review the SQL first without applying it:
+
+```bash
+INVOKR_DB_MIGRATION_MODE=dry-run cargo run -p invokr-api -- migrate
 ```
 
 **3. Run the API server** (here in `both` mode, serving the dashboard under `/dashboard`
@@ -540,6 +542,7 @@ All configuration is via environment variables prefixed with `INVOKR_`:
 | `INVOKR_API_KEY` | `dev-api-key` | Bearer token for authentication |
 | `INVOKR_ENCRYPTION_KEY` | 64 zeros | AES key for secret encryption (hex, 32+ bytes) |
 | `INVOKR_DB_POOL_SIZE` | `50` | Database connection pool size |
+| `INVOKR_DB_MIGRATION_MODE` | `none` | What `migrate` does: `none`, `run` or `dry-run` |
 | `INVOKR_WORKER_MAX_CONCURRENT` | `50` | Max concurrent job executions per worker |
 | `INVOKR_WORKER_POLL_INTERVAL_MS` | `200` | Worker DB polling interval |
 | `INVOKR_WORKER_SHUTDOWN_TIMEOUT_SEC` | `30` | Graceful shutdown timeout for in-flight work |
@@ -613,7 +616,9 @@ just mock-server        # Mock HTTP server (port 9999)
 # Database
 just db-up              # Start PostgreSQL
 just db-down            # Stop PostgreSQL
-just db-migrate         # Run migrations
+just db-migrate         # Run pending migrations
+just db-migrate-dry-run # Show pending migrations without applying them
+just migrate-new NAME   # Create a new migration file
 just db-reset           # Drop + recreate + migrate
 just db-shell           # Open psql shell
 
