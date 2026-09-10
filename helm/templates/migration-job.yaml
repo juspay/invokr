@@ -12,8 +12,11 @@ metadata:
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
-    {{/* Not hook-failed: a deleted failed Job takes its logs with it. */}}
-    "helm.sh/hook-delete-policy": hook-succeeded
+    {{/* Not hook-failed: a deleted failed Job takes its logs with it. The
+         failed Job is instead kept until the NEXT attempt replaces it --
+         without before-hook-creation it would linger and every later upgrade
+         would fail with "jobs.batch already exists". */}}
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   {{/* Safe to retry: the migration state table makes this idempotent. */}}
   backoffLimit: 2
@@ -30,7 +33,9 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "invokr.serviceAccountName" . }}
+      {{/* The hook-scoped SA from migration-prereqs.yaml; the release's own
+           ServiceAccount does not exist yet while this hook runs. */}}
+      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "invokr.fullname" . }}-migrate{{ else }}{{ include "invokr.serviceAccountName" . }}{{ end }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -67,11 +72,12 @@ spec:
                  `none`, and only this Job should ever migrate. */}}
             - name: INVOKR_DB_MIGRATION_MODE
               value: {{ .Values.migration.mode | quote }}
+          {{/* Hook-scoped copies, for the same reason as the ServiceAccount. */}}
           envFrom:
             - configMapRef:
-                name: {{ include "invokr.fullname" . }}-cm
+                name: {{ include "invokr.fullname" . }}-migrate-cm
             - secretRef:
-                name: {{ include "invokr.secretName" . }}
+                name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "invokr.fullname" . }}-migrate-secrets{{ end }}
           {{- with .Values.migration.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

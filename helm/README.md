@@ -104,9 +104,7 @@ internet until per-user authentication ships.
 | api.ingress.annotations | object | `{}` |  |
 | api.ingress.className | string | `""` |  |
 | api.ingress.enabled | bool | `false` | Expose the API through an Ingress. Leave disabled when using Istio. The dashboard is served by this same Service. |
-| api.ingress.hosts[0].host | string | `"invokr.local"` |  |
-| api.ingress.hosts[0].paths[0].path | string | `"/invokr"` |  |
-| api.ingress.hosts[0].paths[0].pathType | string | `"Prefix"` |  |
+| api.ingress.hosts | list | `[{"host":"invokr.local"}]` | Hosts to route. Omit `paths` (as below) to derive them from `configs.path_prefix` and, when the dashboard is enabled, `dashboard.pathPrefix` -- the dashboard is a sibling of the API prefix, not a child, so routing only the API prefix leaves it 404ing. Set `paths` explicitly to override, e.g. `[{path: /invokr, pathType: Prefix}]`. |
 | api.ingress.tls | list | `[]` |  |
 | api.livenessProbe | object | `{"failureThreshold":3,"initialDelaySeconds":20,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe. The path prefix is prepended automatically. |
 | api.podAnnotations | object | `{}` | Extra pod annotations. |
@@ -185,19 +183,11 @@ internet until per-user authentication ships.
 | worker.repository | string | `"invokr-worker"` | Image repository for the worker. |
 | worker.resources | object | `{}` | Resource requests and limits. |
 | worker.terminationGracePeriodSeconds | int | `45` | MUST exceed `workerConfigs.worker_shutdown_timeout_sec`, or SIGKILL cuts the drain short. |
-| workerConfigs | object | `{"config_cache_ttl_sec":60,"cron_batch_size":100,"cron_tick_interval_sec":1,"health_db_probe_timeout_ms":2000,"health_server_workers":1,"health_stale_after_floor_ms":5000,"metrics_port":9090,"promote_interval_ms":500,"reaper_cron_expression":"*/15 * * * *","reclaim_interval_sec":30,"secret_cache_ttl_sec":300,"stuck_execution_timeout_sec":300,"worker_max_concurrent":50,"worker_poll_interval_ms":200,"worker_shutdown_timeout_sec":30}` | Settings for the worker workload. |
+| workerConfigs | object | `{"config_cache_ttl_sec":60,"metrics_port":9090,"reaper_cron_expression":"*/15 * * * *","secret_cache_ttl_sec":300,"worker_max_concurrent":50,"worker_poll_interval_ms":200,"worker_shutdown_timeout_sec":30}` | Settings for the worker workload. |
 | workerConfigs.config_cache_ttl_sec | int | `60` | Config cache TTL, in seconds. |
-| workerConfigs.cron_batch_size | int | `100` | Maximum CRON jobs materialised per tick. |
-| workerConfigs.cron_tick_interval_sec | int | `1` | CRON tick interval, in seconds. |
-| workerConfigs.health_db_probe_timeout_ms | int | `2000` | Timeout for `/ready`'s SELECT 1, in milliseconds. |
-| workerConfigs.health_server_workers | int | `1` | Worker threads for the ops server. |
-| workerConfigs.health_stale_after_floor_ms | int | `5000` | Floor on the poll-loop staleness threshold, in milliseconds. Effective threshold is max(this, 10 x worker_poll_interval_ms). |
 | workerConfigs.metrics_port | int | `9090` | Worker ops server port. Serves /health, /ready and /metrics, unprefixed. |
-| workerConfigs.promote_interval_ms | int | `500` | Promotion sweep interval, in milliseconds. |
 | workerConfigs.reaper_cron_expression | string | `"*/15 * * * *"` | pg_cron expression for the sweep that retires expired CRON jobs. |
-| workerConfigs.reclaim_interval_sec | int | `30` | Reclaim sweep interval for stuck executions, in seconds. |
 | workerConfigs.secret_cache_ttl_sec | int | `300` | Secret cache TTL, in seconds. |
-| workerConfigs.stuck_execution_timeout_sec | int | `300` | Age at which a RUNNING execution is reclaimed, in seconds. |
 | workerConfigs.worker_max_concurrent | int | `50` | Maximum executions a single worker processes concurrently. |
 | workerConfigs.worker_poll_interval_ms | int | `200` | Poller sleep after finding no work, in milliseconds. |
 | workerConfigs.worker_shutdown_timeout_sec | int | `30` | Drain grace period for in-flight executions. `worker.terminationGracePeriodSeconds` must exceed this. |
