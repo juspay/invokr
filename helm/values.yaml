@@ -69,25 +69,12 @@ workerConfigs:
   secret_cache_ttl_sec: 300
   # -- Worker ops server port. Serves /health, /ready and /metrics, unprefixed.
   metrics_port: 9090
-  # -- Timeout for `/ready`'s SELECT 1, in milliseconds.
-  health_db_probe_timeout_ms: 2000
-  # -- Floor on the poll-loop staleness threshold, in milliseconds. Effective
-  # threshold is max(this, 10 x worker_poll_interval_ms).
-  health_stale_after_floor_ms: 5000
-  # -- Worker threads for the ops server.
-  health_server_workers: 1
-  # -- CRON tick interval, in seconds.
-  cron_tick_interval_sec: 1
-  # -- Maximum CRON jobs materialised per tick.
-  cron_batch_size: 100
-  # -- Promotion sweep interval, in milliseconds.
-  promote_interval_ms: 500
-  # -- Reclaim sweep interval for stuck executions, in seconds.
-  reclaim_interval_sec: 30
-  # -- Age at which a RUNNING execution is reclaimed, in seconds.
-  stuck_execution_timeout_sec: 300
   # -- pg_cron expression for the sweep that retires expired CRON jobs.
   reaper_cron_expression: "*/15 * * * *"
+  # NOTE: add a key here only if invokr_common::config actually reads the
+  # matching INVOKR_<KEY> variable. Every key is rendered into the ConfigMap
+  # unconditionally, so an unsupported name becomes an env var the app silently
+  # ignores -- it looks tunable but changes nothing.
 
 # ─── Secrets ────────────────────────────────────────────────────────────────
 # Rendered into a Secret as INVOKR_<KEY_UPPERCASED>. With `kms.enabled`, these
@@ -197,11 +184,13 @@ api:
     enabled: false
     className: ""
     annotations: {}
+    # -- Hosts to route. Omit `paths` (as below) to derive them from
+    # `configs.path_prefix` and, when the dashboard is enabled,
+    # `dashboard.pathPrefix` -- the dashboard is a sibling of the API prefix,
+    # not a child, so routing only the API prefix leaves it 404ing. Set `paths`
+    # explicitly to override, e.g. `[{path: /invokr, pathType: Prefix}]`.
     hosts:
       - host: invokr.local
-        paths:
-          - path: /invokr
-            pathType: Prefix
     tls: []
 
 # ─── Worker workload ────────────────────────────────────────────────────────
