@@ -233,7 +233,6 @@ mod tests {
             },
             server: ServerEnv {
                 listen_addr: "0.0.0.0:0".into(),
-                api_key: "test".into(),
                 path_prefix: String::new(),
                 mode: ServerMode::Api,
                 dashboard_prefix: String::new(),
