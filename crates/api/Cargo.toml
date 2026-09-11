@@ -37,3 +37,6 @@ leptos_router = { workspace = true, features = ["ssr"] }
 leptos_actix.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+authn_kit = { workspace = true, features = ["actix", "oidc"] }
+async-trait = "0.1"
+secrecy = "0.10"
