@@ -44,6 +44,15 @@ jobs:
           crate: cocogitto
           version: "6.2.0"
 
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ github.workspace }}/bin"
+          curl -fsSL -o "${{ github.workspace }}/bin/yq" \
+            https://github.com/mikefarah/yq/releases/download/v4.44.2/yq_linux_amd64
+          chmod +x "${{ github.workspace }}/bin/yq"
+          echo "${{ github.workspace }}/bin" >> "$GITHUB_PATH"
+
       - name: Bump version, write changelog, tag
         id: bump
         run: |
@@ -54,8 +63,20 @@ jobs:
           cog bump --auto --skip-ci-override "[skip ci]"
 
           tag=$(git describe --tags --abbrev=0)
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          version="${tag#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Released $tag"
+
+          # The chart version tracks the app version 1:1, so `helm install`
+          # from a checkout and `helm pull` from the registry agree. Amend the
+          # bump commit rather than adding a second one, then move the tag onto
+          # it -- cog tagged the pre-amend commit, and the docker and
+          # helm-chart jobs both check out by tag.
+          yq eval ".version = \"${version}\"" -i helm/Chart.yaml
+          yq eval ".appVersion = \"${version}\"" -i helm/Chart.yaml
+          git add helm/Chart.yaml
+          git commit --amend --no-edit
+          git tag -f "$tag"
 
           # Built here rather than in github-release: cog and the full git
           # history (fetch-depth: 0) are only available in this job.
@@ -202,3 +223,34 @@ jobs:
           tag_name: v${{ needs.tag-release.outputs.version }}
           name: v${{ needs.tag-release.outputs.version }}
           body_path: RELEASE_NOTES.md
+
+  helm-chart:
+    name: Package and publish the Helm chart
+    # After create-manifest, so the chart is never published pointing at a
+    # version whose multi-arch tag does not exist yet.
+    needs: [tag-release, create-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.tag-release.outputs.version }}
+
+      - uses: azure/setup-helm@v4
+
+      # Same registry as the images, so `helm pull` and `docker pull` need one
+      # set of credentials. hyperswitch-helm consumes sibling charts this way.
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package and push
+        run: |
+          set -euo pipefail
+          helm lint helm
+          helm package helm
+          helm push "invokr-${{ needs.tag-release.outputs.version }}.tgz" \
+            "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"

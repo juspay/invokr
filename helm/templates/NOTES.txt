@@ -1,0 +1,93 @@
+Invokr {{ .Chart.AppVersion }} is installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+  api     {{ include "invokr.fullname" . }}-api      ({{ .Values.api.replicaCount }} replicas)
+  worker  {{ include "invokr.fullname" . }}-worker   ({{ .Values.worker.replicaCount }} replicas)
+
+────────────────────────────────────────────────────────────────────────
+1. VERIFY pg_cron IS ACTUALLY LIVE
+────────────────────────────────────────────────────────────────────────
+Invokr does not schedule CRON jobs itself -- it delegates to the pg_cron
+Postgres extension. If pg_cron is not loaded, everything below will look
+healthy and CRON jobs will simply never fire.
+
+  psql "$INVOKR_DATABASE_URL" -c "SELECT * FROM cron.job;"
+
+An error here means the extension is not loaded. Two things are required, and
+BOTH are the database operator's job -- this chart cannot do either:
+
+  a) shared_preload_libraries = pg_cron   (a STATIC parameter: it needs a
+     database restart before it takes effect, even though the change applies
+     cleanly without one)
+  b) cron.database_name = {{ .Values.database.name }}
+
+Also confirm INVOKR_DATABASE_URL points at the WRITER endpoint. pg_cron runs
+jobs only on the writer; a reader gives you a working API and zero executions.
+
+────────────────────────────────────────────────────────────────────────
+2. REACH THE API
+────────────────────────────────────────────────────────────────────────
+{{- if .Values.api.ingress.enabled }}
+{{- range .Values.api.ingress.hosts }}
+{{- $host := .host }}
+{{- range .paths }}
+  http{{ if $.Values.api.ingress.tls }}s{{ end }}://{{ $host }}{{ .path }}/health
+{{- end }}
+{{- end }}
+{{- else if and .Values.istio.enabled .Values.istio.virtualService.enabled }}
+{{- range .Values.istio.virtualService.hosts }}
+  http://{{ . }}{{ include "invokr.pathPrefix" $ }}/health
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "invokr.fullname" . }}-api 8080:{{ .Values.api.service.port }}
+  curl http://localhost:8080{{ include "invokr.pathPrefix" . }}/health
+{{- end }}
+
+────────────────────────────────────────────────────────────────────────
+3. BOOTSTRAP AN ORG AND WORKSPACE
+────────────────────────────────────────────────────────────────────────
+Invokr is multi-tenant and has no tenants until you create one. Nothing works
+until this is done -- it is not automated by this chart.
+
+  curl -X POST "$INVOKR_URL{{ include "invokr.pathPrefix" . }}/v1/orgs" \
+    -H "Authorization: Bearer $INVOKR_API_KEY" \
+    -H 'Content-Type: application/json' \
+    -d '{"name": "your-org"}'
+
+  curl -X POST "$INVOKR_URL{{ include "invokr.pathPrefix" . }}/v1/orgs/<org_id>/workspaces" \
+    -H "Authorization: Bearer $INVOKR_API_KEY" \
+    -H 'Content-Type: application/json' \
+    -d '{"name": "your-workspace"}'
+
+Creating a workspace provisions its schema, so give it a moment to complete.
+
+{{- if not .Values.migration.enabled }}
+
+────────────────────────────────────────────────────────────────────────
+!! MIGRATIONS ARE DISABLED
+────────────────────────────────────────────────────────────────────────
+migration.enabled is false, so no schema migrations ran. The API will fail on
+every request against an empty database.
+
+Apply them before serving traffic, using the api image:
+
+  INVOKR_DB_MIGRATION_MODE=run <api-image> migrate
+{{- end }}
+{{- if and (not .Values.existingSecret) (not .Values.secrets.database_url) }}
+
+────────────────────────────────────────────────────────────────────────
+!! NO DATABASE URL SET
+────────────────────────────────────────────────────────────────────────
+Neither secrets.database_url nor existingSecret is set. Pods will crash-loop on
+startup. Set one of them and upgrade.
+{{- end }}
+{{- if .Values.dashboard.enabled }}
+
+────────────────────────────────────────────────────────────────────────
+!! DASHBOARD EXPOSURE
+────────────────────────────────────────────────────────────────────────
+The dashboard is served at {{ .Values.dashboard.pathPrefix }} by the API pods.
+
+It renders INVOKR_API_KEY into the page it serves, so anyone who can load the
+dashboard holds full API access to every workspace on this install. Keep it off
+the public internet until per-user auth ships.
+{{- end }}
