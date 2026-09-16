@@ -28,6 +28,7 @@
             pkg-config
             openssl
             postgresql
+            git
             docker-compose
             sqlx-cli
             nodejs_22
