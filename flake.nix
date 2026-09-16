@@ -24,20 +24,21 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            rustToolchain
-            pkg-config
-            openssl
-            postgresql
-            docker-compose
-            sqlx-cli
-            nodejs_22
-            yarn
-            self.packages.${system}.smithy-cli
-            just
-            wasm-pack
-            wasm-bindgen-cli
-            tailwindcss
             awscli2
+            docker-compose
+            git
+            just
+            nodejs_22
+            openssl
+            pkg-config
+            postgresql
+            rustToolchain
+            self.packages.${system}.smithy-cli
+            sqlx-cli
+            tailwindcss
+            wasm-bindgen-cli
+            wasm-pack
+            yarn
           ];
 
           shellHook = ''
