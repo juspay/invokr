@@ -8,11 +8,12 @@ const config: Config = {
   tagline: 'Durable job scheduling — setTimeout and setInterval as a service',
   favicon: 'img/favicon.ico',
 
-  url: 'https://invokr.example.com',
-  baseUrl: '/',
+  url: 'https://juspay.github.io',
+  baseUrl: '/invokr/',
 
   organizationName: 'juspay',
   projectName: 'invokr',
+  trailingSlash: false,
 
   onBrokenLinks: 'throw',
 
