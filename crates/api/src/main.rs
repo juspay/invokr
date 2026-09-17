@@ -36,6 +36,7 @@ fn json_error_handler(
     InternalError::from_response(err, response).into()
 }
 
+mod auth;
 mod dashboard;
 mod extractors;
 mod handlers;
@@ -68,6 +69,16 @@ async fn main() -> anyhow::Result<()> {
         metrics_handle,
     };
 
+    // Built before the server binds, so a missing variable or an unreachable
+    // identity provider aborts at startup with a message naming the problem —
+    // rather than surfacing as a 401 on whichever request happens to hit it.
+    let auth_env = invokr_common::config::AuthEnv::from_env().await?;
+    let authn = auth::build(&auth_env, &path_prefix, &dashboard_prefix)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to build authentication: {e}"))?;
+    let authn_middleware = authn.middleware;
+    let authn_routes = authn.routes;
+
     tracing::info!("Server mode: {:?}", mode);
     tracing::info!("API server listening on {}", listen_addr);
     if !path_prefix.is_empty() {
@@ -85,7 +96,6 @@ async fn main() -> anyhow::Result<()> {
             api_base_url: String::new(), // same-origin; server functions handle routing
             api_prefix: path_prefix.clone(),
             dashboard_prefix: dashboard_prefix.clone(),
-            api_key: config.server.api_key.clone(),
         })
     } else {
         None
@@ -100,10 +110,18 @@ async fn main() -> anyhow::Result<()> {
 
         let mut app = App::new()
             .app_data(web::Data::new(app_state.clone()))
+            .app_data(web::Data::new(authn_routes.clone()))
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
+            // Innermost, so CORS and logging still run on an auth failure.
+            // In actix the last `.wrap()` runs first on the way in.
+            .wrap(authn_middleware.clone())
             .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())
             .wrap(crate::middleware::RequestId);
+
+        // The OIDC callback and logout live under the API prefix, and the
+        // callback must match the redirect URI registered with the provider.
+        app = app.configure(auth::routes::configure(&path_prefix));
 
         // Register API routes (specific paths first)
         if mode == ServerMode::Api || mode == ServerMode::Both {

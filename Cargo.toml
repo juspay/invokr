@@ -18,7 +18,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
 
 [workspace.dependencies]
 # Async runtime
@@ -82,6 +82,9 @@ base64 = "0.22"
 # Metrics
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", features = ["http-listener"] }
+
+# Authentication (OIDC / API tokens)
+authn_kit = { git = "https://github.com/ayushjain17/authn_kit", rev = "671f4fca751e44cd0fdb9fdf5d4bcc53802c449b", default-features = false }
 
 # AWS (KMS feature)
 aws-config = { version = "1", features = ["behavior-version-latest"] }
