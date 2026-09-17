@@ -101,6 +101,7 @@ pub struct ServerEnv {
     pub listen_addr: String,
     pub api_key: String,
     pub path_prefix: String,
+    pub api_base_url: String,
     pub mode: ServerMode,
     pub dashboard_prefix: String,
     pub dashboard_dist_dir: String,
@@ -114,6 +115,7 @@ impl ServerEnv {
             .await;
         let path_prefix =
             normalize_prefix(get_from_env_or_default("INVOKR_PATH_PREFIX", String::new()));
+        let api_base_url = get_from_env_or_default("INVOKR_API_BASE_URL", String::new());
         let mode = ServerMode::from_env();
         let dashboard_prefix = normalize_prefix(get_from_env_or_default(
             "INVOKR_DASHBOARD_PATH_PREFIX",
@@ -125,6 +127,7 @@ impl ServerEnv {
             listen_addr,
             api_key,
             path_prefix,
+            api_base_url,
             mode,
             dashboard_prefix,
             dashboard_dist_dir,

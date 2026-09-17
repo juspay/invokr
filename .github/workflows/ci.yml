@@ -176,7 +176,8 @@ jobs:
       - name: Wait for PostgreSQL
         run: |
           for _ in $(seq 1 60); do
-            if docker compose exec -T postgres pg_isready -U invokr -d invokr_db > /dev/null 2>&1; then
+            if docker compose exec -T -e PGPASSWORD=invokr postgres \
+                 psql -h 127.0.0.1 -U invokr -d invokr_db -c 'SELECT 1' > /dev/null 2>&1; then
               echo "postgres ready"; exit 0
             fi
             sleep 1
@@ -187,9 +188,13 @@ jobs:
       # version always matches the server.
       - name: Apply migrations
         run: |
+          # Files carrying `-- invokr:scope=tenant` are per-workspace DDL
+          # templated with `{p}`; they are applied per workspace schema by
+          # `just db-migrate-tenant`, never to `public`.
           # Glob order is lexicographic, which matches the datestamped
           # filename order the justfile applies them in.
           for f in migrations/*.sql; do
+            grep -q '^-- invokr:scope=tenant' "$f" && continue
             echo "==> $f"
             docker compose exec -T postgres \
               psql -v ON_ERROR_STOP=1 -U invokr -d invokr_db < "$f"

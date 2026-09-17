@@ -18,6 +18,13 @@ pub const DISPATCH_DURATION_SECONDS: &str = "invokr_dispatch_duration_seconds";
 
 // --- Gauges ---
 pub const WORKER_INFLIGHT: &str = "invokr_worker_inflight_executions";
+pub const EXECUTIONS_WAITING: &str = "invokr_executions_waiting";
+
+// --- Long-running counters / histograms ---
+pub const POLLS_TOTAL: &str = "invokr_polls_total";
+pub const POLL_DURATION_SECONDS: &str = "invokr_poll_duration_seconds";
+pub const CALLBACKS_RECEIVED_TOTAL: &str = "invokr_callbacks_received_total";
+pub const LONG_RUNNING_COMPLETED_TOTAL: &str = "invokr_long_running_completed_total";
 
 /// Install the Prometheus recorder and return a handle for rendering metrics.
 /// Use this for services that already have an HTTP server (e.g. the API).

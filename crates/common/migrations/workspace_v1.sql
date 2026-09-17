@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS {p}jobs (
     cron_last_tick_at     TIMESTAMPTZ,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     retired_at            TIMESTAMPTZ,
+    async_max_wait_ms     BIGINT,
+    async_max_polls       INT,
     CONSTRAINT pk_{p}jobs PRIMARY KEY (job_id),
     CONSTRAINT fk_{p}jobs_endpoint FOREIGN KEY (endpoint) REFERENCES {p}endpoints (name),
     CONSTRAINT chk_{p}trigger_type CHECK (trigger_type IN ('IMMEDIATE', 'DELAYED', 'CRON')),
@@ -99,17 +101,25 @@ CREATE TABLE IF NOT EXISTS {p}executions (
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
     duration_ms     BIGINT,
+    poll_url            TEXT,
+    poll_count          INT         NOT NULL DEFAULT 0,
+    polling_started_at  TIMESTAMPTZ,
+    polling_deadline    TIMESTAMPTZ,
+    max_wait_ms         BIGINT,
+    max_polls           INT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT pk_{p}executions PRIMARY KEY (execution_id),
     CONSTRAINT fk_{p}executions_job FOREIGN KEY (job_id) REFERENCES {p}jobs (job_id),
     CONSTRAINT chk_{p}exec_status CHECK (status IN (
-        'PENDING', 'QUEUED', 'RUNNING', 'RETRYING', 'SUCCESS', 'FAILED', 'CANCELLED'
+        'PENDING', 'QUEUED', 'RUNNING', 'RETRYING',
+        'SUCCESS', 'FAILED', 'CANCELLED',
+        'WAITING', 'POLLING'
     ))
 );
 
 CREATE INDEX IF NOT EXISTS idx_{p}executions_pickup
     ON {p}executions (status, run_at ASC)
-    WHERE status IN ('QUEUED', 'RETRYING', 'PENDING');
+    WHERE status IN ('QUEUED', 'RETRYING', 'PENDING', 'WAITING');
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_{p}executions_cron_dedup
     ON {p}executions (job_id, idempotency_key)
@@ -133,7 +143,7 @@ CREATE TABLE IF NOT EXISTS {p}attempts (
     CONSTRAINT pk_{p}attempts PRIMARY KEY (attempt_id),
     CONSTRAINT fk_{p}attempts_execution FOREIGN KEY (execution_id) REFERENCES {p}executions (execution_id),
     CONSTRAINT uq_{p}attempts_exec_number UNIQUE (execution_id, attempt_number),
-    CONSTRAINT chk_{p}attempt_status CHECK (status IN ('SUCCESS', 'FAILED'))
+    CONSTRAINT chk_{p}attempt_status CHECK (status IN ('SUCCESS', 'FAILED', 'WAITING'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_{p}attempts_by_execution
@@ -155,3 +165,19 @@ CREATE INDEX IF NOT EXISTS idx_{p}logs_by_execution
     ON {p}execution_logs (execution_id, logged_at ASC);
 CREATE INDEX IF NOT EXISTS idx_{p}logs_by_attempt
     ON {p}execution_logs (execution_id, attempt_number, logged_at ASC);
+
+CREATE TABLE IF NOT EXISTS {p}polls (
+    execution_id    TEXT        NOT NULL,
+    poll_number     INT         NOT NULL,
+    polled_at       TIMESTAMPTZ NOT NULL,
+    duration_ms     BIGINT,
+    status_code     INT,
+    retry_after_ms  BIGINT,
+    classification  TEXT        NOT NULL,
+    error           JSONB,
+    CONSTRAINT pk_{p}polls PRIMARY KEY (execution_id, poll_number),
+    CONSTRAINT fk_{p}polls_execution FOREIGN KEY (execution_id) REFERENCES {p}executions (execution_id),
+    CONSTRAINT chk_{p}poll_classification CHECK (classification IN (
+        'SUCCESS', 'PENDING', 'TERMINAL_FAILURE', 'TRANSIENT_ERROR'
+    ))
+);

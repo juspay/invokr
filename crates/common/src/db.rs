@@ -6,6 +6,7 @@ pub mod executions;
 pub mod jobs;
 pub mod organizations;
 pub mod payload_specs;
+pub mod polls;
 pub mod scoped;
 pub mod secrets;
 pub mod workspaces;

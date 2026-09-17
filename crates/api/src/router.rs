@@ -75,6 +75,15 @@ pub fn configure(
                     "/v1/orgs/{org_id}/workspaces/{workspace_id}",
                     web::get().to(handlers::workspaces::get),
                 )
+                // Callback routes — tenant from URL path, no workspace header needed
+                .route(
+                    "/v1/callbacks/{org_id}/{workspace_id}/executions/{execution_id}/complete",
+                    web::post().to(handlers::callbacks::complete),
+                )
+                .route(
+                    "/v1/callbacks/{org_id}/{workspace_id}/executions/{execution_id}/fail",
+                    web::post().to(handlers::callbacks::fail),
+                )
                 .service(
                     web::scope("/v1")
                         // Payload Specs
@@ -161,6 +170,10 @@ pub fn configure(
                         .route(
                             "/executions/{execution_id}/attempts",
                             web::get().to(handlers::executions::list_attempts),
+                        )
+                        .route(
+                            "/executions/{execution_id}/polls",
+                            web::get().to(handlers::executions::list_polls),
                         )
                         .route(
                             "/executions/{execution_id}/logs",

@@ -34,6 +34,8 @@ pub async fn run<S: SchemaProvider>(
         secret_cache: SecretCache::new(config.worker.secret_cache_ttl_sec),
         encryption_key: config.crypto.encryption_key.clone(),
         table_prefix: config.db.table_prefix.clone(),
+        api_base_url: config.server.api_base_url.clone(),
+        path_prefix: config.server.path_prefix.clone(),
     });
 
     tracing::info!(worker_id = %worker_id, "Worker polling started");
@@ -82,8 +84,9 @@ pub async fn run<S: SchemaProvider>(
                 let wid = worker_id.clone();
                 let idle = idle.clone();
 
+                let sp = Arc::clone(&schema_provider);
                 tokio::spawn(async move {
-                    let found = claim_and_process(&pool, &ctx, &schemas, &wid).await;
+                    let found = claim_and_process(&pool, &ctx, &schemas, &wid, sp).await;
                     if !found {
                         metrics::counter!(m::WORKER_POLL_IDLE_TOTAL,
                             "worker_id" => wid,
@@ -109,11 +112,12 @@ pub async fn run<S: SchemaProvider>(
     Ok(())
 }
 
-async fn claim_and_process(
+async fn claim_and_process<S: SchemaProvider>(
     pool: &PgPool,
     ctx: &PipelineContext,
     schemas: &[String],
     worker_id: &str,
+    schema_provider: Arc<S>,
 ) -> bool {
     let prefix = ctx.table_prefix.as_str();
 
@@ -167,20 +171,48 @@ async fn claim_and_process(
             .as_deref()
             .unwrap_or(exec.execution_id.as_str());
 
-        pipeline::process_execution(
-            ctx,
-            &mut db,
-            schema_name,
-            &exec.execution_id,
-            idempotency_key,
-            &exec.job_id,
-            &exec.endpoint,
-            &exec.endpoint_type,
-            exec.input.as_ref(),
-            exec.attempt_count,
-            exec.max_attempts,
-        )
-        .await;
+        // Resolve org_id / workspace_id for callback URL construction using the
+        // cached SchemaProvider — avoids a per-execution DB round-trip since
+        // get_active_schemas already refreshed the cache this tick.
+        // Falls back to empty strings if the schema is not found (e.g. during a
+        // race between schema deletion and claim) so the pipeline can still
+        // proceed with degraded (empty/invalid) callback URLs.
+        let (org_id, workspace_id) = schema_provider
+            .get_org_ws(schema_name)
+            .await
+            .unwrap_or_default();
+
+        match exec.claim_status.as_str() {
+            "RUNNING" => {
+                pipeline::process_execution(
+                    ctx,
+                    &mut db,
+                    schema_name,
+                    &exec.execution_id,
+                    idempotency_key,
+                    &exec.job_id,
+                    &exec.endpoint,
+                    &exec.endpoint_type,
+                    exec.input.as_ref(),
+                    exec.attempt_count,
+                    exec.max_attempts,
+                    &org_id,
+                    &workspace_id,
+                    job.async_max_wait_ms,
+                    job.async_max_polls,
+                )
+                .await;
+            }
+            "POLLING" => {
+                crate::poll::process_poll(ctx, &mut db, schema_name, &exec).await;
+            }
+            other => {
+                tracing::error!(execution_id = %exec.execution_id,
+                    "Unexpected claim_status {}; failing safe", other);
+                let _ = invokr_common::db::executions::complete_failed(&mut db, &exec.execution_id)
+                    .await;
+            }
+        }
 
         // db last used above; NLL releases the borrow of tx here
         if let Err(e) = tx.commit().await {

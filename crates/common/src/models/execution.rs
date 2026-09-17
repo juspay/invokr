@@ -11,6 +11,8 @@ pub enum ExecutionStatus {
     SUCCESS,
     FAILED,
     CANCELLED,
+    WAITING,
+    POLLING,
 }
 
 impl ExecutionStatus {
@@ -23,6 +25,8 @@ impl ExecutionStatus {
             Self::SUCCESS => "SUCCESS",
             Self::FAILED => "FAILED",
             Self::CANCELLED => "CANCELLED",
+            Self::WAITING => "WAITING",
+            Self::POLLING => "POLLING",
         }
     }
 }
@@ -45,4 +49,21 @@ pub struct Execution {
     pub completed_at: Option<DateTime<Utc>>,
     pub duration_ms: Option<i64>,
     pub created_at: DateTime<Utc>,
+    pub poll_url: Option<String>,
+    pub poll_count: i32,
+    pub polling_started_at: Option<DateTime<Utc>>,
+    pub polling_deadline: Option<DateTime<Utc>>,
+    pub max_wait_ms: Option<i64>,
+    pub max_polls: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn waiting_and_polling_render_to_strings() {
+        assert_eq!(ExecutionStatus::WAITING.as_str(), "WAITING");
+        assert_eq!(ExecutionStatus::POLLING.as_str(), "POLLING");
+    }
 }

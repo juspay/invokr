@@ -7,6 +7,7 @@ pub mod job;
 pub mod organization;
 pub mod payload_spec;
 pub mod pg_cron_expr;
+pub mod poll;
 pub mod secret;
 pub mod workspace;
 
@@ -19,5 +20,6 @@ pub use job::{Job, JobStatus, TriggerType};
 pub use organization::Organization;
 pub use payload_spec::PayloadSpec;
 pub use pg_cron_expr::PgCronExpr;
+pub use poll::{Poll, PollClassification};
 pub use secret::Secret;
 pub use workspace::Workspace;

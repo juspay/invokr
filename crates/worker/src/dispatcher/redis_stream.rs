@@ -1,6 +1,7 @@
 use super::DispatchResult;
 use invokr_common::metrics as m;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub async fn dispatch(spec: &Value) -> DispatchResult {
     let redis_url = spec["redis_url"]
@@ -141,6 +142,8 @@ pub async fn dispatch(spec: &Value) -> DispatchResult {
                     "message_id": message_id,
                     "stream": stream,
                 }),
+                headers: HashMap::new(),
+                status_code: 0,
             }
         }
         Err(e) => {
@@ -196,7 +199,7 @@ mod tests {
 
         let result = dispatch(&spec).await;
         assert!(result.is_success(), "expected success");
-        if let DispatchResult::Success { output } = result {
+        if let DispatchResult::Success { output, .. } = result {
             let msg_id = output["message_id"].as_str().unwrap();
             // Redis stream IDs look like "1234567890123-0"
             assert!(msg_id.contains('-'), "invalid message_id: {}", msg_id);
@@ -295,7 +298,7 @@ mod tests {
 
             let result = dispatch(&spec).await;
             assert!(result.is_success(), "message {} failed", i);
-            if let DispatchResult::Success { output } = result {
+            if let DispatchResult::Success { output, .. } = result {
                 message_ids.push(output["message_id"].as_str().unwrap().to_string());
             }
         }

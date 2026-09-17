@@ -149,8 +149,16 @@ pub struct Job {
     pub cron_ends_at: Option<DateTime<Utc>>,
     pub cron_next_run_at: Option<DateTime<Utc>>,
     pub cron_last_tick_at: Option<DateTime<Utc>>,
+    pub async_max_wait_ms: Option<i64>,
+    pub async_max_polls: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub retired_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AsyncOverrides {
+    pub max_wait_ms: Option<i64>,
+    pub max_polls: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +177,107 @@ pub struct CreateJob {
     pub starts_at: Option<DateTime<Utc>>,
     #[serde(default, deserialize_with = "flexible_datetime::deserialize_opt")]
     pub ends_at: Option<DateTime<Utc>>,
+    pub async_overrides: Option<AsyncOverrides>,
+}
+
+pub fn resolve_async_bounds(
+    overrides: Option<&AsyncOverrides>,
+    endpoint_async: Option<(i64, i32)>,
+) -> Result<Option<(i64, i32)>, String> {
+    if overrides.is_some() && endpoint_async.is_none() {
+        return Err("async_overrides given but endpoint has no async block".into());
+    }
+    let Some((ep_wait, ep_polls)) = endpoint_async else {
+        return Ok(None);
+    };
+
+    let Some(o) = overrides else {
+        // No overrides — trust endpoint defaults (already validated at endpoint create time).
+        return Ok(Some((ep_wait, ep_polls)));
+    };
+
+    let wait = o.max_wait_ms.unwrap_or(ep_wait);
+    let polls = o.max_polls.unwrap_or(ep_polls);
+
+    if !(1..=30 * 24 * 3600 * 1000).contains(&wait) {
+        return Err("async_overrides.max_wait_ms out of range (1 .. 30d)".into());
+    }
+    if !(1..=100_000).contains(&polls) {
+        return Err("async_overrides.max_polls out of range (1 .. 100000)".into());
+    }
+    Ok(Some((wait, polls)))
+}
+
+#[cfg(test)]
+mod async_overrides_tests {
+    use super::*;
+
+    pub fn resolve(
+        overrides: Option<&AsyncOverrides>,
+        endpoint_async: Option<(i64, i32)>,
+    ) -> Result<Option<(i64, i32)>, String> {
+        crate::models::job::resolve_async_bounds(overrides, endpoint_async)
+    }
+
+    #[test]
+    fn rejects_overrides_when_endpoint_not_async() {
+        let o = AsyncOverrides {
+            max_wait_ms: Some(60_000),
+            max_polls: None,
+        };
+        assert!(resolve(Some(&o), None).is_err());
+    }
+
+    #[test]
+    fn falls_back_to_endpoint_defaults() {
+        let o = AsyncOverrides {
+            max_wait_ms: None,
+            max_polls: None,
+        };
+        let got = resolve(Some(&o), Some((60_000, 100))).unwrap();
+        assert_eq!(got, Some((60_000, 100)));
+    }
+
+    #[test]
+    fn applies_partial_override() {
+        let o = AsyncOverrides {
+            max_wait_ms: Some(120_000),
+            max_polls: None,
+        };
+        let got = resolve(Some(&o), Some((60_000, 100))).unwrap();
+        assert_eq!(got, Some((120_000, 100)));
+    }
+
+    #[test]
+    fn out_of_range_override_rejected() {
+        let o = AsyncOverrides {
+            max_wait_ms: Some(0),
+            max_polls: None,
+        };
+        assert!(resolve(Some(&o), Some((60_000, 100))).is_err());
+    }
+
+    #[test]
+    fn returns_endpoint_defaults_without_overrides() {
+        assert_eq!(
+            resolve(None, Some((60_000, 100))).unwrap(),
+            Some((60_000, 100))
+        );
+    }
+
+    #[test]
+    fn returns_none_when_endpoint_not_async_and_no_overrides() {
+        assert_eq!(resolve(None, None).unwrap(), None);
+    }
+
+    #[test]
+    fn out_of_range_polls_rejected() {
+        let o = AsyncOverrides {
+            max_wait_ms: None,
+            max_polls: Some(100_001),
+        };
+        assert!(resolve(Some(&o), Some((60_000, 100))).is_err());
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -3,6 +3,7 @@ use invokr_common::metrics as m;
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Duration;
 
 pub async fn dispatch(spec: &Value) -> DispatchResult {
@@ -92,6 +93,8 @@ pub async fn dispatch(spec: &Value) -> DispatchResult {
                     "partition": partition,
                     "offset": offset,
                 }),
+                headers: HashMap::new(),
+                status_code: 0,
             }
         }
         Err((e, _)) => {
@@ -145,7 +148,7 @@ mod tests {
 
         let result = dispatch(&spec).await;
         assert!(result.is_success(), "expected success, got failure");
-        if let DispatchResult::Success { output } = result {
+        if let DispatchResult::Success { output, .. } = result {
             assert!(output.get("partition").is_some());
             assert!(output.get("offset").is_some());
         }
@@ -209,7 +212,7 @@ mod tests {
 
             let result = dispatch(&spec).await;
             assert!(result.is_success(), "message {} failed", i);
-            if let DispatchResult::Success { output } = result {
+            if let DispatchResult::Success { output, .. } = result {
                 offsets.push(output["offset"].as_i64().unwrap());
             }
         }

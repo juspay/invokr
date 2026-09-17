@@ -136,6 +136,8 @@ impl InvokrLibraryClient {
             secret_cache: SecretCache::new(300),
             encryption_key: encryption_key.to_string(),
             table_prefix: table_prefix.to_string(),
+            api_base_url: String::new(),
+            path_prefix: String::new(),
         });
 
         Ok(Self { pool, ctx })
@@ -197,6 +199,8 @@ impl InvokrLibraryClient {
                     ikey,
                     Some(&input),
                     max_attempts,
+                    None,
+                    None,
                 )
                 .await?;
                 result.execution_id
@@ -210,6 +214,8 @@ impl InvokrLibraryClient {
                     Some(&input),
                     run_at,
                     max_attempts,
+                    None,
+                    None,
                 )
                 .await?;
                 result.execution_id
@@ -232,6 +238,8 @@ impl InvokrLibraryClient {
                     starts_at,
                     ends_at,
                     first_run_at,
+                    None,
+                    None,
                 )
                 .await?;
                 job.job_id
@@ -415,6 +423,7 @@ fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::
             listen_addr: String::new(),
             api_key: String::new(),
             path_prefix: String::new(),
+            api_base_url: String::new(),
             mode: ServerMode::Api,
             dashboard_prefix: String::new(),
             dashboard_dist_dir: String::new(),
