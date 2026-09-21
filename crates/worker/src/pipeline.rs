@@ -67,7 +67,7 @@ pub async fn process_execution(
     let retry_policy = endpoint.get_retry_policy();
 
     let config_values = if let Some(ref config_name) = endpoint.config_ref {
-        match load_config(ctx, db, config_name).await {
+        match load_config(ctx, db, schema_name, config_name).await {
             Ok(vals) => vals,
             Err(e) => {
                 tracing::error!(execution_id, "Config resolution failed: {}", e);
@@ -99,7 +99,7 @@ pub async fn process_execution(
         HashMap::new()
     };
 
-    let secret_values = match load_secrets(ctx, db, &endpoint.spec).await {
+    let secret_values = match load_secrets(ctx, db, schema_name, &endpoint.spec).await {
         Ok(vals) => vals,
         Err(e) => {
             tracing::error!(execution_id, "Secret resolution failed: {}", e);
@@ -316,9 +316,12 @@ pub async fn process_execution(
 async fn load_config(
     ctx: &PipelineContext,
     db: &mut DbContext<'_>,
+    schema_name: &str,
     name: &str,
 ) -> Result<HashMap<String, serde_json::Value>, String> {
-    if let Some(cached) = ctx.config_cache.get(name) {
+    // Scoped to the workspace: one worker serves every schema from one cache,
+    // and two workspaces naming a config the same thing is ordinary.
+    if let Some(cached) = ctx.config_cache.get(schema_name, name) {
         return flatten_json_object(&cached);
     }
 
@@ -328,13 +331,14 @@ async fn load_config(
         .ok_or_else(|| format!("Config '{}' not found", name))?;
 
     ctx.config_cache
-        .set(name.to_string(), config.values_json.clone());
+        .set(schema_name, name, config.values_json.clone());
     flatten_json_object(&config.values_json)
 }
 
 async fn load_secrets(
     ctx: &PipelineContext,
     db: &mut DbContext<'_>,
+    schema_name: &str,
     spec: &serde_json::Value,
 ) -> Result<HashMap<String, String>, String> {
     let spec_str = spec.to_string();
@@ -347,7 +351,7 @@ async fn load_secrets(
             let secret_name = &spec_str[abs_pos..abs_pos + end];
 
             if !secrets.contains_key(secret_name) {
-                let value = load_single_secret(ctx, db, secret_name).await?;
+                let value = load_single_secret(ctx, db, schema_name, secret_name).await?;
                 secrets.insert(secret_name.to_string(), value);
             }
             start = abs_pos + end + 2;
@@ -362,9 +366,12 @@ async fn load_secrets(
 async fn load_single_secret(
     ctx: &PipelineContext,
     db: &mut DbContext<'_>,
+    schema_name: &str,
     name: &str,
 ) -> Result<String, String> {
-    if let Some(cached) = ctx.secret_cache.get(name) {
+    // Scoped to the workspace. Without this, a warm entry would hand one
+    // tenant's decrypted credential to another tenant's dispatch.
+    if let Some(cached) = ctx.secret_cache.get(schema_name, name) {
         return Ok(cached);
     }
 
@@ -376,7 +383,7 @@ async fn load_single_secret(
     let decrypted = crypto::decrypt(&secret.encrypted_value, &ctx.encryption_key)
         .map_err(|e| format!("Failed to decrypt secret '{}': {}", name, e))?;
 
-    ctx.secret_cache.set(name.to_string(), decrypted.clone());
+    ctx.secret_cache.set(schema_name, name, decrypted.clone());
     Ok(decrypted)
 }
 
