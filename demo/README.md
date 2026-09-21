@@ -100,16 +100,9 @@ Evidence stays behind the **wire** button rather than on screen: both sides of
 every call Invokr made, and Aarokya's own log of what it did. Press `W` when
 somebody asks to see it.
 
-### Every page opens on an analogy
-
-The mechanism means nothing until the model exists, so the first frame of each
-page has no system on it at all:
-
-| Page | The frame | The tie-back |
-|---|---|---|
-| 1 | saving a payee before you pay them | describe the call **once**, then fire it **by name** |
-| 2 | asking the hotel front desk for a 6am call | Invokr is the **book**, the workers are the **shift** |
-| 3 | dropping a car at the garage and taking a ticket | **202 is the ticket** |
+At rest, before you press anything, the first frame already shows **the request
+you are about to send**, built from whatever the fields say. Change a field and
+the JSON changes with it. There is no preamble to get through.
 
 ### The controller
 
@@ -135,15 +128,14 @@ to read.
 
 ## 1 · Set it up
 
-Five frames, four `POST`s, and the endpoint exists.
+Four frames, four `POST`s, and the endpoint exists.
 
 | | The frame | What the room learns |
 |---|---|---|
-| 1 | the payee analogy | why anything has to exist before a job can name it |
-| 2 | **config** | the values that change between environments, as data |
-| 3 | **secret** | what you send beside what you can read back — there is no `value` field, and no read path for it at all |
-| 4 | **payload spec** | the JSON Schema beside a real job that was refused `422` for missing `mandate_id`, at the call site rather than at three in the morning |
-| 5 | **endpoint** | the whole call as one template, with `↑` arrows naming which namespace each placeholder resolves from |
+| 1 | **config** | the values that change between environments, as data |
+| 2 | **secret** | what you send, then what you can read back — there is no `value` field, and no read path for it at all |
+| 3 | **payload spec** | the JSON Schema beside a real job refused `422` for a missing `mandate_id` |
+| 4 | **endpoint** | the whole call as one template, with `▲` arrows naming which namespace each placeholder resolves from |
 
 ## 2 · Short tasks
 
@@ -160,29 +152,28 @@ One task from trigger to end, with everything that shapes it under your hand:
 | **max tries** | the job's own `max_attempts`, overriding the endpoint's |
 
 The journey changes shape with the trigger: pick `on a schedule` and the
-contents become nine entries, with *pg_cron owns it from here*, *a row appears
-that nobody inserted* and *you cancel it when the answer is terminal* in place
-of *the row waits until it is due*.
+contents become nine entries, with *pg_cron owns it*, *a row nobody inserted*
+and *cancel when it is terminal* in place of *run_at is a column*.
 
 Ask for failures and the run switches to `aarokya-mandate-sync-impatient` — the
 same call with retries measured in seconds rather than the minutes the real
 policy uses — and says so on screen, so nobody thinks Invokr retries that fast
 by default.
 
-Each frame is built to carry one claim and nothing else:
+Each frame carries one claim and nothing else:
 
 | Step | The frame | The claim |
 |---|---|---|
-| you ask for a run | the `POST` body beside a struck-through list | one POST naming an endpoint **is** the integration |
-| Invokr writes rows | the `jobs` and `executions` rows, and how long the API took | both rows existed **before that POST returned** |
-| the row waits | the `executions` row with the countdown **in the `run_at` cell** | nothing is counting down; `run_at` is a column |
-| exactly one worker | two workers, one database, and the `SKIP LOCKED` query | no leader election, no lock service, no coordination |
-| it calls the other side | what you registered beside what actually went out | resolved **now**, not when you registered it |
-| the answer | the response body, and every attempt with its code, duration and key | three tries, **one key** |
-| the record | attempts and status, and the three `GET`s that read them | no log scraping, no agent, no separate store |
+| `POST /v1/jobs` | the body, beside what is *not* in it | one POST naming an endpoint **is** the integration |
+| Two rows, then 201 | the `jobs` and `executions` rows, and how long the API took | both existed **before the POST returned** |
+| `run_at` is a column | the `executions` row with the countdown **in the `run_at` cell** | nothing is counting down |
+| One worker wins | two workers, one database, the `SKIP LOCKED` query | no leader election, no lock service, no coordination |
+| The call goes out | what you registered, beside what went out | resolved **now**, not at registration |
+| Every try is a row | the response, and every attempt with its code, duration and key | three tries, **one key** |
+| The record | attempts and status, and the three `GET`s that read them | no log scraping, no agent, no separate store |
 
-**Kill a worker** and **Add a worker** appear on the *waits until due* frame and
-nowhere else, because that is the frame where killing one proves something.
+**Kill a worker** and **Add a worker** appear on the `run_at` frame and nowhere
+else, because that is the frame where killing one proves something.
 
 Two more takes sit on the same page. **Same name, two teams** fires the same
 endpoint name into both workspaces and lets Aarokya's own log be the proof —
@@ -222,11 +213,11 @@ the next run is sent with what you typed:
 | **Retry-After (s)** | what Aarokya asks for between checks — Invokr honours it over the backoff |
 | **calls back after (s)** | in callback mode, how long Aarokya works before POSTing `/v1/callbacks/…/complete` |
 
-Two frames carry the whole page. *The row parks as WAITING* is one table row and
-one line — **nothing of yours is waiting**: no open socket, no blocked thread, no
-in-memory state. And the last frame is two numbers side by side, attempts against
-polls, under **polls are not attempts** — ten check-ins and the execution still
-has one attempt on the record.
+Two frames carry the whole page. *WAITING* is one table row and one line —
+**nothing of yours is waiting**: no open socket, no blocked thread, no in-memory
+state. And the last is two numbers side by side, attempts against polls, under
+**polls are not attempts** — ten check-ins and the execution still has one
+attempt on the record.
 
 ---
 

@@ -3,8 +3,8 @@
 // One idea at a time. Each step owns the whole canvas and is drawn for that
 // idea alone — the SKIP LOCKED query, the secret that has no read path, the row
 // parked as WAITING — with the list on the left acting as a table of contents
-// rather than the explanation. Every page opens on an analogy, because the
-// model has to exist before the mechanism means anything.
+// rather than the explanation. No preamble: the first frame is already the
+// request about to be sent, built from whatever the fields say.
 //
 // Three rules hold it together:
 //
@@ -324,12 +324,26 @@ function advanceOneGroup(take) {
   return false;
 }
 
+/// The data a step is about usually lands after the step itself — the HTTP call
+/// has to happen first. So while a frame is held, keep drawing anything unpaced
+/// that arrives: the frame fills in under the eye rather than only on the way
+/// out of it.
+function drain(take) {
+  let drew = false;
+  while (film.cursor < film.events.length && !PACED.has(film.events[film.cursor].type)) {
+    draw(take, film.events[film.cursor++]);
+    drew = true;
+  }
+  return drew;
+}
+
 /// Everything on screen is the first `n` events drawn in order, so going back
 /// is drawing fewer of them into a fresh bag of facts.
 function redrawTo(take, n) {
   resetStage(take);
   film.cursor = 0;
   while (film.cursor < n) draw(take, film.events[film.cursor++]);
+  drain(take); // land on the frame as it looked, not as it first appeared
   renderFrame();
 }
 
@@ -341,14 +355,19 @@ function pacedIndices() {
 
 function stepBack() {
   const take = currentTake();
-  const before = pacedIndices().filter((i) => i < film.cursor - 1);
-  redrawTo(take, before.length ? before[before.length - 1] + 1 : 0);
+  const paced = pacedIndices();
+  // Which frame we are on, counted in steps rather than raw events — the
+  // cursor sits past the trailing data of the current one.
+  const target = paced.filter((i) => i < film.cursor).length - 2;
+  redrawTo(take, target >= 0 ? paced[target] + 1 : 0);
   syncTransport();
 }
 
 function stepNext() {
   if (film.cursor < film.events.length) {
-    advanceOneGroup(currentTake());
+    const take = currentTake();
+    advanceOneGroup(take);
+    drain(take); // whatever already landed for this frame belongs on it
     // Stepping back and then forward again should end on the same picture the
     // run ended on, settled rather than still mid-stride.
     if (film.closed && film.cursor >= film.events.length) settleSteps();
@@ -380,8 +399,7 @@ async function play(take) {
       const drewStep = advanceOneGroup(take);
       syncTransport();
       if (!drewStep) continue;
-      if (film.mode === "auto") await sleep(film.dwell);
-      else await waitForNudge();
+      await hold(take);
       continue;
     }
     if (film.closed) break;
@@ -390,6 +408,21 @@ async function play(take) {
   film.playing = false;
   film.waiters.splice(0).forEach((r) => r());
   syncTransport();
+}
+
+/// Hold on this frame — for a beat in auto, until you say so in manual — and
+/// keep draining the data that lands while we hold. Switching to auto releases
+/// the nudge, so a mode change during a hold ends it.
+async function hold(take) {
+  const until = film.mode === "auto" ? performance.now() + film.dwell : Infinity;
+  let nudged = false;
+  if (until === Infinity) waitForNudge().then(() => (nudged = true));
+
+  while (!nudged && film.playing && performance.now() < until) {
+    if (drain(take)) syncTransport();
+    await sleep(Math.min(60, Math.max(1, until - performance.now())));
+  }
+  if (drain(take)) syncTransport();
 }
 
 // ─── the event tape ──────────────────────────────────────────────────────────
@@ -518,71 +551,53 @@ const MANDATE_SCHEMA = {
 
 const SETUP_STEPS = [
   {
-    id: "why",
-    label: "Why anything has to exist first",
-    blurb: "The same reason you save a payee before you pay them.",
-    frame: (f) => `<div class="f-analogy">
-      <div class="line">Before you can send money to someone, you save them once —
-        their account, the bank, the authorisation, the name you will use.</div>
-      <div class="card">payee &nbsp;<b>Aarokya</b><br/>account &nbsp;…<br/>auth &nbsp;&nbsp;&nbsp;&nbsp;••••••••</div>
-      <div class="line dim">After that you never type the account number again.
-        You say <i>“pay Aarokya”</i>, and everything else is looked up.</div>
-      <div class="tie">Invokr is the same. You describe the call <b>once</b>, and from then on
-        anything in your estate fires it <b>by name</b> — without knowing the URL, the credential,
-        or how many times to try.</div>
-      ${f.halt ? F.note(f.halt, "bad") : ""}
-    </div>`,
-  },
-  {
     id: "config",
-    label: "A config, for what changes",
-    blurb: "Base URLs, API versions, which team you are. The things that differ between staging and production.",
+    label: "config",
+    blurb: "What differs between environments.",
     frame: (f) =>
       F.wrap(
+        // The response pane only exists once there is a response. Nothing on
+        // screen claims to be happening before you press anything.
         F.cols(
           F.pane("POST /v1/configs", F.code(json(f.cfgBody ?? { name: "…", values: {} }), "big")),
-          f.cfgRes
-            ? F.pane("what came back", F.code(json(f.cfgRes)), {
-                meta: f.cfgMark,
-                metaTone: f.cfgOk ? "ok" : "bad",
-                cls: f.cfgOk ? "ok" : "bad",
-              })
-            : F.pane("what comes back", `<div class="empty">sending…</div>`, { cls: "dim" }),
+          f.cfgRes &&
+            F.pane("response", F.code(json(f.cfgRes)), {
+              meta: f.cfgMark,
+              metaTone: f.cfgOk ? "ok" : "bad",
+              cls: f.cfgOk ? "ok" : "bad",
+            }),
         ),
         F.note(
-          f.cfgOk
-            ? `That <code>base_url</code> is different in staging. Changing it is <b>one PUT</b> — not a redeploy, not a config map, not a restart.`
-            : "Two values, and a name to reach them by.",
+          f.cfgOk ? `Staging has a different <code>base_url</code>. Changing it is one PUT.` : "Two values and a name.",
           f.cfgOk ? "ok" : "",
         ),
+        f.halt ? F.note(f.halt, "bad") : "",
       ),
   },
   {
     id: "secret",
-    label: "A secret, for what must not leak",
-    blurb: "Encrypted at rest. Ask Invokr for it back and you get the name and the timestamps. Never the value.",
+    label: "secret",
+    blurb: "Write-only.",
     frame: (f) =>
       F.wrap(
         F.cols(
-          F.pane("what you send", F.code(json({ name: f.secName ?? "…", value: "Bearer aarokya-…" }), "big"), { meta: "201" }),
-          F.pane(
-            `what you can read back`,
-            f.secRead ? F.code(json(f.secRead), "big") : `<div class="empty">reading it back…</div>`,
-            { meta: f.secRead ? "200" : "", metaTone: "ok", cls: f.secRead ? "ok" : "dim" },
-          ),
+          F.pane("POST /v1/secrets", F.code(json({ name: f.secName ?? "…", value: "Bearer aarokya-…" }), "big")),
+          f.secRead &&
+            F.pane(`GET /v1/secrets/${esc(f.secName ?? "…")}`, F.code(json(f.secRead), "big"), {
+              meta: "200",
+              metaTone: "ok",
+              cls: "ok",
+            }),
         ),
         f.secRead
-          ? F.note(
-              `No <code>value</code> field. There is no read path for it at all — not for you, not for an operator, not in a log. The worker decrypts it at call time and that is the only place it exists in the clear.`,
-              "ok",
-            )
-          : F.note("Sent once. Encrypted before it hits the table."),
+          ? F.note(`No <code>value</code> field. There is no read path for it — the worker decrypts at call time.`, "ok")
+          : F.note("Encrypted before it hits the table."),
       ),
   },
   {
     id: "payload",
-    label: "A payload spec, so callers cannot get it wrong",
-    blurb: "JSON Schema. A job whose input does not match is refused when it is created, not at three in the morning.",
+    label: "payload spec",
+    blurb: "JSON Schema. Bad input is refused at create time.",
     frame: (f) =>
       F.wrap(
         F.cols(
@@ -596,38 +611,32 @@ const SETUP_STEPS = [
             { cls: "bad" },
           ),
         ),
-        F.note(
-          `The caller finds out <b>at the call site, immediately</b>. Not from a worker, at 3am, in a log nobody is reading.`,
-          "warn",
-        ),
+        F.note(`422 at the call site, not at 3am in a log.`, "warn"),
       ),
   },
   {
     id: "endpoint",
-    label: "An endpoint, which is those three plus the call",
-    blurb: "Where to send it, what to put in it, how hard to try. Four POSTs and it exists.",
+    label: "endpoint",
+    blurb: "The call itself — the other three plus where it goes.",
     frame: (f) => {
       const N = SETUP_NAMES();
       return F.wrap(
         F.pane(
-          "the whole call, as data",
+          "POST /v1/endpoints",
           F.code(
             `POST  <span class="tok-config">{{config.base_url}}</span>/mandates/<span class="tok-input">{{input.mandate_id}}</span>/sync\n` +
               `      ▲                        ▲\n` +
-              `      └─ the config            └─ the input, checked by the spec\n\n` +
+              `      └─ config                └─ input, checked by the spec\n\n` +
               `Authorization: <span class="tok-secret">{{secret.${esc(N.secret)}}}</span>\n` +
-              `      └─ resolved when the call is made, never stored here\n\n` +
+              `      └─ resolved at call time, never stored here\n\n` +
               `retry  3 tries · exponential · 1m → 10m`,
             "big",
           ),
           { meta: f.epMark, metaTone: f.epOk ? "ok" : "", cls: f.epOk ? "ok" : "" },
         ),
         f.epOk
-          ? F.note(
-              `<b>Four calls. No deploy.</b> Anything in your estate can now fire this by name — a service, a script, a person with curl.`,
-              "ok",
-            )
-          : F.note("Nothing here is code. It is four rows in a database."),
+          ? F.note(`Four rows. No deploy. Anything can fire this by name now.`, "ok")
+          : F.note("None of this is code."),
         f.halt ? F.note(f.halt, "bad") : "",
       );
     },
@@ -639,29 +648,26 @@ const SETUP_STEPS = [
 const askFrame = (f) =>
   F.wrap(
     F.cols(
-      F.pane("your service", F.code(json(f.jobBody ?? {}), "big"), { meta: "POST /v1/jobs" }),
+      F.pane("POST /v1/jobs", F.code(json(f.jobBody ?? {}), "big")),
       F.pane(
-        "what it does not have to know",
+        "not in the body",
         F.code(
-          `<s>where Aarokya lives</s>\n<s>which credential to use</s>\n<s>how many times to try</s>\n` +
-            `<s>how long to wait between tries</s>\n<s>what to do if it is still failing</s>`,
+          `<s>where Aarokya lives</s>\n<s>which credential</s>\n<s>how many times to try</s>\n` +
+            `<s>how long between tries</s>\n<s>what to do if it keeps failing</s>`,
           "big",
         ),
         { cls: "dim" },
       ),
     ),
-    F.note(`One POST, naming the endpoint. <b>That is the entire integration.</b>`),
+    F.note(`One POST naming an endpoint. That is the integration.`),
   );
 
 const writtenFrame = (f) =>
   F.wrap(
     F.bigs(F.big(f.answeredIn ?? "—", "answered in", "act")),
-    F.table("jobs", "one row per thing you asked for", [{ k: "e", label: "endpoint" }, { k: "t", label: "trigger" }, { k: "w", label: "run_at / cron" }, { k: "s", label: "status" }], f.job ? [f.job] : []),
-    F.table("executions", "one row per time it should run", [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "w", label: "run_at" }, { k: "worker", label: "worker" }, { k: "tries", label: "attempt_count" }], f.exec ? [f.exec] : []),
-    F.note(
-      `Both rows existed <b>before that POST returned</b>. Stop every process we run, pull the plug on the workers — the rows are still there, and the work still happens.`,
-      "ok",
-    ),
+    F.table("jobs", "what you asked for", [{ k: "e", label: "endpoint" }, { k: "t", label: "trigger" }, { k: "w", label: "run_at / cron" }, { k: "s", label: "status" }], f.job ? [f.job] : []),
+    F.table("executions", "one per time it should run", [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "w", label: "run_at" }, { k: "worker", label: "worker" }, { k: "tries", label: "attempt_count" }], f.exec ? [f.exec] : []),
+    F.note(`Both rows existed before the POST returned. Kill everything now and the work still happens.`, "ok"),
   );
 
 /// The same beat for a schedule: the jobs row is there, but no execution is —
@@ -669,12 +675,9 @@ const writtenFrame = (f) =>
 const cronWrittenFrame = (f) =>
   F.wrap(
     F.bigs(F.big(f.answeredIn ?? "—", "answered in", "act"), F.big(f.nextRun ?? "—", "next run at")),
-    F.table("jobs", "one row per thing you asked for", [{ k: "e", label: "endpoint" }, { k: "t", label: "trigger" }, { k: "w", label: "cron" }, { k: "s", label: "status" }], f.job ? [f.job] : []),
-    F.table("executions", "nothing here yet — and that is correct", [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "w", label: "run_at" }], []),
-    F.note(
-      `A schedule is not a queue of future runs. Invokr stores <b>one row</b> and the rule; the executions appear one at a time, as the minutes arrive.`,
-      "ok",
-    ),
+    F.table("jobs", "what you asked for", [{ k: "e", label: "endpoint" }, { k: "t", label: "trigger" }, { k: "w", label: "cron" }, { k: "s", label: "status" }], f.job ? [f.job] : []),
+    F.table("executions", "empty, correctly", [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "w", label: "run_at" }], []),
+    F.note(`One row and a rule, not a queue of future runs.`, "ok"),
     f.halt ? F.note(f.halt, "bad") : "",
   );
 
@@ -686,30 +689,25 @@ const dueFrame = (f) =>
       [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "w", label: "run_at" }, { k: "worker", label: "worker" }],
       f.exec ? [{ ...f.exec, w: f.due ? F.bar(f.due.left, f.due.total, f.due.label) : f.exec.w }] : [],
     ),
-    F.lead(`Nothing is counting down.`),
-    F.note(
-      `<code>run_at</code> is a column. There is no timer, no sleeping thread, no <code>setTimeout</code> anywhere. A worker asks the database for rows whose time has come.`,
-    ),
-    F.note(`Kill every worker right now — the row does not change, and the job still goes out on time.`, "warn"),
+    F.lead(`<code>run_at</code> is a column.`),
+    F.note(`No timer, no sleeping thread, no <code>setTimeout</code>. A worker asks for rows whose time has come.`),
+    F.note(`Kill both workers now. The row does not change and the job still goes out.`, "warn"),
   );
 
 const cronDueFrame = (f) =>
   F.wrap(
     F.cols(
       F.pane("your jobs row", F.code(`cron       <u>${esc(f.cron ?? "* * * * *")}</u>\ntimezone   Asia/Kolkata\nstatus     ACTIVE`, "big")),
-      F.pane("pg_cron's own table", F.code(`a Postgres extension.\nnot a process of ours.\n\non the minute, <b>the database</b>\ninserts the next execution.`, "big"), { cls: "dim" }),
+      F.pane("pg_cron", F.code(`a Postgres extension,\nnot a process of ours.\n\non the minute, <b>the database</b>\ninserts the next execution.`, "big"), { cls: "dim" }),
     ),
-    F.note(
-      `Nothing of Invokr's has to be awake for the next tick. If every worker and every API process is down when the minute turns, the row is still created — and picked up whenever someone comes back.`,
-      "ok",
-    ),
+    F.note(`Nothing of Invokr's has to be awake for the next tick.`, "ok"),
   );
 
 const tickFrame = (f) =>
   F.wrap(
-    F.bigs(F.big(f.tickAt ?? "—", "a row appeared at", "act"), F.big(f.tickN ?? 1, "tick")),
+    F.bigs(F.big(f.tickAt ?? "—", "row appeared at", "act"), F.big(f.tickN ?? 1, "tick")),
     F.table("executions", "nobody inserted this", [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "w", label: "created_at" }, { k: "worker", label: "worker" }], f.exec ? [f.exec] : []),
-    F.note(`From here it is an ordinary execution — indistinguishable from one you asked for by hand.`),
+    F.note(`From here it is an ordinary execution.`),
   );
 
 const claimFrame = (f) =>
@@ -718,31 +716,28 @@ const claimFrame = (f) =>
       F.box(f.winner ? `worker ${short(f.winner)}` : "worker", f.winner ? "got the row" : "asks for due rows", f.winner ? "ok" : ""),
       F.arrow("both ask", "act"),
       F.box("PostgreSQL", "one row, one winner", "on"),
-      F.arrow("at the same moment"),
-      F.box("worker", "skipped it — did not wait", "dim"),
+      F.arrow("same instant"),
+      F.box("worker", "skipped it, did not wait", "dim"),
     ),
     F.pane(
-      "how exactly-one is enforced",
+      "the claim",
       F.code(
         `SELECT … FROM executions\n WHERE status = 'QUEUED' AND run_at &lt;= now()\n   <u>FOR UPDATE SKIP LOCKED</u>\n LIMIT 1`,
         "big",
       ),
     ),
-    F.note(
-      `<code>SKIP LOCKED</code> is the whole trick. A second worker asking at the same instant does not block and does not wait — it <b>skips the locked row</b> and takes the next one. No leader election, no lock service, no coordination.`,
-    ),
+    F.note(`The second worker does not block. It skips the locked row and takes the next one.`),
+    F.note(`No leader election, no lock service, no coordination.`, "ok"),
   );
 
 const callFrame = (f) =>
   F.wrap(
     F.cols(
-      F.pane("what you registered", F.code(tokens(esc(f.template ?? "")), "big"), { cls: "dim" }),
-      F.pane(`what actually went out${f.sentAt ? `, at ${f.sentAt}` : ""}`, F.code(f.resolved ?? `<div class="empty">calling…</div>`, "big"), { cls: "ok" }),
+      F.pane("registered", F.code(tokens(esc(f.template ?? "")), "big"), { cls: "dim" }),
+      F.pane(`sent${f.sentAt ? `, ${f.sentAt}` : ""}`, F.code(f.resolved ?? `<div class="empty">calling…</div>`, "big"), { cls: "ok" }),
     ),
-    F.note(
-      `Resolved <b>now</b>, not when you registered it. Rotate the secret and the next call uses the new one — the endpoint does not change, and nothing has to be redeployed.`,
-    ),
-    f.idem ? F.note(`<code>x-invokr-idempotency-key</code> was added for you. Every retry carries the same one.`, "ok") : "",
+    F.note(`Resolved now, not at registration. Rotate the secret and the next call uses it.`),
+    f.idem ? F.note(`<code>x-invokr-idempotency-key</code> added for you. Every retry carries the same one.`, "ok") : "",
   );
 
 const answerFrame = (f) =>
@@ -750,16 +745,13 @@ const answerFrame = (f) =>
     f.answerBody ? F.pane(`← ${f.answerCode ?? ""} in ${f.answerTook ?? ""}`, F.code(json(f.answerBody), "big"), { cls: f.answerOk ? "ok" : "bad" }) : "",
     F.table(
       "attempts",
-      "one row per time it was actually tried",
+      "one per actual try",
       [{ k: "n", label: "#" }, { k: "s", label: "status" }, { k: "c", label: "code" }, { k: "d", label: "duration_ms" }, { k: "k", label: "idempotency key" }],
       f.attempts ?? [],
     ),
     (f.attempts?.length ?? 0) > 1
-      ? F.note(
-          `Three tries, <b>one key</b>. That is the honest answer to “would a retry register the mandate twice?” — the receiving side can see it is the same request.`,
-          "ok",
-        )
-      : F.note(`One row per try, with its status code, its duration and the key it carried.`),
+      ? F.note(`${f.attempts.length} tries, <b>one key</b>. The other side can see it is the same request.`, "ok")
+      : F.note(`Status code, duration, and the key it carried.`),
   );
 
 const recordFrame = (f) =>
@@ -769,15 +761,15 @@ const recordFrame = (f) =>
       F.big(f.finalStatus ?? "—", "execution", f.finalStatus === "SUCCESS" ? "ok" : "warn"),
     ),
     F.pane(
-      "and all of it is readable over the same API",
+      "same API, reading back",
       F.code(
-        `GET /v1/executions/{id}             status, timing, which worker\n` +
-          `GET /v1/executions/{id}/attempts    every try, with its code and duration\n` +
-          `GET /v1/jobs/{id}/executions        every time this schedule has fired`,
+        `GET /v1/executions/{id}             status, timing, worker\n` +
+          `GET /v1/executions/{id}/attempts    every try, code and duration\n` +
+          `GET /v1/jobs/{id}/executions        every time this has fired`,
         "big",
       ),
     ),
-    F.note(`No log scraping, no agent, no separate store. The rows the worker was reading are the rows you query.`),
+    F.note(`No log scraping, no agent, no separate store.`),
     f.halt ? F.note(f.halt, "bad") : "",
   );
 
@@ -787,47 +779,28 @@ const cancelFrame = (f) =>
       F.pane("POST /v1/jobs/{id}/cancel", F.code(`→ 200`, "big")),
       F.pane("jobs", F.code(`status  <span class="st retired">RETIRED</span>\n\npg_cron stops producing.`, "big"), { cls: "ok" }),
     ),
-    F.lead(`This is the loop your team actually runs.`),
-    F.note(
-      `Ask for the mandate status every minute; the moment the bank says <b>ACTIVE</b>, stop asking. One POST retires the schedule — the executions that already ran stay on the record.`,
-      "ok",
-    ),
+    F.lead(`Poll until terminal, then stop asking.`),
+    F.note(`One POST retires the schedule. The executions that already ran stay on the record.`, "ok"),
     f.halt ? F.note(f.halt, "bad") : "",
   );
 
 const SHORT_STEPS = [
   {
-    id: "why",
-    label: "Why a row and not a process",
-    blurb: "The hotel wake-up call.",
-    frame: (f) => `<div class="f-analogy">
-      <div class="line">You ask the front desk for 6am, and you go to sleep.</div>
-      <div class="card">room 402 &nbsp;— &nbsp;<b>06:00</b></div>
-      <div class="line dim">The desk does not stay awake. It writes 6am in the book.<br/>
-        The night staff go home; new staff arrive. The book is still the book.<br/>
-        At 6am, whoever is on shift rings you.</div>
-      <div class="tie">Invokr is the <b>book</b>. The workers are the <b>shift</b>.
-        That is why a deploy, a crash or a restart cannot lose your job —
-        nothing was holding it.</div>
-      ${f.halt ? F.note(f.halt, "bad") : ""}
-    </div>`,
-  },
-  {
     id: "ask",
-    label: "You ask for a run",
-    blurb: "One POST to /v1/jobs, naming the endpoint and the input. This is the only call your service makes.",
+    label: "POST /v1/jobs",
+    blurb: "Endpoint name and input. The only call your service makes.",
     frame: askFrame,
   },
   {
     id: "written",
-    label: "Invokr writes rows and answers",
-    blurb: "The job you asked for, and the execution it is due to produce. Once that returns, the work cannot be lost.",
+    label: "Two rows, then 201",
+    blurb: "The job, and the execution it is due to produce.",
     frame: writtenFrame,
   },
   {
     id: "due",
-    label: "The row waits until it is due",
-    blurb: "run_at is a column. Kill every process and the row still says when.",
+    label: "run_at is a column",
+    blurb: "No timer anywhere. Kill both workers and the row still says when.",
     frame: dueFrame,
     extras: [
       { id: "kill", label: "Kill a worker", danger: true },
@@ -836,53 +809,53 @@ const SHORT_STEPS = [
   },
   {
     id: "claim",
-    label: "Exactly one worker takes it",
-    blurb: "SELECT … FOR UPDATE SKIP LOCKED. Whoever wins the row owns it; the others move on rather than wait.",
+    label: "One worker wins",
+    blurb: "SELECT … FOR UPDATE SKIP LOCKED.",
     frame: claimFrame,
   },
   {
     id: "call",
-    label: "It calls the other side",
-    blurb: "The URL, headers and body are assembled at call time, from config, secret and input.",
+    label: "The call goes out",
+    blurb: "URL, headers and body assembled at call time.",
     frame: callFrame,
   },
   {
     id: "answer",
-    label: "The answer is written down",
-    blurb: "Every try becomes a row in attempts, with its status, its duration and the key it carried.",
+    label: "Every try is a row",
+    blurb: "Status, duration, and the key it carried.",
     frame: answerFrame,
   },
   {
     id: "record",
-    label: "And that is the record",
-    blurb: "No log scraping. What happened is queryable, because it is the same rows the worker was reading.",
+    label: "The record",
+    blurb: "The rows the worker read are the rows you query.",
     frame: recordFrame,
   },
 ];
 
 const CRON_STEPS = [
-  SHORT_STEPS[0],
-  { ...SHORT_STEPS[1], label: "You ask for a schedule", blurb: "Same POST, with a cron expression instead of a time." },
-  { ...SHORT_STEPS[2], label: "Invokr writes the schedule", blurb: "One jobs row. No executions yet — the first one appears when the minute turns.", frame: cronWrittenFrame },
+  { ...SHORT_STEPS[0], label: "POST /v1/jobs, with a cron", blurb: "Same call, a cron expression instead of a time." },
+  { ...SHORT_STEPS[1], label: "One row, then 201", blurb: "No executions yet. The first appears when the minute turns.", frame: cronWrittenFrame },
   {
     id: "due",
-    label: "pg_cron owns it from here",
-    blurb: "On the minute boundary the database itself inserts the next execution. Nothing of ours needs to be awake.",
+    label: "pg_cron owns it",
+    blurb: "The database inserts the next execution on the minute.",
     frame: cronDueFrame,
   },
   {
     id: "tick",
-    label: "A row appears that nobody inserted",
-    blurb: "That is the tick. From here it is an ordinary execution.",
+    label: "A row nobody inserted",
+    blurb: "The tick. From here it is an ordinary execution.",
     frame: tickFrame,
   },
+  SHORT_STEPS[3],
   SHORT_STEPS[4],
   SHORT_STEPS[5],
   SHORT_STEPS[6],
   {
     id: "cancel",
-    label: "You cancel it when the answer is terminal",
-    blurb: "Poll a status until it stops changing, then stop asking. Cancelling is one POST.",
+    label: "Cancel when it is terminal",
+    blurb: "One POST retires the schedule.",
     frame: cancelFrame,
   },
 ];
@@ -894,68 +867,66 @@ const CRON_STEPS = [
 const TEAM_STEPS = [
   {
     id: "name",
-    label: "The same name, in two places",
-    blurb: "Two workspaces. One endpoint name. Two unrelated rows.",
+    label: "One name, two workspaces",
+    blurb: "Two unrelated rows, in two schemas.",
     frame: (f) =>
       F.wrap(
         F.cols(
           F.pane("workspace · Mandates", F.code(`endpoint  ${esc(SETUP_NAMES().endpoint)}\nschema    <u>…${esc(f.schemaA ?? "")}</u>\nteam      mandates`, "big"), { meta: "X-Workspace-Id" }),
           F.pane("workspace · Rides", F.code(`endpoint  ${esc(SETUP_NAMES().endpoint)}\nschema    <u>…${esc(f.schemaB ?? "")}</u>\nteam      rides`, "big"), { meta: "X-Workspace-Id" }),
         ),
-        F.lead(`Same name. Different row.`),
-        F.note(
-          `Each workspace is its own <b>Postgres schema</b> — its own jobs, executions, attempts, configs and secrets. Not a tenant column someone has to remember to filter on; a separate set of tables.`,
-        ),
+        F.lead(`A workspace is a Postgres schema.`),
+        F.note(`Its own jobs, executions, attempts, configs and secrets — not a tenant column to remember to filter on.`),
       ),
   },
   {
     id: "fire",
-    label: "Both teams fire it",
-    blurb: "Same endpoint name, same body shape. Only the header differs.",
+    label: "Both fire it",
+    blurb: "Same body. Only the header differs.",
     frame: (f) =>
       F.wrap(
         F.cols(
-          F.pane("Mandates asks", F.code(json(f.bodyA ?? {}), "big"), { meta: f.statusA ?? "…", metaTone: "ok" }),
-          F.pane("Rides asks", F.code(json(f.bodyB ?? {}), "big"), { meta: f.statusB ?? "…", metaTone: "ok" }),
+          F.pane("Mandates", F.code(json(f.bodyA ?? {}), "big"), { meta: f.statusA ?? "…", metaTone: "ok" }),
+          F.pane("Rides", F.code(json(f.bodyB ?? {}), "big"), { meta: f.statusB ?? "…", metaTone: "ok" }),
         ),
-        F.note(`Two POSTs, identical but for <code>X-Workspace-Id</code>. Neither caller knows the other exists.`),
+        F.note(`Identical but for <code>X-Workspace-Id</code>. Neither caller knows the other exists.`),
         f.halt ? F.note(f.halt, "bad") : "",
       ),
   },
   {
     id: "ran",
-    label: "Two runs, neither can see the other",
-    blurb: "Two executions in two schemas. No query joins them.",
+    label: "Two runs, no join between them",
+    blurb: "Same worker pool, two schemas.",
     frame: (f) =>
       F.wrap(
         F.table(
           "executions · Mandates",
-          "in that workspace's own schema",
+          "that workspace's schema",
           [{ k: "s", label: "status" }, { k: "worker", label: "worker" }, { k: "tries", label: "attempt_count" }],
           f.execA ? [f.execA] : [],
         ),
         F.table(
           "executions · Rides",
-          "in that workspace's own schema",
+          "that workspace's schema",
           [{ k: "s", label: "status" }, { k: "worker", label: "worker" }, { k: "tries", label: "attempt_count" }],
           f.execB ? [f.execB] : [],
         ),
-        F.note(`The same worker pool served both. Isolation is in the data, not in a second deployment.`, "ok"),
+        F.note(`Isolation is in the data, not in a second deployment.`, "ok"),
       ),
   },
   {
     id: "proof",
-    label: "Aarokya can tell them apart",
-    blurb: "{{config.team}} resolved out of each workspace's own config — different header, same endpoint.",
+    label: "Aarokya tells them apart",
+    blurb: "It reads only the headers.",
     frame: (f) =>
       F.wrap(
         F.cols(
-          F.pane("what Aarokya logged for the Mandates call", F.code(esc(f.saidA ?? "waiting…"), "big"), { cls: f.saidA ? "ok" : "dim" }),
-          F.pane("what Aarokya logged for the Rides call", F.code(esc(f.saidB ?? "waiting…"), "big"), { cls: f.saidB ? "ok" : "dim" }),
+          F.pane("Aarokya's log · the Mandates call", F.code(esc(f.saidA ?? "waiting…"), "big"), { cls: f.saidA ? "ok" : "dim" }),
+          F.pane("Aarokya's log · the Rides call", F.code(esc(f.saidB ?? "waiting…"), "big"), { cls: f.saidB ? "ok" : "dim" }),
         ),
-        F.lead(`One endpoint description. Two credentials, two base URLs, two teams.`),
+        F.lead(`Nobody templated the team into the job.`),
         F.note(
-          `Nobody templated the team into the job. <code>{{config.team}}</code> and <code>{{secret.…}}</code> resolve against <b>the workspace the job was created in</b> — which is why Aarokya, reading only the headers, says a different team each time. Rotating one team's credential cannot touch the other's.`,
+          `<code>{{config.team}}</code> and <code>{{secret.…}}</code> resolve against the workspace the job was created in. Rotating one team's credential cannot touch the other's.`,
         ),
         f.halt ? F.note(f.halt, "bad") : "",
       ),
@@ -966,24 +937,22 @@ const TRANSPORT_STEPS = [
   {
     id: "three",
     label: "Three endpoints, one difference",
-    blurb: "type is a column. Everything else about the row is the same.",
+    blurb: "type is a column.",
     frame: (f) =>
       F.wrap(
         F.table(
           "endpoints",
           "the destination is a field",
-          [{ k: "e", label: "name" }, { k: "t", label: "type" }, { k: "w", label: "where it goes" }, { k: "s", label: "available here" }],
+          [{ k: "e", label: "name" }, { k: "t", label: "type" }, { k: "w", label: "where it goes" }, { k: "s", label: "up here" }],
           f.endpoints ?? [],
         ),
-        F.note(
-          `Retries, idempotency keys, the executions and attempts tables, the API you query — all identical. Moving a job from an HTTP call to a Kafka topic is <b>an endpoint edit</b>, not a rewrite of the caller.`,
-        ),
+        F.note(`Retries, keys, tables, the API you query — identical. Moving to Kafka is an endpoint edit.`),
       ),
   },
   {
     id: "send",
-    label: "The same job, sent three ways",
-    blurb: "One POST shape per destination. Whatever is not running here says so plainly.",
+    label: "Same job, three ways",
+    blurb: "Whatever is not running here says so.",
     frame: (f) =>
       F.wrap(
         F.table(
@@ -993,27 +962,27 @@ const TRANSPORT_STEPS = [
           f.sent ?? [],
         ),
         f.skipped?.length
-          ? F.note(`${esc(f.skipped.join(" and "))} ${f.skipped.length > 1 ? "are" : "is"} not running in this demo — same job, nowhere to put it. The row would be identical.`, "warn")
-          : F.note(`Every destination is up here, so all three went out.`, "ok"),
+          ? F.note(`${esc(f.skipped.join(" and "))} not running here. Same job, nowhere to put it — the row would be identical.`, "warn")
+          : F.note(`All three destinations are up, so all three went out.`, "ok"),
         f.halt ? F.note(f.halt, "bad") : "",
       ),
   },
   {
     id: "same",
-    label: "And the record is the same record",
-    blurb: "Same attempts table, same query, whatever the transport.",
+    label: "Same record either way",
+    blurb: "One attempts table, whatever the transport.",
     frame: (f) =>
       F.wrap(
         F.bigs(F.big(f.sentCount ?? 0, "destinations", "ok"), F.big("1", "record shape", "act")),
         F.pane(
           "what differs",
           F.code(
-            `HTTP    <u>x-invokr-idempotency-key</u> added for you\nKafka   you template the key into the message yourself\nRedis   you template the key into the entry yourself`,
+            `HTTP    <u>x-invokr-idempotency-key</u> added for you\nKafka   you template the key into the message\nRedis   you template the key into the entry`,
             "big",
           ),
         ),
         F.note(
-          `Worth naming out loud: the key is <b>automatic only on HTTP</b>. For the two stream transports you put <code>{{execution.idempotency_key}}</code> in the payload — it is in the template namespace for exactly that reason.`,
+          `The key is automatic on HTTP only. For the streams, put <code>{{execution.idempotency_key}}</code> in the payload.`,
           "warn",
         ),
       ),
@@ -1042,62 +1011,47 @@ function ladder(f) {
 
 const LONG_STEPS = [
   {
-    id: "why",
-    label: "Why 202 needs its own answer",
-    blurb: "You drop the car at the garage.",
-    frame: (f) => `<div class="f-analogy">
-      <div class="line">You drop the car off. They hand you a ticket, and you leave.</div>
-      <div class="card">ticket &nbsp;<b>#204</b> &nbsp;&nbsp;— &nbsp;ready when it is ready</div>
-      <div class="line dim">You do not sit in the workshop. Then one of two things happens:<br/>
-        you ring them every so often &nbsp;·&nbsp; or they ring you when it is done.</div>
-      <div class="tie">That is the whole of this page. <b>202 is the ticket.</b>
-        Invokr either <b>polls</b> or takes a <b>callback</b> — or both, and whichever
-        arrives first ends it.</div>
-      ${f.halt ? F.note(f.halt, "bad") : ""}
-    </div>`,
-  },
-  {
     id: "ask",
-    label: "You ask for a run",
-    blurb: "An ordinary job. Nothing at the call site says this one takes minutes.",
+    label: "POST /v1/jobs",
+    blurb: "Nothing at the call site says this one takes minutes.",
     frame: (f) =>
       F.wrap(
         F.pane("POST /v1/jobs", F.code(json(f.jobBody ?? {}), "big")),
-        F.note(`Identical to any other job. The endpoint knows it is async; the caller does not have to.`),
+        F.note(`Identical to any other job. The endpoint knows it is async; the caller does not.`),
         f.halt ? F.note(f.halt, "bad") : "",
       ),
   },
   {
     id: "written",
-    label: "Invokr writes a row and answers",
-    blurb: "Durable before the work has even begun.",
+    label: "One row, then 201",
+    blurb: "Durable before the work has begun.",
     frame: (f) => F.wrap(F.bigs(F.big(f.answeredIn ?? "—", "answered in", "act")), ladder(f), f.halt ? F.note(f.halt, "bad") : ""),
   },
-  { id: "claim", label: "A worker takes it", blurb: "The same claim, the same SKIP LOCKED. Still one dispatch.", frame: (f) => F.wrap(ladder(f)) },
+  { id: "claim", label: "One worker wins", blurb: "Same claim, same SKIP LOCKED.", frame: (f) => F.wrap(ladder(f)) },
   {
     id: "send",
-    label: "It sends the work",
-    blurb: "One attempt. However long this takes, the retry budget has seen exactly one dispatch.",
-    frame: (f) => F.wrap(ladder(f), F.note(`This is the <b>only</b> outbound dispatch there will be, no matter how long the work runs.`)),
+    label: "One dispatch",
+    blurb: "However long this runs, the retry budget sees one.",
+    frame: (f) => F.wrap(ladder(f), F.note(`The only outbound dispatch there will be.`)),
   },
   {
     id: "accepted",
-    label: "The other side says 202",
-    blurb: "Not success, not failure. The Location header says where to check.",
+    label: "202 + Location",
+    blurb: "Not success, not failure.",
     frame: (f) =>
       F.wrap(
         ladder(f),
         F.cols(
           F.pane("the endpoint's async block", F.code(`"async": {\n  "status_codes": [<u>202</u>],\n  …\n}`, "big"), { cls: "dim" }),
-          F.pane("what came back", F.code(`HTTP/1.1 <u>202</u> Accepted\nLocation: /async/status/task-8`, "big"), { cls: "ok" }),
+          F.pane("response", F.code(`HTTP/1.1 <u>202</u> Accepted\nLocation: /async/status/task-8`, "big"), { cls: "ok" }),
         ),
-        F.note(`A 202 with no <code>Location</code> is a hard failure — <code>MISSING_POLL_URL</code>, and not retryable. Silence is not allowed to look like success.`),
+        F.note(`202 with no <code>Location</code> is <code>MISSING_POLL_URL</code> — a hard failure, not retryable.`),
       ),
   },
   {
     id: "wait",
-    label: "The row parks as WAITING",
-    blurb: "No connection held open. No thread blocked. The worker has already moved on.",
+    label: "WAITING",
+    blurb: "No socket, no thread, no in-memory state.",
     frame: (f) =>
       F.wrap(
         F.table(
@@ -1107,42 +1061,38 @@ const LONG_STEPS = [
           [{ s: F.status("WAITING"), w: f.nextCheck ?? "—", tries: 1, p: f.polls ?? 0 }],
         ),
         F.lead(`Nothing of yours is waiting.`),
-        F.note(
-          `No open socket, no blocked thread, no in-memory state. The execution is a row with a next-check time, exactly like a delayed job. If every worker restarted right now, this would carry on.`,
-        ),
+        F.note(`A row with a next-check time, exactly like a delayed job. Restart every worker and it carries on.`),
       ),
   },
   {
     id: "poll",
-    label: "Invokr checks back — or gets called",
-    blurb: "Retry-After wins over the configured backoff. Every check is a row in polls.",
+    label: "Checks, or a callback",
+    blurb: "Every check is a row in polls.",
     frame: (f) =>
       F.wrap(
         ladder(f),
         F.note(
           f.lastRetryAfter
-            ? `It asked for <b>${f.lastRetryAfter}</b>, so that is what Invokr waited. <code>Retry-After</code> beats the backoff you configured — the target knows better than the config does.`
-            : `Each check is a row in <code>polls</code>, with its own status code and its own Retry-After.`,
+            ? `It asked for <b>${f.lastRetryAfter}</b>, so that is what Invokr waited. <code>Retry-After</code> beats the configured backoff.`
+            : `Each check is a row in <code>polls</code>, with its own status code and Retry-After.`,
         ),
       ),
   },
   {
     id: "finish",
-    label: "Whichever answer lands first, finishes it",
-    blurb: "Poll and callback race safely: one row update wins, the other sees zero rows changed.",
+    label: "First answer wins",
+    blurb: "One row update wins; the other sees zero rows changed.",
     frame: (f) => F.wrap(ladder(f), f.finishNote ? F.note(f.finishNote, "ok") : ""),
   },
   {
     id: "record",
-    label: "And that is the record",
-    blurb: "One attempt, every poll, the response and the key — all queryable.",
+    label: "Attempts vs polls",
+    blurb: "Different tables, on purpose.",
     frame: (f) =>
       F.wrap(
         F.bigs(F.big(f.finalAttempts ?? 1, "attempts", "ok"), F.big(f.polls ?? 0, "polls", "act")),
         F.lead(`Polls are not attempts.`),
-        F.note(
-          `Ten check-ins is still <b>one dispatch</b>. The retry policy has not been touched — that is why they are different tables, and why a slow destination cannot silently eat your retry budget.`,
-        ),
+        F.note(`Ten check-ins is still one dispatch. A slow destination cannot eat your retry budget.`),
         F.pane(
           "readable the same way as everything else",
           F.code(`GET /v1/executions/{id}          status, poll_count, deadline\nGET /v1/executions/{id}/polls    every check, its code and its Retry-After`, "big"),
@@ -1159,24 +1109,38 @@ const takes = [
     id: "setup",
     page: "setup",
     label: "Everything a job needs",
-    claim: "Four calls, and the endpoint exists.",
-    sub: "No deploy, no restart, no code review. Three pieces of data feed one description of a call — and the description is data too.",
+    claim: "Four POSTs and the endpoint exists.",
+    sub: "Config, secret, payload spec, endpoint. No deploy, no restart — the call is four rows in Postgres.",
     action: "Build it, live",
     steps: SETUP_STEPS,
     fields: [],
+    preview: () => ({
+      cfgBody: {
+        name: SETUP_NAMES().config,
+        values: {
+          base_url: state.status?.mockUrl ?? "http://localhost:9999",
+          team: state.status?.provisioned?.workspaces?.a?.slug ?? "mandates",
+        },
+      },
+      secName: SETUP_NAMES().secret,
+    }),
     run: runSetup,
   },
   {
     id: "short-task",
     page: "short",
     label: "One task, end to end",
-    claim: "A job is a row. Nothing is counting down.",
-    sub: "Postgres holds <b>run_at</b>. A worker asks for rows that are due, and exactly one wins each.",
+    claim: "A job is a row.",
+    sub: "<b>run_at</b> is a column. A worker asks for rows that are due, and exactly one wins each.",
     action: "Fire it",
     steps: (v) => (v.trigger === "CRON" ? CRON_STEPS : SHORT_STEPS),
     // A cron run walks a different set of steps, so it needs its own tape —
     // otherwise replaying one would draw steps the current page does not have.
     tape: (v) => (v.trigger === "CRON" ? "short-task-cron" : "short-task"),
+    preview: (v) => {
+      const jobBody = shortJobBody(v);
+      return { jobBody, cron: jobBody.cron };
+    },
     fields: [
       { key: "mandate_id", label: "mandate", value: "MND-8842", width: 116 },
       {
@@ -1222,10 +1186,14 @@ const takes = [
     page: "short",
     label: "Same name, two teams",
     claim: "Two teams, one deployment, nothing shared.",
-    sub: "The same endpoint name in two workspaces is two unrelated rows in two Postgres schemas — and the target can tell which team called.",
+    sub: "One endpoint name in two workspaces is two unrelated rows in two Postgres schemas.",
     action: "Fire into both",
     steps: TEAM_STEPS,
     fields: [{ key: "mandate_id", label: "mandate", value: "MND-4410", width: 116 }],
+    preview: () => {
+      const ws = state.status?.provisioned?.workspaces ?? {};
+      return { schemaA: (ws.a?.schema_name ?? "").slice(-9), schemaB: (ws.b?.schema_name ?? "").slice(-9) };
+    },
     run: runTeams,
   },
   {
@@ -1233,21 +1201,23 @@ const takes = [
     page: "short",
     label: "Not just HTTP",
     claim: "The destination is a field.",
-    sub: "HTTP, a Kafka topic or a Redis Stream. Same job, same retry policy, same record — the caller does not change.",
+    sub: "HTTP, a Kafka topic or a Redis Stream. Same job, same retries, same record.",
     action: "Send it three ways",
     steps: TRANSPORT_STEPS,
     fields: [{ key: "mandate_id", label: "mandate", value: "MND-7781", width: 116 }],
+    preview: () => ({ endpoints: transportRows() }),
     run: runTransports,
   },
   {
     id: "long-running",
     page: "long",
     label: "Work that takes minutes",
-    claim: "202 is a promise, not an answer.",
-    sub: "The other side takes the work and keeps it. Invokr parks the row — nothing held open — and either checks back or gets called. <b>Either way it is one attempt.</b>",
+    claim: "202 is not an answer.",
+    sub: "The row parks. Nothing is held open. Invokr checks back or gets called — either way, <b>one attempt</b>.",
     action: "Start the long job",
     steps: LONG_STEPS,
     tape: (v) => `long-running-${v.mode}`,
+    preview: (v) => ({ plan: planFor(v), live: {}, jobBody: longJobBody(v) }),
     fields: [
       { key: "job", label: "job", value: "recon-0042", width: 112 },
       {
@@ -1339,7 +1309,6 @@ async function runSetup(run) {
   const N = SETUP_NAMES();
   const spec = state.status?.mandateSpec;
   const wsA = state.status?.provisioned?.workspaces?.a;
-  run.step("why");
   if (!spec) {
     run.halt("config", "the demo server has not provisioned yet — give it a moment");
     return false;
@@ -1431,36 +1400,39 @@ const attemptRows = (attempts, idem) =>
     k: esc(idem ?? "—"),
   }));
 
+/// The body page 2 will POST, built from whatever the fields say. Shown on the
+/// first frame before you press anything, and sent verbatim when you do.
+///
+/// The team's real policy waits a minute before the second try. Ask for
+/// failures and the same call runs with seconds instead, so the shape fits a
+/// demo slot — the frame says so rather than implying Invokr is that impatient.
+function shortJobBody(v) {
+  const failures = clamp(v.fail_times, 0, 2, 0);
+  const seconds = clamp(v.seconds, 5, 120, 15);
+  const body = {
+    trigger: v.trigger ?? "IMMEDIATE",
+    endpoint: failures > 0 ? "aarokya-mandate-sync-impatient" : SETUP_NAMES().endpoint,
+    idempotency_key: key(`${v.mandate_id}-t1`),
+    input: { mandate_id: `${v.mandate_id}-${Date.now().toString(36).slice(-4)}`, checks: "1", fail_times: String(failures) },
+    max_attempts: clamp(v.attempts, 1, 3, 3),
+  };
+  if (v.trigger === "DELAYED") body.run_at = new Date(Date.now() + seconds * 1000).toISOString();
+  if (v.trigger === "CRON") {
+    body.cron = v.cron || "* * * * *";
+    body.timezone = "Asia/Kolkata";
+  }
+  return body;
+}
+
 async function runShort(run, v) {
-  const N = SETUP_NAMES();
   await control("/mock/reset");
   await ensureSetup();
   let logSeq = await targetLogHead();
 
-  const failures = clamp(v.fail_times, 0, 2, 0);
-  const maxTries = clamp(v.attempts, 1, 3, 3);
-  // The team's real policy waits a minute before the second try. Ask for
-  // failures and the same call runs with seconds instead, so the shape fits a
-  // demo slot — and the frame says so rather than implying Invokr is that
-  // impatient by default.
-  const endpoint = failures > 0 ? "aarokya-mandate-sync-impatient" : N.endpoint;
+  const jobBody = shortJobBody(v);
+  const { endpoint, idempotency_key: idem } = jobBody;
   const seconds = clamp(v.seconds, 5, 120, 15);
-  const idem = key(`${v.mandate_id}-t1`);
 
-  const jobBody = {
-    trigger: v.trigger ?? "IMMEDIATE",
-    endpoint,
-    idempotency_key: idem,
-    input: { mandate_id: `${v.mandate_id}-${Date.now().toString(36).slice(-4)}`, checks: "1", fail_times: String(failures) },
-    max_attempts: maxTries,
-  };
-  if (v.trigger === "DELAYED") jobBody.run_at = new Date(Date.now() + seconds * 1000).toISOString();
-  if (v.trigger === "CRON") {
-    jobBody.cron = v.cron || "* * * * *";
-    jobBody.timezone = "Asia/Kolkata";
-  }
-
-  run.step("why");
   run.facts({ jobBody, cron: jobBody.cron });
   run.step("ask");
 
@@ -1715,25 +1687,31 @@ async function runTeams(run, v) {
   return ok;
 }
 
-/// One job shape, three destinations. Whatever broker is not running here says
-/// so rather than being quietly skipped.
-async function runTransports(run, v) {
-  await ensureSetup();
+/// The three destinations, and which of them this machine can actually reach.
+function transportTargets() {
   const probes = state.status?.transports ?? {};
-  const targets = [
+  return [
     { type: "HTTP", endpoint: SETUP_NAMES().endpoint, where: "POST to Aarokya", up: true },
     { type: "Kafka", endpoint: "mandate-events-kafka", where: "topic mandate-events", up: !!probes.kafka },
     { type: "Redis", endpoint: "mandate-events-redis", where: "stream mandate-events", up: !!probes.redis },
   ];
+}
 
-  run.facts({
-    endpoints: targets.map((t) => ({
-      e: esc(t.endpoint),
-      t: esc(t.type),
-      w: esc(t.where),
-      s: t.up ? F.status("ACTIVE") : `<span class="st">broker not running</span>`,
-    })),
-  });
+const transportRows = () =>
+  transportTargets().map((t) => ({
+    e: esc(t.endpoint),
+    t: esc(t.type),
+    w: esc(t.where),
+    s: t.up ? F.status("ACTIVE") : `<span class="st">broker not running</span>`,
+  }));
+
+/// One job shape, three destinations. Whatever broker is not running here says
+/// so rather than being quietly skipped.
+async function runTransports(run, v) {
+  await ensureSetup();
+  const targets = transportTargets();
+
+  run.facts({ endpoints: transportRows() });
   run.step("three");
 
   const sent = [];
@@ -1812,6 +1790,19 @@ function planFor(v) {
   return plan;
 }
 
+/// Page 3's job body. It says nothing about the work taking minutes — the
+/// endpoint carries that — which is the point of the first frame.
+function longJobBody(v) {
+  const block = asyncSpecFrom(v);
+  return {
+    trigger: "IMMEDIATE",
+    endpoint: "aarokya-bulk-recon",
+    idempotency_key: key(`${v.job}-long`),
+    input: { job: v.job },
+    async_overrides: { max_wait_ms: block.max_wait_ms, ...(block.max_polls ? { max_polls: block.max_polls } : {}) },
+  };
+}
+
 function asyncSpecFrom(v) {
   const block = { status_codes: [202] };
   if (v.mode !== "callback") {
@@ -1835,15 +1826,9 @@ function asyncSpecFrom(v) {
 async function runLong(run, v) {
   run.facts({ plan: planFor(v), live: {} });
   if (!state.status?.longRunning) {
-    // Say so on the opening frame rather than on a step that would draw an
-    // empty request body — nothing was asked for, so nothing should be shown.
-    run.halt(
-      "why",
-      "This build has no long-running support — it lives on <b>feat/long-running-jobs</b>. Switch on <b>replay</b> to watch a recorded run of this page.",
-    );
+    run.halt("ask", "This build has no long-running support — it lives on <b>feat/long-running-jobs</b>. Switch on replay.");
     return false;
   }
-  run.step("why");
 
   const asyncBlock = asyncSpecFrom(v);
   const pending = v.mode === "callback" ? 0 : clamp(v.pending, 0, 8, 3);
@@ -1896,13 +1881,7 @@ async function runLong(run, v) {
     return false;
   }
 
-  const jobBody = {
-    trigger: "IMMEDIATE",
-    endpoint: spec.name,
-    idempotency_key: key(`${v.job}-long`),
-    input: { job: v.job },
-    async_overrides: { max_wait_ms: asyncBlock.max_wait_ms, ...(asyncBlock.max_polls ? { max_polls: asyncBlock.max_polls } : {}) },
-  };
+  const jobBody = longJobBody(v);
   run.facts({ jobBody });
   run.step("ask");
 
@@ -1941,13 +1920,19 @@ async function followLong(run, executionId, { logSeq, maxPolls, mode }) {
   while (performance.now() - started < 240000 && !run.cancelled) {
     const exec = (await api("GET", `/v1/executions/${executionId}`)).body?.data;
     if (exec) {
-      if (!claimed && exec.attempt_count > 0) {
-        claimed = true;
-        run.step("claim");
-      }
-
       const attempts = (await api("GET", `/v1/executions/${executionId}/attempts`)).body?.data ?? [];
       const first = attempts.find((x) => x.attempt_number === 1);
+
+      // `attempt_count`, `worker_id` and the attempt row are separate writes,
+      // and a read can land between them. Any of the three is proof a worker
+      // took it; the row's own `started_at` says when, so the claim never
+      // reads as having happened after the dispatch it caused.
+      if (!claimed && (exec.attempt_count > 0 || exec.worker_id || first)) {
+        claimed = true;
+        const at = exec.started_at ?? first?.started_at;
+        run.emit("step", { id: "claim", at: at ? offset(at) : Math.round(performance.now() - run.t0) });
+      }
+
       if (first && !sent) {
         sent = true;
         light("send", { at: offset(first.started_at), tone: "act" });
@@ -2079,7 +2064,9 @@ function resetStage(take) {
   clearWire();
   state.facts = {};
   state.stepId = stepsOf(t)?.[0]?.id ?? null;
-  if (t.page === "long") state.facts.plan = planFor(valuesFor(t));
+  // At rest the first frame shows the call you are about to make, built from
+  // whatever the fields currently say. Change a field and it changes with it.
+  Object.assign(state.facts, t.preview?.(valuesFor(t)) ?? {});
   renderSteps(t);
   document.body.classList.add("idle");
   renderFrame();

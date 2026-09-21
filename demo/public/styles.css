@@ -363,24 +363,6 @@ pre, .f-code {
 .rung.gap .label { top: 3px; font-size: 12px; color: var(--amber); font-style: italic; }
 .rung.gap .line { display: none; }
 
-/* The analogy frame: plain language, no system on screen at all. */
-.f-analogy { display: flex; flex-direction: column; gap: 20px; width: min(880px, 100%); }
-.f-analogy .line { font-family: var(--serif); font-size: 24px; line-height: 1.45; color: var(--ink); }
-.f-analogy .line.dim { color: var(--muted); font-size: 20px; }
-.f-analogy .card {
-  align-self: flex-start;
-  border: 1px solid var(--rule);
-  border-radius: 12px;
-  background: var(--surface);
-  padding: 16px 20px;
-  font-family: var(--mono);
-  font-size: 14.5px;
-  color: var(--ink-soft);
-  line-height: 1.7;
-}
-.f-analogy .tie { border-top: 1px solid var(--rule); padding-top: 18px; font-size: 17.5px; color: var(--ink-soft); line-height: 1.5; }
-.f-analogy .tie b { color: var(--ink); font-weight: 600; }
-
 /* ─── the wire drawer ─────────────────────────────────────────────────────── */
 
 .drawer {
