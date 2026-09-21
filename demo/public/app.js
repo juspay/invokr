@@ -437,7 +437,12 @@ async function refreshStatus() {
 // ─── shared layout pieces ────────────────────────────────────────────────────
 
 const timelineCard = () =>
-  card("what actually happened", "live", `<div class="timeline" id="timeline"></div>`, { tight: true });
+  card(
+    "what actually happened",
+    state.replay ? "replay" : "live",
+    `<div class="timeline" id="timeline"></div>`,
+    { tight: true },
+  );
 
 const reqResGrid = (leftTitle = "request", rightTitle = "response") => `
   <div class="grid">
