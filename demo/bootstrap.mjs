@@ -1,130 +1,151 @@
-// Provisions everything the demo scenes need, idempotently.
+// Provisions everything the demo needs, idempotently.
 //
-// Everything is upserted (create, else update in place) so a demo database that
-// was provisioned by an older version of this file gets brought up to date
-// instead of quietly keeping stale endpoint specs.
+// The story is the one Invokr is actually used for: a mandate is registered
+// with a bank, the bank does not answer straight away, so a job asks Aarokya
+// for its status every minute until the status is terminal — and then cancels
+// itself. Aarokya is `invokr-mock-server`, which prints what it did.
 //
-// The endpoints point at the mock server's business-shaped routes — an email
-// service, a payment processor, a health sweep — because "Sent the welcome
-// email to Priya" is a thing a room can picture, and "echoed your JSON" is not.
+// Act 1 of the demo builds the config, secret, payload spec and endpoint live,
+// so this file leaves the mandates workspace empty of exactly those four — the
+// first run of act 1 in a session should be four real creations. Everything
+// else is upserted, so act 2 works even if you skip act 1 and a database
+// provisioned by an older version of this file gets brought up to date instead
+// of quietly keeping a stale spec.
 
-const ORG = { name: "Invokr Demo", slug: "invokr-demo" };
+const ORG = { name: "Juspay", slug: "juspay" };
 
-// Two workspaces, same endpoint name in both. Scene 7 fires into each and shows
-// the rows landing in different schemas.
+// Two workspaces, same endpoint name in both. The two-teams take fires into
+// each and shows the rows landing in different schemas.
 export const WORKSPACES = [
-  { key: "a", name: "Payments", slug: "payments" },
-  { key: "b", name: "Risk", slug: "risk" },
+  { key: "a", name: "Mandates", slug: "mandates" },
+  { key: "b", name: "Rides", slug: "rides" },
 ];
 
+// What act 1 builds, in the order it builds it. Exported so the page names the
+// same things this file does.
+export const SETUP = {
+  config: "aarokya-config",
+  secret: "aarokya-callback-auth",
+  payloadSpec: "mandate-input",
+  endpoint: "aarokya-mandate-registration-sync",
+};
+
+/// Long gaps on purpose: a bank that is not answering yet is not a bank you
+/// hammer. This is the policy from the team's own endpoint.
 const RETRY = {
+  max_attempts: 3,
+  backoff: "exponential",
+  initial_delay_ms: 60000,
+  max_delay_ms: 600000,
+};
+
+/// Short gaps, for the take that shows a retry inside a demo slot.
+const RETRY_FAST = {
   max_attempts: 3,
   backoff: "exponential",
   initial_delay_ms: 2000,
   max_delay_ms: 30000,
 };
 
-const ORDER_INPUT_SCHEMA = {
+const MANDATE_INPUT_SCHEMA = {
   type: "object",
   properties: {
-    order_id: { type: "string" },
-    customer: { type: "string" },
-    email: { type: "string" },
-    user_id: { type: "string" },
+    mandate_id: { type: "string" },
+    // How the demo dials the fake bank: how many checks before it says ACTIVE,
+    // and how many times it should fail outright first. Strings, because a
+    // templated header that resolves to a number is dropped before it is sent.
+    checks: { type: "string" },
+    fail_times: { type: "string" },
   },
-  required: ["order_id"],
+  required: ["mandate_id"],
 };
 
-function endpoints() {
+/// The endpoint Act 1 builds, and the shape the team actually runs: a URL
+/// assembled from config and input, an Authorization header resolved from the
+/// secret store at execution time, and a retry policy measured in minutes.
+export function mandateSyncSpec() {
+  return {
+    name: SETUP.endpoint,
+    type: "HTTP",
+    config: SETUP.config,
+    payload_spec: SETUP.payloadSpec,
+    spec: {
+      url: "{{config.base_url}}/mandates/{{input.mandate_id}}/sync",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "{{secret.aarokya-callback-auth}}",
+        "api-version": "2026-08-15",
+        // Which team is asking, out of this workspace's own config.
+        "x-team": "{{config.team}}",
+        // Demo dials. The real endpoint has neither.
+        "x-terminal-after": "{{input.checks}}",
+        "x-fail-times": "{{input.fail_times}}",
+      },
+      timeout_ms: 30000,
+      expected_status_codes: [200, 201],
+    },
+    retry_policy: RETRY,
+  };
+}
+
+/// The endpoints the other takes need.
+///
+/// Deliberately self-contained: none of them references the config, secret or
+/// payload spec that act 1 builds. Invokr refuses to delete a config a live
+/// endpoint still points at — rightly — and act 1's whole point is deleting
+/// those four and watching them come back, so nothing else may depend on them.
+function supportingEndpoints(mockUrl) {
   return [
     {
-      name: "send-welcome-email",
+      // The same call as the hero, with retries measured in seconds so the
+      // retry take fits in a demo slot instead of a coffee break.
+      name: "aarokya-mandate-sync-impatient",
       type: "HTTP",
-      payload_spec: "order-input",
-      config: "email-service",
       spec: {
-        url: "{{config.api_base_url}}/emails/welcome",
+        url: `${mockUrl}/mandates/{{input.mandate_id}}/sync`,
         method: "POST",
         headers: {
-          // Resolved from the encrypted secret store at execution time — the
-          // demo shows that the API will not hand the value back.
-          Authorization: "Bearer {{secret.email_api_key}}",
           "Content-Type": "application/json",
+          "api-version": "2026-08-15",
+          "x-terminal-after": "{{input.checks}}",
+          "x-fail-times": "{{input.fail_times}}",
         },
-        body_template: {
-          customer: "{{input.customer}}",
-          email: "{{input.email}}",
-          order_id: "{{input.order_id}}",
-          sent_by: "{{config.sender}}",
-        },
-        timeout_ms: 5000,
-        expected_status_codes: [200],
+        timeout_ms: 30000,
+        expected_status_codes: [200, 201],
       },
-      retry_policy: { ...RETRY, initial_delay_ms: 1000 },
-    },
-    {
-      // Fails twice before it succeeds, so the retry scene has something real
-      // to retry.
-      name: "charge-webhook",
-      type: "HTTP",
-      config: "email-service",
-      spec: {
-        url: "{{config.api_base_url}}/billing/charge?succeed_after=3",
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body_template: {
-          order_id: "{{input.order_id}}",
-          amount: "{{input.amount}}",
-        },
-        timeout_ms: 5000,
-        expected_status_codes: [200],
-      },
-      retry_policy: RETRY,
-    },
-    {
-      name: "minute-heartbeat",
-      type: "HTTP",
-      config: "email-service",
-      spec: {
-        url: "{{config.api_base_url}}/ops/heartbeat",
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body_template: { tick: "{{execution.execution_id}}" },
-        timeout_ms: 5000,
-        expected_status_codes: [200],
-      },
-      retry_policy: { ...RETRY, max_attempts: 1 },
+      retry_policy: RETRY_FAST,
     },
     {
       // Kafka and Redis Stream dispatches do not propagate the idempotency key
       // automatically the way HTTP does — it is templated in here by hand.
-      name: "order-events-kafka",
+      name: "mandate-events-kafka",
       type: "KAFKA",
       spec: {
         bootstrap_servers: "localhost:9092",
-        topic: "invokr-demo-orders",
-        key_template: "{{input.order_id}}",
-        value_template: { order_id: "{{input.order_id}}", customer: "{{input.customer}}" },
+        topic: "invokr-demo-mandates",
+        key_template: "{{input.mandate_id}}",
+        value_template: { mandate_id: "{{input.mandate_id}}", execution_id: "{{execution.execution_id}}" },
         headers: { "idempotency-key": "{{execution.idempotency_key}}" },
         acks: "all",
         timeout_ms: 10000,
       },
-      retry_policy: RETRY,
+      retry_policy: RETRY_FAST,
     },
     {
-      name: "order-events-redis",
+      name: "mandate-events-redis",
       type: "REDIS_STREAM",
       spec: {
         redis_url: "redis://127.0.0.1:6379",
-        stream: "invokr-demo-orders",
+        stream: "invokr-demo-mandates",
         fields_template: {
-          order_id: "{{input.order_id}}",
+          mandate_id: "{{input.mandate_id}}",
           idempotency_key: "{{execution.idempotency_key}}",
         },
         max_len: 1000,
         approximate_trimming: true,
       },
-      retry_policy: RETRY,
+      retry_policy: RETRY_FAST,
     },
   ];
 }
@@ -156,20 +177,19 @@ export class InvokrAdmin {
     return { status: res.status, ok: res.ok, body: parsed };
   }
 
-  /// Create it, or update what's already there. Anything else throws loudly —
+  /// Create it, or update what is already there. Anything else throws loudly —
   /// a half-provisioned demo is worse than one that refuses to start.
-  async upsert(label, collection, name, createBody, updateBody) {
-    const created = await this.call("POST", `/v1/${collection}`, {
-      ...this.scope,
-      body: createBody,
-    });
+  ///
+  /// Create-then-update rather than delete-then-create, because an endpoint any
+  /// job has ever pointed at cannot be deleted at all: `jobs.endpoint` is a
+  /// foreign key, and a retired job still holds it.
+  async upsert(label, collection, name, body) {
+    const created = await this.call("POST", `/v1/${collection}`, { ...this.scope, body });
     if (created.ok) return created.body?.data ?? created.body;
 
     if (created.status === 409) {
-      const updated = await this.call("PUT", `/v1/${collection}/${name}`, {
-        ...this.scope,
-        body: updateBody,
-      });
+      const { name: _name, ...rest } = body;
+      const updated = await this.call("PUT", `/v1/${collection}/${name}`, { ...this.scope, body: rest });
       if (updated.ok) return updated.body?.data ?? updated.body;
       throw new Error(`${label}: update failed ${updated.status} ${JSON.stringify(updated.body)?.slice(0, 200)}`);
     }
@@ -220,7 +240,17 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
     org = created.body.data;
   }
 
-  const result = { org_id: org.org_id, workspaces: {}, endpoints: [], longRunning: false };
+  const result = {
+    org_id: org.org_id,
+    org_name: ORG.name,
+    workspaces: {},
+    endpoints: [],
+    longRunning: false,
+    // The page draws the setup act from this, so there is one definition of
+    // the endpoint rather than one here and a copy in the browser.
+    mandateSpec: mandateSyncSpec(),
+    setup: SETUP,
+  };
 
   const existingWs = await api.call("GET", `/v1/orgs/${org.org_id}/workspaces`);
   for (const ws of WORKSPACES) {
@@ -242,29 +272,31 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
 
     api.scope = { org: org.org_id, workspace: row.workspace_id };
 
-    await api.upsert(
-      `payload-spec in ${ws.slug}`,
-      "payload-specs",
-      "order-input",
-      { name: "order-input", schema: ORDER_INPUT_SCHEMA },
-      { schema: ORDER_INPUT_SCHEMA },
-    );
+    // Workspace `a` is the one act 1 builds into, and it is left empty of those
+    // four on purpose: the first run of act 1 in a session should be four real
+    // creations, not four updates. The page re-creates them itself if someone
+    // opens act 2 first.
+    if (ws.key !== "a") {
+      await api.upsert(`payload-spec in ${ws.slug}`, "payload-specs", SETUP.payloadSpec, {
+        name: SETUP.payloadSpec,
+        schema: MANDATE_INPUT_SCHEMA,
+      });
+      await api.upsert(`config in ${ws.slug}`, "configs", SETUP.config, {
+        name: SETUP.config,
+        values: { base_url: mockUrl, team: ws.slug },
+      });
+      // Not a real key — a fixture, so that what the demo resolves and masks is
+      // recognisably fake if it ever ends up on a projector.
+      await api.upsert(`secret in ${ws.slug}`, "secrets", SETUP.secret, {
+        name: SETUP.secret,
+        value: `Bearer aarokya-demo-${ws.slug}-7d41c9`,
+      });
+      await api.upsert(`endpoint ${SETUP.endpoint} in ${ws.slug}`, "endpoints", SETUP.endpoint, mandateSyncSpec());
+    }
 
-    const values = {
-      api_base_url: mockUrl,
-      sender: `noreply@${ws.slug}.invokr.internal`,
-    };
-    await api.upsert(`config in ${ws.slug}`, "configs", "email-service", { name: "email-service", values }, { values });
-
-    // Not a real key — a fixture, so that what the demo resolves and masks is
-    // recognisably fake if it ever ends up on a projector.
-    const value = `sk-demo-${ws.slug}-9f2b41c7`;
-    await api.upsert(`secret in ${ws.slug}`, "secrets", "email_api_key", { name: "email_api_key", value }, { value });
-
-    for (const ep of endpoints()) {
-      const { name, ...rest } = ep;
-      await api.upsert(`endpoint ${name} in ${ws.slug}`, "endpoints", name, ep, rest);
-      if (ws.key === "a") result.endpoints.push({ name, type: ep.type });
+    for (const ep of supportingEndpoints(mockUrl)) {
+      await api.upsert(`endpoint ${ep.name} in ${ws.slug}`, "endpoints", ep.name, ep);
+      if (ws.key === "a") result.endpoints.push({ name: ep.name, type: ep.type });
     }
   }
 

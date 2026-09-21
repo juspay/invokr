@@ -6,9 +6,9 @@
 //   1. Serve the demo page and the deck.
 //   2. Proxy the Invokr API same-origin, injecting the API key and tenant
 //      headers, so no credential is ever in the page.
-//   3. Own the worker process, so scene 2 can actually kill it (SIGKILL, not a
-//      graceful stop — the point is that an aborted transaction rolls back and
-//      the job still fires) and bring it back.
+//   3. Own the worker process, so the pick-up take can actually kill it
+//      (SIGKILL, not a graceful stop — the point is that an aborted
+//      transaction rolls back and the job still fires) and bring it back.
 //
 // Zero dependencies on purpose: `node demo/server.mjs` is the whole thing.
 
@@ -82,8 +82,8 @@ function startWorker() {
     env: {
       // A worker's pool defaults to 50 connections. Three of those plus the API
       // is more than a stock PostgreSQL (max_connections = 100) will give out,
-      // and the first thing to fail is pg_cron — which is scene 4. The demo
-      // needs a handful of connections, so ask for a handful.
+      // and the first thing to fail is pg_cron — which the poll take needs. The
+      // demo needs a handful of connections, so ask for a handful.
       INVOKR_DB_POOL_SIZE: "8",
       INVOKR_WORKER_MAX_CONCURRENT: "4",
       ...process.env,
@@ -119,7 +119,7 @@ function startWorker() {
 
 // SIGKILL, deliberately. A graceful stop drains in-flight work and proves
 // nothing; SIGKILL aborts the transaction holding the claim, which is the
-// behaviour scene 2 is about. With no pid it kills the newest worker.
+// behaviour the pick-up take is about. With no pid it kills the newest worker.
 function killWorker(pid) {
   const entry = pid ? workers.find((w) => String(w.pid) === String(pid)) : workers[workers.length - 1];
   if (!entry) return { ok: false, error: "no such worker is running" };
@@ -190,7 +190,7 @@ async function serveStatic(res, urlPath) {
 }
 
 // Forwards to the real Invokr API with credentials attached here rather than in
-// the page. `?ws=a|b` picks the tenant; scene 7 uses both.
+// the page. `?ws=a|b` picks the tenant; the two-teams take uses both.
 async function proxyApi(req, res, url) {
   const wsKey = url.searchParams.get("ws") ?? "a";
   const ws = provisioned?.workspaces?.[wsKey];
@@ -243,6 +243,9 @@ async function handleControl(req, res, url) {
       transports: { kafka, redis, features: WORKER_FEATURES },
       provisioned,
       longRunning: Boolean(provisioned?.longRunning),
+      // One definition of the hero endpoint, shared with the page.
+      mandateSpec: provisioned?.mandateSpec ?? null,
+      setup: provisioned?.setup ?? null,
       dashboardUrl: DASHBOARD_URL,
       apiUrl: API_URL,
       mockUrl: MOCK_URL,
@@ -278,6 +281,17 @@ async function handleControl(req, res, url) {
     }
   }
 
+  // Aarokya remembers how many times each mandate has been asked about, so a
+  // rehearsal of the same mandate would start halfway through its own story.
+  if (path === "/mock/reset" && req.method === "POST") {
+    try {
+      await fetch(`${MOCK_URL}/_polls/reset`, { method: "POST", signal: AbortSignal.timeout(2000) });
+      return send(res, 200, { ok: true });
+    } catch (err) {
+      return send(res, 502, { ok: false, error: String(err) });
+    }
+  }
+
   if (path === "/mock/log/clear" && req.method === "POST") {
     try {
       await fetch(`${MOCK_URL}/_log/clear`, { method: "POST", signal: AbortSignal.timeout(2000) });
@@ -303,7 +317,7 @@ async function handleControl(req, res, url) {
       try {
         return send(res, 200, await readFile(file), "application/json; charset=utf-8");
       } catch {
-        return send(res, 404, { error: "no recording for this scene yet" });
+        return send(res, 404, { error: "no recording for this one yet" });
       }
     }
     if (req.method === "PUT") {
@@ -357,7 +371,7 @@ server.listen(PORT, async () => {
   } catch (err) {
     // Not fatal: replay mode needs none of this, and the page shows the reason.
     console.error(`  ! provisioning failed: ${err.message ?? err}`);
-    console.error(`    live scenes will not run until Invokr is up; replay still works.`);
+    console.error(`    live takes will not run until Invokr is up; replay still works.`);
   }
 
   if (AUTO_WORKER) {

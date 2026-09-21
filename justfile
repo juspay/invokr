@@ -146,8 +146,8 @@ dev:
 # ─── Demo (leadership session) ────────────────────────────────
 
 # Serve the demo site + deck at http://localhost:4173 against a local Invokr.
-# Scenes fire real jobs. The demo server owns the worker process so scene 2 can
-# SIGKILL it on cue — do not run `just dev` at the same time, or a second worker
+# The takes fire real jobs. The demo server owns the worker process so the
+# pick-up take can SIGKILL it on cue — do not run `just dev` at the same time, or a second worker
 # will quietly pick up the jobs you just orphaned.
 demo:
     #!/usr/bin/env bash
@@ -161,7 +161,8 @@ demo:
     fi
 
     echo "Building (first run takes a minute)..."
-    # Kafka/Redis dispatchers are feature-gated; scene 6 needs them compiled in.
+    # Kafka/Redis dispatchers are feature-gated; the transports take needs them
+    # compiled in.
     # Only split the build when they're asked for — two cargo invocations over
     # different package sets can re-unify features and rebuild half the tree.
     if [ -n "${INVOKR_DEMO_WORKER_FEATURES:-}" ]; then

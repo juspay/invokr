@@ -21,6 +21,9 @@ const LOG_CAPACITY: usize = 200;
 /// so a process that runs all day does not grow one accepted task at a time.
 const ASYNC_CAPACITY: usize = 64;
 
+/// How many polled subjects (mandates, rides) to remember. Same reasoning.
+const POLL_CAPACITY: usize = 64;
+
 #[derive(Clone)]
 struct AppState {
     request_count: Arc<AtomicU64>,
@@ -29,7 +32,20 @@ struct AppState {
     /// Scripted answers for long-running tasks, oldest first.
     async_jobs: Arc<Mutex<AsyncJobs>>,
     async_seq: Arc<AtomicU64>,
+    /// Progress of each thing being polled for a status, oldest first.
+    polls: Arc<Mutex<Polls>>,
 }
+
+/// How far along one polled subject is: how many times its status has been
+/// asked for, and how many failures it still owes before it answers at all.
+#[derive(Default, Clone, Copy)]
+struct Poll {
+    checks: u64,
+    failures: u64,
+}
+
+/// Subjects being polled, keyed by their id, oldest first.
+type Polls = VecDeque<(String, Poll)>;
 
 /// Accepted long-running tasks and the answers each still owes, oldest first.
 type AsyncJobs = VecDeque<(String, Vec<ScriptStep>)>;
@@ -86,6 +102,14 @@ struct FailQuery {
 #[derive(Deserialize)]
 struct SucceedAfterQuery {
     succeed_after: Option<u64>,
+}
+
+/// How a polled subject should behave: how many checks before it reaches a
+/// terminal status, and how many times it should fail outright first.
+#[derive(Deserialize)]
+struct PollQuery {
+    terminal_after: Option<u64>,
+    fail_times: Option<u64>,
 }
 
 fn header(req: &HttpRequest, name: &str) -> Option<String> {
@@ -551,6 +575,167 @@ async fn async_cancel(
     HttpResponse::NoContent().finish()
 }
 
+// ─── polled statuses ─────────────────────────────────────────────────────────
+//
+// Stands in for a service that owns a long-lived thing and is asked, over and
+// over, whether it is done yet: a mandate with a bank, a ride with a driver.
+// The caller keeps asking until the answer is terminal, then stops asking.
+//
+// That is the shape of a scheduled job that cancels itself, so these routes are
+// what the demo points at. `terminal_after` says how many checks it takes,
+// `fail_times` makes the first N calls fail outright so retries have something
+// real to retry. Either can come as a query parameter or as an `x-` header,
+// because an endpoint's URL is often fixed while its headers are templated.
+
+/// Advance one subject and say where it got to, and whether this call is one of
+/// the failures it still owed.
+fn advance(state: &AppState, id: &str, fail_times: u64) -> Option<(Poll, bool)> {
+    let mut polls = state.polls.lock().ok()?;
+    if !polls.iter().any(|(known, _)| known == id) {
+        if polls.len() >= POLL_CAPACITY {
+            polls.pop_front();
+        }
+        polls.push_back((id.to_string(), Poll::default()));
+    }
+    let (_, p) = polls.iter_mut().find(|(known, _)| known == id)?;
+    let failing = p.failures < fail_times;
+    if failing {
+        p.failures += 1;
+    } else {
+        p.checks += 1;
+    }
+    Some((*p, failing))
+}
+
+/// Who asked. The endpoint templates this out of its own workspace's config, so
+/// two teams firing the same endpoint name are visibly different here.
+fn asked_by(req: &HttpRequest) -> String {
+    header(req, "x-team")
+        .map(|t| format!(", for the {t} team"))
+        .unwrap_or_default()
+}
+
+/// A dial the caller can turn from the query string or from a header.
+fn dial(req: &HttpRequest, from_query: Option<u64>, name: &str, fallback: u64) -> u64 {
+    from_query
+        .or_else(|| header(req, name).and_then(|v| v.trim().parse().ok()))
+        .unwrap_or(fallback)
+}
+
+/// Sync a mandate's registration status with the bank.
+async fn mandate_sync(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    query: web::Query<PollQuery>,
+    body: Option<web::Json<serde_json::Value>>,
+) -> HttpResponse {
+    let id = path.into_inner();
+    let body = body
+        .map(|b| b.into_inner())
+        .unwrap_or(serde_json::Value::Null);
+    let terminal_after = dial(&req, query.terminal_after, "x-terminal-after", 3).max(1);
+    let fail_times = dial(&req, query.fail_times, "x-fail-times", 0);
+    let team = asked_by(&req);
+
+    let Some((p, failing)) = advance(&state, &id, fail_times) else {
+        return HttpResponse::InternalServerError().finish();
+    };
+
+    if failing {
+        record(
+            &state,
+            &req,
+            502,
+            format!(
+                "Bank gateway timed out on {id}{team} — nothing synced (try {})",
+                p.failures
+            ),
+            &body,
+        );
+        return HttpResponse::BadGateway()
+            .json(serde_json::json!({ "error": "bank gateway timed out", "mandate_id": id }));
+    }
+
+    let terminal = p.checks >= terminal_after;
+    let status = if terminal { "ACTIVE" } else { "PENDING" };
+    record(
+        &state,
+        &req,
+        200,
+        if terminal {
+            format!("Asked the bank about {id}{team} — ACTIVE, the mandate is registered")
+        } else {
+            format!(
+                "Asked the bank about {id}{team} — still PENDING (check {} of {terminal_after})",
+                p.checks
+            )
+        },
+        &body,
+    );
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "mandate_id": id,
+        "status": status,
+        "terminal": terminal,
+        "checks": p.checks,
+    }))
+}
+
+/// Ask Namma Yatri where a ride got to, and whether a tip was contributed.
+async fn ride_status(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    query: web::Query<PollQuery>,
+    body: Option<web::Json<serde_json::Value>>,
+) -> HttpResponse {
+    let id = path.into_inner();
+    let body = body
+        .map(|b| b.into_inner())
+        .unwrap_or(serde_json::Value::Null);
+    let terminal_after = dial(&req, query.terminal_after, "x-terminal-after", 3).max(1);
+    let team = asked_by(&req);
+
+    let Some((p, _)) = advance(&state, &id, 0) else {
+        return HttpResponse::InternalServerError().finish();
+    };
+
+    let terminal = p.checks >= terminal_after;
+    let status = if terminal { "COMPLETED" } else { "ON_TRIP" };
+    record(
+        &state,
+        &req,
+        200,
+        if terminal {
+            format!("Ride {id}{team} — COMPLETED, ₹30 tip went to the driver")
+        } else {
+            format!(
+                "Ride {id}{team} — still ON_TRIP (check {} of {terminal_after})",
+                p.checks
+            )
+        },
+        &body,
+    );
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "ride_id": id,
+        "status": status,
+        "terminal": terminal,
+        "tip_contributed": terminal,
+        "tip_amount": if terminal { 30 } else { 0 },
+        "checks": p.checks,
+    }))
+}
+
+/// Forget every subject's progress, so a rehearsal starts from check one.
+async fn reset_polls(state: web::Data<AppState>) -> HttpResponse {
+    if let Ok(mut polls) = state.polls.lock() {
+        polls.clear();
+    }
+    HttpResponse::Ok().json(serde_json::json!({ "reset": true }))
+}
+
 /// Health check.
 async fn health() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
@@ -576,6 +761,7 @@ async fn main() -> std::io::Result<()> {
         log: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_CAPACITY))),
         async_jobs: Arc::new(Mutex::new(VecDeque::with_capacity(ASYNC_CAPACITY))),
         async_seq: Arc::new(AtomicU64::new(0)),
+        polls: Arc::new(Mutex::new(VecDeque::with_capacity(POLL_CAPACITY))),
     };
 
     println!("\n  target service listening on :{port}");
@@ -585,7 +771,11 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(state.clone()))
             .route("/health", web::get().to(health))
-            // What the demo points at
+            // What the demo points at: a service that owns something slow and
+            // is polled until the answer is terminal
+            .route("/mandates/{id}/sync", web::post().to(mandate_sync))
+            .route("/rides/{id}/status", web::post().to(ride_status))
+            .route("/_polls/reset", web::post().to(reset_polls))
             .route("/emails/welcome", web::post().to(send_welcome_email))
             .route("/billing/charge", web::post().to(charge))
             .route("/ops/heartbeat", web::post().to(heartbeat))

@@ -534,13 +534,13 @@ GET …/attempts</pre>
     </section>
 
     <!-- 9 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~7min. Switch to the demo tab. Do not narrate the diagram — the steps light up one at a time along the top, so let them watch. Scene 1 is the whole journey: an endpoint becomes a row, then a run becomes another row. Ask the room for a name and an order number and type them in; the forms are real, including the trigger. Scene 2 is the one they will remember: kill both workers, let the countdown keep running with nobody left to do it, then start one. In scene 3, point at the processor's own log — three tries, one key. Scene 5 needs the long-running branch; on any other build it says so and you replay it. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
+    <section class="slide" data-notes="~7min. Switch to the demo tab. Two acts. Act 1, set it up: four POSTs and the placeholders in the endpoint light up as each one lands — do not read the JSON out, let them watch the colours arrive. Then the payload spec take: a job with no mandate_id is refused with a 422 before any worker sees it. Act 2, run it: the poll loop first, because it is their own loop — schedule, tick, pick up, ask Aarokya, ACTIVE, cancel. Then kill both workers and let the countdown keep running with nobody left to do it. In When Aarokya is down, point at Aarokya&#39;s own log: three calls, one key. Long-running needs the feature branch; on any other build it says so and you replay it. Ask the room for a mandate id and type it in; the fields are real. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
       <div class="holding">
         <div>
           <div class="eyebrow" style="text-align:center">live</div>
           <h2>Demo</h2>
-          <p class="sub">Real jobs, real database, real retries.<br/>Give me a name and an order number.</p>
-          <p class="kicker-note" style="text-align:center;max-width:none;margin-top:26px">Watch the job move. Nothing on the next screen is drawn in advance.</p>
+          <p class="sub">Real jobs, real database, real retries.<br/>Give me a mandate id.</p>
+          <p class="kicker-note" style="text-align:center;max-width:none;margin-top:26px">Two acts: what has to exist, and what happens when it runs.<br/>Nothing on the next screen is drawn in advance.</p>
         </div>
       </div>
     </section>
@@ -693,7 +693,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
             <li>Each workspace gets its own schema: endpoints, jobs, executions, attempts, secrets</li>
             <li>Requests carry <code>X-Org-Id</code> + <code>X-Workspace-Id</code>; the connection's search_path is scoped per request</li>
             <li>The worker sweeps active schemas from a registry cached for 30s</li>
-            <li>Same endpoint name in two workspaces is two unrelated rows — demo scene 7</li>
+            <li>Same endpoint name in two workspaces is two unrelated rows — the demo's "same name, two teams"</li>
           </ul>
         </div>
         <div class="panel">
