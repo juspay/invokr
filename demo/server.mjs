@@ -45,8 +45,14 @@ const MIME = {
 };
 
 let provisioned = null; // filled by bootstrap
-let worker = null; // { child, pid, startedAt }
-let workerState = "stopped"; // stopped | running | killed
+
+// A small pool, because one worker cannot show contention. Each entry is
+// { child, pid, workerId, startedAt }. `workerId` is scraped from the worker's
+// own startup log so the page can put a claimed job into the box belonging to
+// the worker that actually claimed it — executions carry that same id.
+const workers = [];
+const MAX_WORKERS = 3;
+let lastExit = null;
 
 // ─── worker lifecycle ────────────────────────────────────────────────────────
 
@@ -65,41 +71,66 @@ function workerCommand() {
 }
 
 function startWorker() {
-  if (worker) return { ok: true, already: true };
+  if (workers.length >= MAX_WORKERS) {
+    return { ok: false, error: `already running ${workers.length} workers` };
+  }
   const { cmd, args } = workerCommand();
+  // Each worker needs its own metrics port, or the second one dies on bind.
+  const metricsPort = String(Number(process.env.INVOKR_METRICS_PORT ?? 9090) + workers.length);
   const child = spawn(cmd, args, {
     cwd: REPO,
-    env: { ...process.env, INVOKR_METRICS_PORT: process.env.INVOKR_METRICS_PORT ?? "9090" },
+    env: {
+      // A worker's pool defaults to 50 connections. Three of those plus the API
+      // is more than a stock PostgreSQL (max_connections = 100) will give out,
+      // and the first thing to fail is pg_cron — which is scene 5. The demo
+      // needs a handful of connections, so ask for a handful.
+      INVOKR_DB_POOL_SIZE: "8",
+      INVOKR_WORKER_MAX_CONCURRENT: "4",
+      ...process.env,
+      INVOKR_METRICS_PORT: metricsPort,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  worker = { child, pid: child.pid, startedAt: Date.now() };
-  workerState = "running";
 
-  const tag = (buf) => {
-    const line = buf.toString().trim();
-    if (line) console.log(`[worker] ${line.split("\n").slice(-1)[0].slice(0, 200)}`);
+  const entry = { child, pid: child.pid, workerId: null, startedAt: Date.now() };
+  workers.push(entry);
+
+  const read = (buf) => {
+    const text = buf.toString();
+    // "Worker polling started" carries the id this process will stamp on every
+    // execution it claims.
+    const match = text.match(/"worker_id":"(worker_[0-9a-f]+)"/);
+    if (match) {
+      entry.workerId = match[1];
+      console.log(`[worker ${entry.pid}] ${match[1]}`);
+    }
   };
-  child.stdout.on("data", tag);
-  child.stderr.on("data", tag);
+  child.stdout.on("data", read);
+  child.stderr.on("data", read);
   child.on("exit", (code, signal) => {
-    console.log(`[worker] exited code=${code} signal=${signal}`);
-    worker = null;
-    if (workerState !== "killed") workerState = "stopped";
+    const i = workers.indexOf(entry);
+    if (i >= 0) workers.splice(i, 1);
+    lastExit = { pid: entry.pid, code, signal, at: Date.now() };
+    console.log(`[worker ${entry.pid}] exited code=${code} signal=${signal}`);
   });
+
   return { ok: true, pid: child.pid };
 }
 
 // SIGKILL, deliberately. A graceful stop drains in-flight work and proves
 // nothing; SIGKILL aborts the transaction holding the claim, which is the
-// behaviour scene 3 is about.
-function killWorker() {
-  if (!worker) return { ok: false, error: "worker is not running" };
-  const pid = worker.pid;
-  workerState = "killed";
-  worker.child.kill("SIGKILL");
-  worker = null;
-  return { ok: true, pid, signal: "SIGKILL" };
+// behaviour scene 3 is about. With no pid it kills the newest worker.
+function killWorker(pid) {
+  const entry = pid ? workers.find((w) => String(w.pid) === String(pid)) : workers[workers.length - 1];
+  if (!entry) return { ok: false, error: "no such worker is running" };
+  entry.child.kill("SIGKILL");
+  const i = workers.indexOf(entry);
+  if (i >= 0) workers.splice(i, 1);
+  return { ok: true, pid: entry.pid, workerId: entry.workerId, signal: "SIGKILL" };
 }
+
+const workerSnapshot = () =>
+  workers.map((w) => ({ pid: w.pid, workerId: w.workerId, startedAt: w.startedAt }));
 
 // ─── probes ──────────────────────────────────────────────────────────────────
 
@@ -206,7 +237,9 @@ async function handleControl(req, res, url) {
     return send(res, 200, {
       api,
       mock,
-      worker: { state: worker ? "running" : workerState, pid: worker?.pid ?? null, managed: AUTO_WORKER },
+      workers: workerSnapshot(),
+      maxWorkers: MAX_WORKERS,
+      lastExit,
       transports: { kafka, redis, features: WORKER_FEATURES },
       provisioned,
       dashboardUrl: DASHBOARD_URL,
@@ -216,7 +249,9 @@ async function handleControl(req, res, url) {
     });
   }
 
-  if (path === "/worker/kill" && req.method === "POST") return send(res, 200, killWorker());
+  if (path === "/worker/kill" && req.method === "POST") {
+    return send(res, 200, killWorker(url.searchParams.get("pid")));
+  }
   if (path === "/worker/start" && req.method === "POST") return send(res, 200, startWorker());
 
   if (path === "/mock/reset" && req.method === "POST") {
@@ -303,10 +338,7 @@ const server = createServer(async (req, res) => {
 // ─── startup ─────────────────────────────────────────────────────────────────
 
 const shutdown = () => {
-  if (worker) {
-    workerState = "killed";
-    worker.child.kill("SIGTERM");
-  }
+  for (const w of workers) w.child.kill("SIGTERM");
   process.exit(0);
 };
 process.on("SIGINT", shutdown);
@@ -329,8 +361,10 @@ server.listen(PORT, async () => {
 
   if (AUTO_WORKER) {
     const { cmd } = workerCommand();
-    console.log(`  worker ${cmd}${WORKER_FEATURES ? ` (features: ${WORKER_FEATURES})` : ""}`);
+    // Two, so the stage can show one worker taking a job and the other not.
     startWorker();
+    startWorker();
+    console.log(`  workers 2 × ${cmd}${WORKER_FEATURES ? ` (features: ${WORKER_FEATURES})` : ""}`);
   }
   console.log("");
 });

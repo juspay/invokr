@@ -50,41 +50,82 @@ orphaned in scene 3 and quietly undo the point.
 
 ---
 
+## The stage
+
+The page is one picture, borrowed from the way the JavaScript event loop gets
+explained at conferences. A job is a **token** — a small card with a real name
+on it — and it moves:
+
+```
+your app → PostgreSQL ─ not due yet ─┐   → workers → the other side → done
+                       └─ due now ───┘        ↑
+                                      one takes it, the rest skip the locked row
+```
+
+Everything you would otherwise have to say out loud is something the room can
+watch instead:
+
+| What you want them to understand | What they see |
+|---|---|
+| The job is safe the moment Invokr answers | the token lands in the queue before anything else happens |
+| A delayed job is a row, not a timer | it sits in **not due yet** with the seconds ticking on its face |
+| Exactly one worker gets it | it flies into one worker's box; the others say *skipped — locked* |
+| Retry with backoff | it flies **back** to the queue, amber, counting down to the next try |
+| Crashes don't lose work | kill every worker and the token is still there, still counting |
+| pg_cron schedules from inside the database | a token appears in the queue that nobody put there |
+
+Text is deliberately thin: a title, one line, and a two-line ticker under the
+stage. The numbers (durations, attempt rows, raw JSON) live in the **details**
+drawer — press `D`, or the button at the bottom right.
+
 ## The scenes
 
 Every scene fires a real job with whatever is in its form, so the room can hand
-you a name and an order number and you type them in. Nothing is scripted except
-the narration.
+you a name and an order number and you type them in.
 
 | # | Scene | Runs for | What you can change |
 |---|-------|----------|---------------------|
-| 1 | Tell Invokr where to deliver | ~1s | — |
-| 2 | Send it now | ~1s | customer, email, order |
-| 3 | **Send it later — then pull the plug** | your delay + a few s | customer, email, order, delay |
+| 1 | Tell it where to deliver | ~1s | — |
+| 2 | Send one now | ~1s | customer, email, order |
+| 3 | **Send one later — then kill a worker** | your delay + a few s | customer, email, order, delay |
 | 4 | When the other side breaks | ~7s | order, amount |
 | 5 | Every minute, forever | up to 60s | — |
-| 6 | Somewhere other than HTTP | ~3s | order |
+| 6 | Not just HTTP | ~3s | order |
 | 7 | Two teams, one name | ~2s | customer, order |
-| 8 | Hand over to the real thing | — | — |
+| 8 | Hand over | — | — |
 
 **Scenes 1–5 are the run and should always be shown. 6–8 are overflow** — show
 them if you are ahead of the clock, drop them if you are not.
 
+### Workers are real processes, and you can kill them
+
+`just demo` starts **two** workers, so the stage can show one taking a job while
+the other skips it. Scenes 2 and 3 have **Add a worker** (up to three) and
+**Kill a worker** — a real `SIGKILL` to a real process, which is what makes
+scene 3 worth doing: kill both, watch the job keep counting down with nobody
+left to run it, start a fresh one, and it goes out on time.
+
+The worker boxes are labelled with each process's own worker id, scraped from
+its startup log, and a claimed job lands in the box of the worker that actually
+claimed it — the same id Invokr wrote on the execution row.
+
+Spawned workers get `INVOKR_DB_POOL_SIZE=8` and `INVOKR_WORKER_MAX_CONCURRENT=4`.
+The defaults (50 connections each) exhaust a stock PostgreSQL's 100 once you run
+two of them alongside the API, and the first thing to break is pg_cron — which
+is scene 5.
+
 ### Both sides of every delivery
 
-The target is `invokr-mock-server`, and it is no longer a silent echo. It prints
-a sentence for every request it handles — "Sent the welcome email to Priya
+The target is `invokr-mock-server`, and it is not a silent echo. It prints a
+sentence for every request it handles — "Sent the welcome email to Priya
 <priya@example.com> about order-1234, from noreply@payments.invokr.internal" —
-to its own terminal, and keeps the last 200 at `GET /_log`.
+to its own terminal, and keeps the last 200 at `GET /_log`. The panel on the
+right shows those lines as they arrive, so the room gets the receiving end's
+account next to Invokr's.
 
-The demo page reads that log and shows it next to Invokr's account of the same
-delivery. So the room gets two independent stories that have to agree, rather
-than one system's word for it. In scene 4 this is the whole point: the payment
-processor's log shows three tries carrying **one** de-duplication key, which is
-the honest answer to "would a retry charge the card twice?".
-
-The raw request and response are still there, behind **Show the raw request and
-response** under each scene, for whoever wants to audit the JSON.
+In scene 4 that is the whole point: the payment processor's log shows three
+tries carrying **one** de-duplication key, which is the honest answer to "would
+a retry charge the card twice?".
 
 ### Scene 5 and the one-minute wait
 
@@ -154,16 +195,16 @@ take can't clobber a good one.
 
 1. `just demo`, then run scenes 1 through 5 live with the values you plan to
    use. This re-records them and warms every code path.
-2. Check the header chips are green: Invokr, worker, email service.
+2. Check the header chips are green (Invokr, target) and the footer says two workers.
 3. Cancel any schedule left running from scene 5.
 4. Open the deck in a second tab or window (`http://localhost:4173/deck`), press
    `F` for full screen, `N` if you want speaker notes.
 5. Decide now whether you are showing scenes 6–8, and configure the brokers and
    dashboard URL if so. Deciding live costs you a minute you do not have.
 
-**If a live scene fails in the room:** the timeline says so and suggests replay.
+**If a live scene fails in the room:** the ticker says so and suggests replay.
 Flip the toggle, re-run the scene, carry on. Do not debug in front of the room —
-the recording makes the same point.
+the recording makes the same point, at the same speed.
 
 ---
 
@@ -176,8 +217,9 @@ demo/
   bootstrap.mjs       idempotent provisioning (upserts, so re-running upgrades an
                       existing demo database)
   public/
-    index.html        the demo page
-    app.js            scene engine — scenes emit events, one renderer draws them, replay reuses it
+    index.html        the stage and its zones
+    app.js            token engine + scenes — scenes emit events, one renderer draws them,
+                      replay reuses it
     styles.css
     deck.html         the deck, self-contained
   recordings/         captured event tapes, one per scene

@@ -1,13 +1,14 @@
 // Invokr live demo.
 //
-// One rule holds the whole thing together: a scene's `run()` never touches the
-// DOM. It only emits events, and `apply(event)` draws them. That is what makes
-// replay honest — a recorded run replays through the same renderer, at the
-// timings it really had, with nothing re-simulated.
+// The stage is the explanation. A job is a physical token: it is born in your
+// app, lands in the queue, waits there if it is not due, gets taken by exactly
+// one worker, reaches the other side, and either finishes or flies back to the
+// queue with a countdown on it. Nothing about that is narrated in prose,
+// because watching it happen is faster than reading about it.
 //
-// The second rule is about tone. Every scene fires a real job with whatever the
-// room just suggested, and the page narrates it in sentences. The JSON is still
-// there, one click down, for whoever wants to audit it.
+// One rule underneath: a scene's `run()` never touches the DOM. It only emits
+// events, and `apply(event)` draws them — which is what lets a recorded run
+// replay through the same renderer at the timings it really had.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -18,23 +19,16 @@ const state = {
   recording: true,
   ran: new Set(),
   run: null,
-  values: {}, // per-scene form values, so they survive re-renders
+  values: {},
 };
-
-// ─── words and numbers ───────────────────────────────────────────────────────
 
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-const ms = (n) => (n == null ? "—" : n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(2)}s`);
-
+const ms = (n) => (n == null ? "—" : n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(1)}s`);
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const short = (id) => (id ? String(id).replace("worker_", "").slice(0, 6) : "—");
 
-const short = (id) => (id ? `${String(id).slice(0, 8)}…` : "—");
-
-// Secrets resolve inside the worker and go only to the target. Mask them on the
-// way to the screen and on the way to disk — a recording made against a real
-// Invokr must not keep a live credential.
 const maskSecrets = (text) =>
   String(text).replace(/(\\?"authorization\\?"\s*:\s*\\?")([^"\\]*)/gi, "$1Bearer ••••••••");
 
@@ -47,39 +41,193 @@ function highlightJson(value) {
     .replace(/\{\{execution\.[^}]+\}\}/g, (m) => `<span class="tok-exec">${m}</span>`);
 }
 
-const card = (title, meta, bodyHtml, { tight = false, scroll = false } = {}) => `
-  <div class="card">
-    <h3>${esc(title)}${meta ? `<span class="meta">${esc(meta)}</span>` : ""}</h3>
-    <div class="body${tight ? " tight" : ""}${scroll ? " scroll" : ""}">${bodyHtml}</div>
-  </div>`;
+// ─── the board ───────────────────────────────────────────────────────────────
 
-// ─── the journey strip ───────────────────────────────────────────────────────
+const BOARD = { w: 1420, h: 620 };
+const TOKEN = { w: 128, h: 34, gap: 8 };
 
-const journey = {
-  set(hop, cls, said) {
-    const el = document.getElementById(`hop-${hop}`);
-    if (!el) return;
-    el.classList.remove("active", "done", "fail", "gone", "flowing");
-    if (cls) el.classList.add(cls);
-    if (said !== undefined) {
-      const s = document.getElementById(`said-${hop}`);
-      if (s) s.textContent = said ?? "";
-    }
-  },
-  flow(hop) {
-    document.getElementById(`hop-${hop}`)?.classList.add("flowing");
-  },
-  target(who, what) {
-    const w = document.getElementById("who-target");
-    const t = document.getElementById("what-target");
-    if (w && who) w.textContent = who;
-    if (t && what) t.textContent = what;
-  },
-  reset() {
-    for (const h of ["you", "api", "db", "worker", "target"]) this.set(h, null, "");
-    this.target("The email service", "someone else's system");
-  },
+// One source of truth for where everything sits. The DOM gets these numbers at
+// boot; token layout reads the same rectangles.
+const ZONES = {
+  app: { x: 14, y: 54, w: 190, h: 530, pad: 14, top: 32, cols: 1 },
+  db: { x: 238, y: 54, w: 424, h: 530 },
+  waiting: { x: 260, y: 92, w: 380, h: 234, pad: 12, top: 28, cols: 2 },
+  ready: { x: 260, y: 352, w: 380, h: 214, pad: 12, top: 28, cols: 2 },
+  workers: { x: 700, y: 54, w: 312, h: 530 },
+  target: { x: 1048, y: 54, w: 250, h: 530, pad: 14, top: 32, cols: 1 },
+  done: { x: 1320, y: 54, w: 92, h: 530, pad: 6, top: 30, cols: 1 },
 };
+
+const workerRect = (i) => ({ x: 718, y: 92 + i * 142, w: 276, h: 122, pad: 12, top: 30, cols: 1 });
+
+function place(el, r) {
+  el.style.left = `${r.x}px`;
+  el.style.top = `${r.y}px`;
+  el.style.width = `${r.w}px`;
+  el.style.height = `${r.h}px`;
+}
+
+function layoutBoard() {
+  place($("#z-app"), ZONES.app);
+  place($("#z-db"), ZONES.db);
+  place($("#z-waiting"), ZONES.waiting);
+  place($("#z-ready"), ZONES.ready);
+  place($("#z-workers"), ZONES.workers);
+  place($("#z-target"), ZONES.target);
+  place($("#z-done"), ZONES.done);
+
+  const arrow = $("#drop-arrow");
+  arrow.style.left = `${ZONES.waiting.x + ZONES.waiting.w / 2 - 6}px`;
+  arrow.style.top = `${ZONES.waiting.y + ZONES.waiting.h + 2}px`;
+}
+
+// Scale the fixed board into whatever space the window gives it.
+function fitBoard() {
+  const stage = $(".stage");
+  const board = $("#board");
+  const k = Math.min(
+    (stage.clientWidth - 28) / BOARD.w,
+    (stage.clientHeight - 16) / BOARD.h,
+    1.15,
+  );
+  board.style.transform = `scale(${Math.max(0.3, k)})`;
+}
+
+// ─── workers on the board ────────────────────────────────────────────────────
+
+const workerBoxes = new Map(); // workerId -> element
+
+function renderWorkers(list) {
+  const host = $("#workers");
+  const wanted = new Map((list ?? []).filter((w) => w.workerId).map((w) => [w.workerId, w]));
+
+  for (const [id, el] of workerBoxes) {
+    if (!wanted.has(id)) {
+      el.remove();
+      workerBoxes.delete(id);
+    }
+  }
+  host.parentElement.querySelector("#z-workers").classList.toggle("vacant", wanted.size === 0);
+
+  let i = 0;
+  for (const [id, w] of wanted) {
+    let el = workerBoxes.get(id);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "worker";
+      el.innerHTML = `<span class="who"></span><span class="state"></span>`;
+      host.appendChild(el);
+      workerBoxes.set(id, el);
+    }
+    el.querySelector(".who").textContent = short(id);
+    el.dataset.index = String(i);
+    place(el, workerRect(i));
+    i++;
+  }
+  relayoutTokens();
+}
+
+// A claim can name a worker the page has not been told about yet.
+function ensureWorkerBox(workerId) {
+  if (!workerId || workerBoxes.has(workerId)) return;
+  const list = [...workerBoxes.keys()].map((id) => ({ workerId: id }));
+  list.push({ workerId });
+  renderWorkers(list);
+}
+
+function setWorkerState(workerId, cls, label) {
+  const el = workerBoxes.get(workerId);
+  if (!el) return;
+  el.classList.remove("busy", "skipped", "dead");
+  if (cls) el.classList.add(cls);
+  el.querySelector(".state").textContent = label ?? "";
+}
+
+// ─── tokens ──────────────────────────────────────────────────────────────────
+
+const tokens = new Map(); // id -> { el, zone, order }
+let tokenSeq = 0;
+
+function tokenRect(zone) {
+  if (zone.startsWith("worker:")) {
+    const el = workerBoxes.get(zone.slice(7));
+    return el ? workerRect(Number(el.dataset.index)) : ZONES.ready;
+  }
+  // "some worker has it, we did not catch which": sits under the boxes.
+  if (zone === "workers") {
+    const below = workerRect(Math.max(workerBoxes.size, 1));
+    return { ...ZONES.workers, y: below.y - 14, top: 0, pad: 18, cols: 1 };
+  }
+  return ZONES[zone] ?? ZONES.ready;
+}
+
+function relayoutTokens() {
+  const byZone = new Map();
+  for (const [id, t] of tokens) {
+    if (!byZone.has(t.zone)) byZone.set(t.zone, []);
+    byZone.get(t.zone).push([id, t]);
+  }
+
+  for (const [zone, list] of byZone) {
+    const r = tokenRect(zone);
+    const cols = r.cols ?? 1;
+    list.sort((a, b) => a[1].order - b[1].order);
+    list.forEach(([, t], i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = r.x + (r.pad ?? 12) + col * (TOKEN.w + TOKEN.gap);
+      const y = r.y + (r.top ?? 26) + row * (TOKEN.h + TOKEN.gap);
+      t.el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    });
+  }
+}
+
+function setToken({ id, zone, state: tokenState, label, note }) {
+  let t = tokens.get(id);
+  if (!t) {
+    const el = document.createElement("div");
+    el.className = "token born";
+    el.innerHTML = `<span class="who"></span><span class="note"></span>`;
+    $("#tokens").appendChild(el);
+    t = { el, zone: zone ?? "app", order: tokenSeq++ };
+    tokens.set(id, t);
+    // Put it in place before it is allowed to be seen, so the first move reads
+    // as a move and not as a flash.
+    relayoutTokens();
+    requestAnimationFrame(() => el.classList.remove("born"));
+  }
+
+  if (label !== undefined) t.el.querySelector(".who").textContent = label;
+  if (note !== undefined) t.el.querySelector(".note").textContent = note;
+
+  if (tokenState !== undefined) {
+    t.el.classList.remove("waiting", "ready", "running", "ok", "bad");
+    if (tokenState) t.el.classList.add(tokenState);
+  }
+
+  if (zone && zone !== t.zone) {
+    if (zone.startsWith("worker:")) ensureWorkerBox(zone.slice(7));
+    t.zone = zone;
+    t.el.classList.toggle("shrink", zone === "done");
+    relayoutTokens();
+  }
+}
+
+function clearTokens() {
+  for (const [, t] of tokens) t.el.remove();
+  tokens.clear();
+  tokenSeq = 0;
+}
+
+function flashZone(zone, cls) {
+  const el = zone === "target" ? $("#z-target") : null;
+  if (!el) return;
+  el.classList.remove("hit", "refused");
+  if (cls) {
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), 900);
+  }
+}
 
 // ─── transport ───────────────────────────────────────────────────────────────
 
@@ -107,12 +255,10 @@ const control = async (path, method = "POST") => {
 
 const sleep = (t) => new Promise((r) => setTimeout(r, t));
 
-/// Where the target's log is right now, so a scene only shows what it caused.
 async function targetLogHead() {
   try {
     const res = await fetch("/control/mock/log?limit=1");
-    const data = (await res.json())?.data ?? [];
-    return data[0]?.seq ?? 0;
+    return ((await res.json())?.data ?? [])[0]?.seq ?? 0;
   } catch {
     return 0;
   }
@@ -136,9 +282,9 @@ class Run {
     apply(this.scene, ev);
   }
 
-  /// A sentence for the room, with the mechanism underneath it for the engineers.
-  say(text, { tone = "", mech = "" } = {}) {
-    this.emit("beat", { text, tone, mech });
+  /// One short line. The stage has already said most of it.
+  tick(text, tone = "") {
+    this.emit("tick", { text, tone });
   }
 
   async save(ok) {
@@ -148,11 +294,7 @@ class Run {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: maskSecrets(
-          JSON.stringify({
-            scene: this.scene.id,
-            recorded_at: new Date().toISOString(),
-            events: this.events,
-          }),
+          JSON.stringify({ scene: this.scene.id, recorded_at: new Date().toISOString(), events: this.events }),
         ),
       });
       const known = state.status?.recordings;
@@ -166,153 +308,130 @@ class Run {
 // ─── the one renderer ────────────────────────────────────────────────────────
 
 function apply(scene, ev) {
-  const els = scene._els ?? {};
-
   switch (ev.type) {
-    case "beat":
-      addBeat(ev.t, ev.text, ev.tone, ev.mech);
+    case "token":
+      setToken(ev);
       break;
 
-    case "req":
-      if (els.request) els.request.innerHTML = `<pre>${highlightJson(ev.body ?? {})}</pre>`;
+    case "clear":
+      clearTokens();
       break;
 
-    case "res":
-      if (els.response) els.response.innerHTML = `<pre>${highlightJson(ev.body ?? {})}</pre>`;
+    case "workers":
+      renderWorkers(ev.list);
       break;
 
-    case "hop":
-      journey.set(ev.hop, ev.state, ev.said);
-      if (ev.flow) journey.flow(ev.flow);
+    case "worker":
+      setWorkerState(ev.workerId, ev.cls, ev.label);
+      break;
+
+    case "flash":
+      flashZone(ev.zone, ev.cls);
+      break;
+
+    case "cron":
+      $("#cron-badge").classList.toggle("tick", !!ev.on);
+      break;
+
+    case "drop":
+      $("#drop-arrow").classList.toggle("on", !!ev.on);
       break;
 
     case "target-is":
-      journey.target(ev.who, ev.what);
+      $("#target-label").textContent = ev.who;
       break;
 
-    case "said":
-      addSaid(els, ev.entries);
+    case "tick": {
+      // Two lines, not one: a claim and its answer can land 8ms apart, and a
+      // single line would swallow the first before anyone read it.
+      const el = $("#ticker");
+      const t = ev.t < 1000 ? `${ev.t}ms` : `${(ev.t / 1000).toFixed(1)}s`;
+      const prev = el.querySelector(".line.now");
+      if (prev) {
+        prev.classList.remove("now");
+        prev.classList.add("was");
+      }
+      el.querySelectorAll(".line.was").forEach((n, i, all) => {
+        if (i < all.length - 1) n.remove();
+      });
+      const line = document.createElement("span");
+      line.className = `line now ${ev.tone ?? ""}`;
+      line.innerHTML = `<span class="t">${t}</span><span>${ev.text}</span>`;
+      el.appendChild(line);
       break;
+    }
 
-    case "exec":
-      if (els.exec) els.exec.innerHTML = execFacts(ev);
+    case "receipt":
+      addReceipts(ev.entries);
       break;
 
     case "tries":
-      if (els.tries) els.tries.innerHTML = triesTable(ev.attempts);
+      $("#p-tries").innerHTML = triesTable(ev.attempts);
       break;
 
-    case "countdown":
-      if (els.countdown) {
-        const late = ev.remaining <= 0;
-        els.countdown.innerHTML = `<div class="countdown ${late ? "late" : ""}">
-          <div class="n">${late ? "now" : (ev.remaining / 1000).toFixed(1)}</div>
-          <div class="cap">${esc(ev.label ?? "")}</div>
-        </div>`;
-      }
+    case "req":
+      $("#p-request").innerHTML = `<pre>${highlightJson(ev.body ?? {})}</pre>`;
+      break;
+
+    case "res":
+      $("#p-response").innerHTML = `<pre>${highlightJson(ev.body ?? {})}</pre>`;
       break;
 
     case "panel":
-      scene.panel?.(ev.key, ev.data, els);
-      break;
-
-    case "flag":
-      if (ev.key === "worker") {
-        setChip("chip-worker", ev.value === "running" ? "up" : "down", `worker ${ev.value}`);
-      }
+      scene.panel?.(ev.key, ev.data);
       break;
   }
 }
 
-function addBeat(t, html, tone = "", mech = "") {
-  const story = $("#story");
-  if (!story) return;
-  story.querySelector(".empty")?.remove();
-  const row = document.createElement("div");
-  row.className = `beat ${tone}`;
-  row.innerHTML = `<span class="t">+${t < 1000 ? `${t}ms` : `${(t / 1000).toFixed(2)}s`}</span>
-    <span class="m">${html}${mech ? `<span class="mech">${mech}</span>` : ""}</span>`;
-  story.appendChild(row);
-  story.scrollTop = story.scrollHeight;
-}
-
-function addSaid(els, entries) {
-  if (!els.said || !entries?.length) return;
-  els.said.querySelector(".empty")?.remove();
+function addReceipts(entries) {
+  const host = $("#receipts");
+  if (!entries?.length) return;
+  host.querySelector(".empty")?.remove();
   for (const e of entries) {
     const row = document.createElement("div");
-    row.className = `said-row ${e.ok ? "" : "bad"}`;
+    row.className = `receipt ${e.ok ? "" : "bad"}`;
     row.innerHTML = `<span class="mark">${e.ok ? "✓" : "!"}</span>
       <div>
         <div class="line">${esc(e.summary)}</div>
-        <div class="sub">${esc(clock(e.at))} · ${esc(e.method)} ${esc(e.path)} → ${e.status}${
-          e.idempotency_key ? ` · key ${esc(e.idempotency_key)}` : ""
-        }${e.authenticated ? " · authenticated" : ""}</div>
+        <div class="sub">${esc(clock(e.at))} · ${e.status}${e.idempotency_key ? ` · ${esc(e.idempotency_key)}` : ""}</div>
       </div>`;
-    els.said.appendChild(row);
+    host.appendChild(row);
   }
-  els.said.scrollTop = els.said.scrollHeight;
+  host.scrollTop = host.scrollHeight;
+  $("#receipts-meta").textContent = `${host.querySelectorAll(".receipt").length} received`;
 }
 
-function execFacts(ev) {
-  const cls = { SUCCESS: "ok", FAILED: "bad", RUNNING: "run", RETRYING: "wait", CANCELLED: "bad" }[ev.status] ?? "wait";
-  const human = {
-    QUEUED: "waiting for a worker",
-    PENDING: "waiting for its time",
-    RUNNING: "being delivered",
-    RETRYING: "backing off before the next try",
-    SUCCESS: "delivered",
-    FAILED: "gave up",
-    CANCELLED: "cancelled",
-  }[ev.status] ?? ev.status;
-
-  return `<dl class="facts">
-    <dt>right now</dt><dd><span class="pill ${cls}">${esc(human)}</span></dd>
-    <dt>tries used</dt><dd>${ev.attempt_count ?? 0} of ${ev.max_attempts ?? "—"}</dd>
-    ${ev.run_at ? `<dt>due at</dt><dd>${esc(clock(ev.run_at))}</dd>` : ""}
-    ${ev.worker_id ? `<dt>worker</dt><dd class="id">${esc(short(ev.worker_id.replace("worker_", "")))}</dd>` : ""}
-    <dt>execution</dt><dd class="id">${esc(short(ev.execution_id))}</dd>
-  </dl>`;
+function clearReceipts() {
+  $("#receipts").innerHTML = `<span class="empty">nothing yet</span>`;
+  $("#receipts-meta").textContent = "";
 }
 
 function triesTable(attempts) {
-  if (!attempts?.length) return `<div class="body"><span class="empty">Nothing tried yet.</span></div>`;
-  const rows = attempts
-    .map((a) => {
-      const ok = a.status === "SUCCESS";
-      const said = ok
-        ? `answered ${a.output?.status_code ?? 200}`
-        : `${a.error?.status_code ? `answered ${a.error.status_code}` : (a.error?.type ?? "failed").toLowerCase()}`;
-      return `<tr>
-        <td class="num">${a.attempt_number}</td>
-        <td>${ok ? '<span class="pill ok">worked</span>' : '<span class="pill bad">failed</span>'}</td>
-        <td class="num">${ms(a.duration_ms)}</td>
-        <td class="num">${a.gap_ms != null ? ms(a.gap_ms) : "—"}<span class="sub">${
-          a.gap_ms != null ? "waited before this try" : "went straight out"
-        }</span></td>
-        <td>${esc(said)}<span class="sub">${esc(
-          String(ok ? "" : a.error?.message ?? "").slice(0, 90),
-        )}</span></td>
-      </tr>`;
-    })
-    .join("");
+  if (!attempts?.length) return `<span class="empty">nothing yet</span>`;
   return `<table>
-    <thead><tr><th>try</th><th></th><th>took</th><th>waited</th><th>the other side</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
+    <thead><tr><th>try</th><th></th><th>took</th><th>waited first</th></tr></thead>
+    <tbody>${attempts
+      .map(
+        (a) => `<tr>
+          <td class="num">${a.attempt_number}</td>
+          <td>${a.status === "SUCCESS" ? '<span class="pill ok">worked</span>' : '<span class="pill bad">failed</span>'}</td>
+          <td class="num">${ms(a.duration_ms)}</td>
+          <td class="num">${a.gap_ms != null ? ms(a.gap_ms) : "—"}</td>
+        </tr>`,
+      )
+      .join("")}</tbody></table>`;
 }
 
-// ─── watching a real execution ───────────────────────────────────────────────
+// ─── watching one real execution, as motion ──────────────────────────────────
 
-// Polls Invokr the way an operator would, and emits only when something
-// actually changed. Also tails the target's own log so the room sees both
-// accounts of the same delivery.
-async function watchExecution(run, executionId, { ws = "a", timeout = 90000, targetSince = 0, who = "" } = {}) {
+async function watchExecution(run, executionId, opts = {}) {
+  const { ws = "a", timeout = 90000, targetSince = 0, token, label } = opts;
   const started = performance.now();
-  let lastStatus = null;
   let seenAttempts = 0;
   let claimedAttempt = 0;
   let announcedRetry = 0;
   let logSeq = targetSince;
+  let lastStatus = null;
 
   const tailTarget = async () => {
     try {
@@ -320,13 +439,7 @@ async function watchExecution(run, executionId, { ws = "a", timeout = 90000, tar
       const entries = ((await res.json())?.data ?? []).slice().reverse();
       if (entries.length) {
         logSeq = Math.max(logSeq, ...entries.map((e) => e.seq));
-        run.emit("said", { entries });
-        const last = entries[entries.length - 1];
-        run.emit("hop", {
-          hop: "target",
-          state: last.ok ? "done" : "fail",
-          said: last.ok ? "handled it" : "refused it",
-        });
+        run.emit("receipt", { entries });
       }
     } catch {
       /* the target's log is a nicety, never a dependency */
@@ -334,85 +447,65 @@ async function watchExecution(run, executionId, { ws = "a", timeout = 90000, tar
   };
 
   while (performance.now() - started < timeout && !run.cancelled) {
-    const res = await api("GET", `/v1/executions/${executionId}`, { ws });
-    const exec = res.body?.data;
+    const exec = (await api("GET", `/v1/executions/${executionId}`, { ws })).body?.data;
 
     if (exec) {
-      // Held until this poll's attempt rows are out, so the failure is on
-      // screen before the backoff that follows from it.
-      //
+      if (exec.status !== lastStatus) lastStatus = exec.status;
+
       // Keyed on attempt_count, not on a status change: a try that takes 5ms is
-      // RETRYING again before the next poll, so RUNNING is never observed and
-      // the second backoff — the interesting one, since it is the doubling —
-      // would otherwise go unmentioned.
+      // back to RETRYING before the next poll, so RUNNING is never observed.
       let pendingRetry = null;
       if (exec.status === "RETRYING" && exec.run_at && exec.attempt_count > announcedRetry) {
         announcedRetry = exec.attempt_count;
         pendingRetry = exec;
       }
-      if (exec.status !== lastStatus) {
-        lastStatus = exec.status;
-        run.emit("exec", {
-          execution_id: exec.execution_id,
-          status: exec.status,
-          attempt_count: exec.attempt_count,
-          max_attempts: exec.max_attempts,
-          worker_id: exec.worker_id,
-          run_at: exec.run_at,
-        });
-      }
 
-      // attempt_count is bumped by the claiming UPDATE, so a rise in it is the
-      // edge to watch — RUNNING is usually over before the next poll lands.
-      // Called from the attempts loop too: an attempt row can surface in the
-      // same poll whose execution snapshot was read a moment too early, and the
-      // pick-up must never be narrated after the try it produced.
+      // The claim: the token moves into the box of the worker that took it, and
+      // every other worker briefly shows what it did instead — skip the locked
+      // row and move on.
       const claim = (n) => {
         if (n <= claimedAttempt) return;
         claimedAttempt = n;
-        run.emit("hop", { hop: "db", state: "done", said: "handed it over", flow: "db" });
-        run.emit("hop", {
-          hop: "worker",
-          state: "active",
-          said: exec.worker_id ? exec.worker_id.replace("worker_", "").slice(0, 8) : "picked it up",
-        });
-        run.say(`A worker <b>picked it up</b>${who ? ` for ${esc(who)}` : ""}.`, {
-          tone: "act",
-          mech: "Exactly one worker can hold it — SELECT FOR UPDATE SKIP LOCKED, inside the transaction.",
-        });
+        const wid = exec.worker_id;
+        if (wid) {
+          run.emit("worker", { workerId: wid, cls: "busy", label: "holding it" });
+          for (const other of workerBoxes.keys()) {
+            if (other !== wid) run.emit("worker", { workerId: other, cls: "skipped", label: "skipped — locked" });
+          }
+        }
+        run.emit("token", { id: token, zone: wid ? `worker:${wid}` : "workers", state: "running", note: "taken" });
+        run.tick(
+          wid
+            ? `worker <b>${esc(short(wid))}</b> took it — the others skipped the locked row`
+            : "<b>one worker</b> took it — the others skipped the locked row",
+          "act",
+        );
       };
       claim(exec.attempt_count);
 
       const attempts = (await api("GET", `/v1/executions/${executionId}/attempts`, { ws })).body?.data ?? [];
       if (attempts.length !== seenAttempts) {
         const ordered = [...attempts].sort((a, b) => a.attempt_number - b.attempt_number);
-        // The real gap between one try finishing and the next starting: the
-        // backoff that happened, not the one the policy asked for.
         for (let i = 1; i < ordered.length; i++) {
           ordered[i].gap_ms = new Date(ordered[i].started_at) - new Date(ordered[i - 1].completed_at);
         }
         for (const a of ordered.slice(seenAttempts)) {
           claim(a.attempt_number);
           const ok = a.status === "SUCCESS";
-          run.emit("hop", {
-            hop: "worker",
-            state: "done",
-            said: `delivered in ${ms(a.duration_ms)}`,
-            flow: "worker",
+          run.emit("token", {
+            id: token,
+            zone: "target",
+            state: ok ? "ok" : "bad",
+            note: ok ? `${a.output?.status_code ?? 200} · ${ms(a.duration_ms)}` : `${a.error?.status_code ?? "no answer"}`,
           });
-          if (ok) {
-            run.say(
-              `The other side answered <b>${a.output?.status_code ?? 200} OK</b> in ${ms(a.duration_ms)}.`,
-              { tone: "ok", mech: `Try ${a.attempt_number}, recorded with its duration and its response body.` },
-            );
-          } else {
-            run.say(
-              `Try ${a.attempt_number} <b>failed</b> — ${esc(
-                a.error?.status_code ? `it answered ${a.error.status_code}` : (a.error?.type ?? "no answer").toLowerCase(),
-              )}.`,
-              { tone: "bad", mech: "The failure is a row, not a log line: kept with its body and its duration." },
-            );
-          }
+          run.emit("flash", { zone: "target", cls: ok ? "hit" : "refused" });
+          run.tick(
+            ok
+              ? `the other side answered <b>${a.output?.status_code ?? 200}</b> in ${ms(a.duration_ms)}`
+              : `try ${a.attempt_number} <b>failed</b> — ${esc(a.error?.status_code ? String(a.error.status_code) : (a.error?.type ?? "no answer").toLowerCase())}`,
+            ok ? "ok" : "bad",
+          );
+          if (exec.worker_id) run.emit("worker", { workerId: exec.worker_id, cls: null, label: "" });
         }
         seenAttempts = attempts.length;
         run.emit("tries", { attempts: ordered });
@@ -420,26 +513,49 @@ async function watchExecution(run, executionId, { ws = "a", timeout = 90000, tar
 
       await tailTarget();
 
+      // A failed try flies back to the queue with the wait written on it.
       if (pendingRetry) {
-        const waitMs = new Date(pendingRetry.run_at) - Date.now();
-        run.emit("hop", { hop: "worker", state: "done", said: `waiting ${ms(Math.max(0, waitMs))}` });
-        run.say(
-          `Invokr will try again at <b>${clock(pendingRetry.run_at)}</b> — in about ${ms(Math.max(0, waitMs))}.`,
-          {
-            tone: "warn",
-            mech: "The worker wrote run_at = now() + backoff and let go of the row. Nothing is sleeping on it.",
-          },
-        );
+        const waitMs = Math.max(0, new Date(pendingRetry.run_at) - Date.now());
+        await sleep(450);
+        run.emit("token", { id: token, zone: "waiting", state: "waiting", note: `retry in ${ms(waitMs)}` });
+        run.tick(`back in the queue — next try in <b>${ms(waitMs)}</b>`, "warn");
+        countdownToken(run, token, new Date(pendingRetry.run_at).getTime(), "retry in");
       }
 
       if (["SUCCESS", "FAILED", "CANCELLED"].includes(exec.status)) {
         await tailTarget();
+        await sleep(650);
+        run.emit("token", {
+          id: token,
+          zone: "done",
+          state: exec.status === "SUCCESS" ? "ok" : "bad",
+          label: label ?? "",
+          note: exec.status === "SUCCESS" ? "done" : exec.status.toLowerCase(),
+        });
         return exec;
       }
     }
-    await sleep(170);
+    await sleep(160);
   }
   return null;
+}
+
+// Emits the countdown as events so replay reproduces it rather than recomputing.
+function countdownToken(run, token, deadline, prefix) {
+  const timer = setInterval(() => {
+    const left = deadline - Date.now();
+    if (run.cancelled) return clearInterval(timer);
+    if (left <= 0) {
+      clearInterval(timer);
+      // Its time has come: eligible now, whether or not a worker is alive.
+      run.emit("drop", { on: true });
+      run.emit("token", { id: token, zone: "ready", state: "ready", note: "due now" });
+      setTimeout(() => run.emit("drop", { on: false }), 700);
+      return;
+    }
+    run.emit("token", { id: token, note: `${prefix} ${(left / 1000).toFixed(1)}s` });
+  }, 500);
+  return timer;
 }
 
 // ─── status ──────────────────────────────────────────────────────────────────
@@ -454,87 +570,69 @@ function setChip(id, cls, text) {
 
 async function refreshStatus() {
   try {
-    const res = await fetch("/control/status");
-    const s = await res.json();
+    const s = await (await fetch("/control/status")).json();
     state.status = s;
-    setChip("chip-api", s.api ? "up" : "down", s.api ? "Invokr" : "Invokr is down");
-    setChip("chip-worker", s.worker.state === "running" ? "up" : "down", `worker ${s.worker.state}`);
-    setChip("chip-target", s.mock ? "up" : "down", s.mock ? "email service" : "email service is down");
-    const t = s.transports;
-    setChip(
-      "chip-transports",
-      t.kafka && t.redis ? "up" : t.kafka || t.redis ? "warn" : "",
-      `Kafka ${t.kafka ? "on" : "off"} · Redis ${t.redis ? "on" : "off"}`,
-    );
-    $("#foot-note").textContent = s.provisioned
-      ? `teams: ${Object.values(s.provisioned.workspaces).map((w) => w.name).join(" · ")}`
-      : "not set up yet — live scenes unavailable";
+    setChip("chip-api", s.api ? "up" : "down", s.api ? "Invokr" : "Invokr down");
+    setChip("chip-target", s.mock ? "up" : "down", s.mock ? "target" : "target down");
+    if (!state.run || state.run.cancelled) renderWorkers(s.workers);
+    $("#foot-note").textContent = `${s.workers.length} worker${s.workers.length === 1 ? "" : "s"}`;
   } catch {
-    setChip("chip-api", "down", "demo server is down");
+    setChip("chip-api", "down", "demo server down");
   }
 }
 
-// ─── the pieces a scene is built from ────────────────────────────────────────
-
-const storyCard = () =>
-  card("What happened", "", `<div id="story"><span class="empty">Nothing yet — press the button.</span></div>`, {
-    tight: true,
-    scroll: true,
-  });
-
-const saidCard = (who) =>
-  card(`What ${who} says`, "printed on its own terminal", `<div id="said"><span class="empty">Nothing received yet.</span></div>`, {
-    tight: true,
-    scroll: true,
-  });
-
-const triesCard = () =>
-  card("Every try", "real durations", `<div id="p-tries"><span class="empty">Nothing tried yet.</span></div>`, {
-    tight: true,
-  });
-
-const jobCard = () => card("This job", "", `<div id="p-exec"><span class="empty">No job yet.</span></div>`);
-
-const rawCard = () => `
-  <details class="raw">
-    <summary>Show the raw request and response</summary>
-    <div class="panes">
-      <div class="pane"><h4>what we sent to Invokr</h4><div id="p-request"><span class="empty">Not sent yet.</span></div></div>
-      <div class="pane"><h4>what Invokr sent back</h4><div id="p-response"><span class="empty">Waiting.</span></div></div>
-    </div>
-  </details>`;
-
-const TEMPLATE_LEGEND = `<div class="legend">
-  <span><code class="tok-input">{{input.*}}</code> from this job</span>
-  <span><code class="tok-config">{{config.*}}</code> shared settings</span>
-  <span><code class="tok-secret">{{secret.*}}</code> the encrypted store</span>
-  <span><code class="tok-exec">{{execution.*}}</code> this delivery</span>
-</div>`;
+// ─── firing a job, as motion ─────────────────────────────────────────────────
 
 const key = (p) => `${p}-${Date.now().toString(36)}`;
 
-// ─── the scenes ──────────────────────────────────────────────────────────────
+async function fire(run, { endpoint, input, trigger, runAt, ws = "a", label, token, maxAttempts }) {
+  const body = {
+    // A run_at without DELAYED is just an ignored field: the API fires it now.
+    trigger: trigger ?? (runAt ? "DELAYED" : "IMMEDIATE"),
+    endpoint,
+    idempotency_key: key(`${input.order_id ?? "job"}-${token}`),
+    input,
+  };
+  if (runAt) body.run_at = runAt.toISOString();
+  if (maxAttempts) body.max_attempts = maxAttempts;
+
+  run.emit("token", { id: token, zone: "app", label, note: "new" });
+  run.emit("req", { body });
+  await sleep(220);
+
+  const res = await api("POST", "/v1/jobs", { body, ws });
+  run.emit("res", { body: res.body });
+  if (!res.ok) {
+    run.tick(`Invokr refused it — <b>${res.status}</b>`, "bad");
+    run.emit("token", { id: token, state: "bad", note: `refused ${res.status}` });
+    return null;
+  }
+
+  const waiting = Boolean(runAt);
+  run.emit("token", {
+    id: token,
+    zone: waiting ? "waiting" : "ready",
+    state: waiting ? "waiting" : "ready",
+    note: waiting ? "not due yet" : "due now",
+  });
+  run.tick(
+    waiting ? `written down — due at <b>${clock(runAt)}</b>` : "written down, and safe before Invokr answered",
+    "act",
+  );
+  return res.body.data.execution.execution_id;
+}
+
+// ─── scenes ──────────────────────────────────────────────────────────────────
 
 const scenes = [
   {
     id: "register",
     n: 1,
     group: "core",
-    title: "Tell Invokr where to deliver",
-    lede: "An endpoint is a row in a table: where to send it, what to put in it, how hard to try. Nothing of yours runs inside Invokr.",
-    watch:
-      "The instructions hold <b>references</b>, not values. <code>{{secret.email_api_key}}</code> is looked up inside the worker at the last moment — and if you ask Invokr for that secret, it will not give it to you.",
+    title: "Tell it where to deliver",
+    lede: "An endpoint is a row: where to send, what to put in it, how hard to try.",
     fields: [],
-    action: "Save these instructions",
-    layout: () => `
-      <div class="two-up">
-        ${card("The delivery instructions", "sent to Invokr", `<div id="p-request"><span class="empty">Not sent yet.</span></div>${TEMPLATE_LEGEND}`)}
-        ${storyCard()}
-      </div>
-      <div class="two-up" style="margin-top:20px">
-        ${card("Asking Invokr for the secret", "GET /v1/secrets/email_api_key", `<div id="p-response"><span class="empty">Not asked yet.</span></div>`)}
-        ${card("Why this matters", "", `<p style="margin:0;color:var(--ink-soft)">Everyone's hand-rolled tracker ends up with credentials in a config file, in git. Here the value is encrypted at rest, resolved in memory at the moment of delivery, and never returned by the API — not even to you.</p>`)}
-      </div>`,
+    action: "Save the instructions",
     async run(run) {
       const spec = {
         name: "send-welcome-email",
@@ -544,10 +642,7 @@ const scenes = [
         spec: {
           url: "{{config.api_base_url}}/emails/welcome",
           method: "POST",
-          headers: {
-            Authorization: "Bearer {{secret.email_api_key}}",
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: "Bearer {{secret.email_api_key}}", "Content-Type": "application/json" },
           body_template: {
             customer: "{{input.customer}}",
             email: "{{input.email}}",
@@ -560,8 +655,9 @@ const scenes = [
         retry_policy: { max_attempts: 3, backoff: "exponential", initial_delay_ms: 1000, max_delay_ms: 30000 },
       };
 
-      run.emit("hop", { hop: "you", state: "active", said: "saving instructions" });
-      run.emit("req", { method: "POST", path: "/v1/endpoints", body: spec });
+      run.emit("token", { id: "ep", zone: "app", label: "send-welcome-email", note: "instructions" });
+      run.emit("req", { body: spec });
+      await sleep(300);
 
       const exists = (await api("GET", `/v1/endpoints/${spec.name}`)).ok;
       const { name, ...rest } = spec;
@@ -569,25 +665,18 @@ const scenes = [
         ? await api("PUT", `/v1/endpoints/${spec.name}`, { body: rest })
         : await api("POST", "/v1/endpoints", { body: spec });
 
-      run.emit("hop", { hop: "api", state: "done", said: `${res.status} ok` });
-      run.emit("hop", { hop: "db", state: "done", said: "one row written" });
-      run.say(
-        exists
-          ? "These instructions were already here, so Invokr <b>updated them in place</b>."
-          : "Invokr <b>wrote them down</b>.",
-        { tone: "act", mech: "One row in this team's own schema. No deploy, no restart, nothing to review." },
-      );
+      run.emit("token", { id: "ep", zone: "ready", state: "ready", note: "one row" });
+      run.tick(exists ? "updated in place — <b>one row</b>, no deploy" : "saved — <b>one row</b>, no deploy", "act");
 
-      await sleep(450);
+      await sleep(900);
       const secret = await api("GET", "/v1/secrets/email_api_key");
-      run.emit("res", { status: secret.status, body: secret.body });
-      const leaked = JSON.stringify(secret.body ?? {}).includes("value");
-      run.say(
-        leaked
-          ? "The API returned something that looks like a value — check this."
-          : "We asked for the API key. Invokr gave back <b>its name and when it changed</b>, and nothing else.",
-        { tone: leaked ? "bad" : "ok", mech: "Write-only: AES-256-GCM at rest, decrypted in the worker, never returned." },
+      run.emit("res", { body: secret.body });
+      const leaked = JSON.stringify(secret.body ?? {}).includes('"value"');
+      run.tick(
+        leaked ? "the API returned a secret value — check this" : "asked for the API key: Invokr <b>will not hand it over</b>",
+        leaked ? "bad" : "ok",
       );
+      run.emit("token", { id: "ep", zone: "done", state: "ok", note: "stored" });
       return res.ok;
     },
   },
@@ -596,60 +685,34 @@ const scenes = [
     id: "fire-now",
     n: 2,
     group: "core",
-    title: "Send it now",
-    lede: "Type a real name and a real order. Invokr will actually call the email service, and the email service will tell you what it did.",
-    watch:
-      "Two accounts of the same delivery: <b>Invokr's</b> on the left, <b>the email service's</b> on the right. They should agree, down to the de-duplication key.",
+    title: "Send one now",
+    lede: "Type a real name. It really goes, and the other side really answers.",
     fields: [
-      { key: "customer", label: "Who is it for?", value: "Priya Sharma", width: 190 },
-      { key: "email", label: "Their email", value: "priya@example.com", width: 220 },
-      { key: "order_id", label: "About which order", value: "order-1234", width: 160 },
+      { key: "customer", label: "for", value: "Priya Sharma", width: 170 },
+      { key: "email", label: "email", value: "priya@example.com", width: 195 },
+      { key: "order_id", label: "order", value: "order-1234", width: 140 },
     ],
-    action: "Send it now",
-    said: "the email service",
-    layout: () => `
-      <div class="two-up">${storyCard()}${saidCard("the email service")}</div>
-      <div class="two-up" style="margin-top:20px">${jobCard()}${triesCard()}</div>
-      ${rawCard()}`,
+    action: "Send it",
+    extras: [{ id: "addworker", label: "Add a worker" }],
+    async onExtra(id, run) {
+      if (id !== "addworker") return;
+      const res = await control("/worker/start");
+      await refreshStatus();
+      run?.emit("workers", { list: state.status?.workers ?? [] });
+      run?.tick(res.body?.ok ? `another worker is up — <b>pid ${res.body.pid}</b>` : esc(res.body?.error ?? "no"), "act");
+    },
     async run(run, v) {
       const since = await targetLogHead();
-      const body = {
+      run.emit("target-is", { who: "the email service" });
+      const execId = await fire(run, {
         endpoint: "send-welcome-email",
-        trigger: "IMMEDIATE",
-        idempotency_key: key(`${v.order_id}-welcome`),
         input: { order_id: v.order_id, customer: v.customer, email: v.email },
-      };
-
-      run.emit("target-is", { who: "The email service", what: "someone else's system" });
-      run.emit("hop", { hop: "you", state: "active", said: "asking", flow: "you" });
-      run.emit("req", { method: "POST", path: "/v1/jobs", body });
-      run.say(`You asked Invokr to email <b>${esc(v.customer)}</b> about ${esc(v.order_id)}.`);
-
-      const t0 = performance.now();
-      const res = await api("POST", "/v1/jobs", { body });
-      run.emit("res", { status: res.status, body: res.body });
-      if (!res.ok) {
-        run.say(`Invokr refused it — <b>${res.status}</b>.`, { tone: "bad" });
-        return false;
-      }
-
-      const exec = res.body.data.execution;
-      run.emit("hop", { hop: "you", state: "done", said: "asked" });
-      run.emit("hop", { hop: "api", state: "done", said: `said yes in ${ms(performance.now() - t0)}`, flow: "api" });
-      run.emit("hop", { hop: "db", state: "active", said: "written down · queued" });
-      run.say(`Invokr said <b>yes</b> in ${ms(performance.now() - t0)}, and it is already safe.`, {
-        tone: "act",
-        mech: "The job and its first delivery were committed to PostgreSQL before you got that answer back.",
+        label: v.customer,
+        token: "t1",
       });
-
-      const done = await watchExecution(run, exec.execution_id, { targetSince: since });
-      if (done?.status === "SUCCESS") {
-        run.emit("hop", { hop: "db", state: "done", said: "all of it recorded" });
-        run.say("Done — and the email service saw the de-duplication key, so a repeat would be its own to ignore.", {
-          tone: "ok",
-          mech: "Every HTTP delivery carries x-invokr-idempotency-key.",
-        });
-      }
+      if (!execId) return false;
+      const done = await watchExecution(run, execId, { targetSince: since, token: "t1", label: v.customer });
+      if (done?.status === "SUCCESS") run.tick("delivered — and the other side got the de-duplication key", "ok");
       return done?.status === "SUCCESS";
     },
   },
@@ -658,111 +721,67 @@ const scenes = [
     id: "fire-later",
     n: 3,
     group: "core",
-    title: "Send it later — then pull the plug",
-    lede: "Ask for it in fifteen seconds. Then kill the worker mid-wait and watch it land anyway.",
-    watch:
-      "Nothing is holding a timer. <b>The row is the timer.</b> Kill the worker, start another one, and the job still goes out at the time you asked for.",
+    title: "Send one later — then kill a worker",
+    lede: "It waits in the queue as a row. Kill the workers; it still goes out on time.",
     fields: [
-      { key: "customer", label: "Who is it for?", value: "Arjun Mehta", width: 190 },
-      { key: "email", label: "Their email", value: "arjun@example.com", width: 220 },
-      { key: "order_id", label: "About which order", value: "order-5567", width: 160 },
-      { key: "seconds", label: "In how many seconds?", value: "15", width: 90, hint: "10–60 works best" },
+      { key: "customer", label: "for", value: "Arjun Mehta", width: 170 },
+      { key: "email", label: "email", value: "arjun@example.com", width: 195 },
+      { key: "order_id", label: "order", value: "order-5567", width: 140 },
+      { key: "seconds", label: "in (s)", value: "15", width: 70 },
     ],
     action: "Schedule it",
     extras: [
-      { id: "kill", label: "Kill the worker", danger: true },
-      { id: "start", label: "Start a worker" },
+      { id: "kill", label: "Kill a worker", danger: true },
+      { id: "addworker", label: "Add a worker" },
     ],
-    layout: () => `
-      <div class="two-up">
-        ${card("Time until it should go out", "", `<div id="p-countdown"><span class="empty">Not scheduled yet.</span></div>`)}
-        ${storyCard()}
-      </div>
-      <div class="two-up" style="margin-top:20px">${jobCard()}${saidCard("the email service")}</div>
-      ${rawCard()}`,
     async onExtra(id, run) {
       if (id === "kill") {
         const res = await control("/worker/kill");
-        const killed = res.body?.ok;
-        run?.emit("flag", { key: "worker", value: "killed" });
-        run?.emit("hop", { hop: "worker", state: "gone", said: killed ? `killed (pid ${res.body.pid})` : "not running" });
-        run?.say(
-          killed
-            ? `We just <b>killed the worker</b> outright — no warning, no graceful shutdown.`
-            : "There was no worker running to kill.",
-          {
-            tone: killed ? "bad" : "warn",
-            mech: killed ? "SIGKILL. Any transaction it was holding is aborted by PostgreSQL." : "",
-          },
-        );
-        refreshStatus();
+        if (res.body?.ok) {
+          run?.emit("worker", { workerId: res.body.workerId, cls: "dead", label: `killed · pid ${res.body.pid}` });
+          run?.tick(`<b>killed</b> worker ${esc(short(res.body.workerId))} — SIGKILL, mid-transaction`, "bad");
+          setTimeout(async () => {
+            await refreshStatus();
+            run?.emit("workers", { list: state.status?.workers ?? [] });
+          }, 1400);
+        } else {
+          run?.tick("no worker left to kill", "warn");
+        }
         return;
       }
-      if (id === "start") {
+      if (id === "addworker") {
         const res = await control("/worker/start");
-        run?.emit("flag", { key: "worker", value: "running" });
-        run?.emit("hop", { hop: "worker", state: "active", said: `new worker (pid ${res.body?.pid ?? "?"})` });
-        run?.say("A <b>different worker</b> is up now. It knows nothing about what came before.", {
-          tone: "act",
-          mech: "It just polls the same table. There is no handover, because there is no state to hand over.",
-        });
-        refreshStatus();
+        await refreshStatus();
+        run?.emit("workers", { list: state.status?.workers ?? [] });
+        run?.tick(res.body?.ok ? `a fresh worker is up — <b>pid ${res.body.pid}</b>` : esc(res.body?.error ?? "no"), "act");
       }
     },
     async run(run, v) {
       const since = await targetLogHead();
       const seconds = Math.max(5, Math.min(120, Number(v.seconds) || 15));
       const runAt = new Date(Date.now() + seconds * 1000);
-      const body = {
+      run.emit("target-is", { who: "the email service" });
+
+      const execId = await fire(run, {
         endpoint: "send-welcome-email",
-        trigger: "DELAYED",
-        idempotency_key: key(`${v.order_id}-later`),
-        run_at: runAt.toISOString(),
         input: { order_id: v.order_id, customer: v.customer, email: v.email },
-      };
-
-      run.emit("hop", { hop: "you", state: "active", said: "asking for later" });
-      run.emit("req", { method: "POST", path: "/v1/jobs", body });
-      run.say(`You asked for this one at <b>${clock(runAt)}</b> — ${seconds} seconds from now.`);
-
-      const res = await api("POST", "/v1/jobs", { body });
-      run.emit("res", { status: res.status, body: res.body });
-      if (!res.ok) {
-        run.say(`Invokr refused it — <b>${res.status}</b>.`, { tone: "bad" });
-        return false;
-      }
-
-      run.emit("hop", { hop: "you", state: "done", said: "asked" });
-      run.emit("hop", { hop: "api", state: "done", said: "accepted" });
-      run.emit("hop", { hop: "db", state: "active", said: `waiting until ${clock(runAt)}` });
-      run.say("It is a row with a time on it. Nothing is counting down anywhere.", {
-        tone: "act",
-        mech: "No in-memory timer, no cron entry, no scheduler process. Just run_at in a column.",
+        runAt,
+        label: v.customer,
+        token: "t1",
       });
-      run.say("Now kill the worker.", { tone: "warn" });
+      if (!execId) return false;
 
-      // Emitted, not computed on screen, so replay reproduces the countdown.
-      const deadline = runAt.getTime();
-      const ticker = setInterval(() => {
-        run.emit("countdown", {
-          remaining: Math.max(0, deadline - Date.now()),
-          label: `due at ${clock(runAt)}`,
-        });
-      }, 500);
+      run.tick("now kill a worker — nothing is holding this", "warn");
+      const timer = countdownToken(run, "t1", runAt.getTime(), "due in");
 
-      const done = await watchExecution(run, res.body.data.execution.execution_id, {
+      const done = await watchExecution(run, execId, {
         timeout: (seconds + 90) * 1000,
         targetSince: since,
+        token: "t1",
+        label: v.customer,
       });
-      clearInterval(ticker);
-      run.emit("countdown", { remaining: 0, label: `went out at ${clock(Date.now())}` });
-
-      if (done?.status === "SUCCESS") {
-        run.emit("hop", { hop: "db", state: "done", said: "fired on time" });
-        run.say("It went out at the time you asked for — by a worker that did not exist when you asked.", {
-          tone: "ok",
-        });
-      }
+      clearInterval(timer);
+      if (done?.status === "SUCCESS") run.tick("went out <b>on time</b>, by whichever worker was alive", "ok");
       return done?.status === "SUCCESS";
     },
   },
@@ -772,73 +791,39 @@ const scenes = [
     n: 4,
     group: "core",
     title: "When the other side breaks",
-    lede: "The payment processor is going to fail twice before it works. This is the part a hand-rolled tracker can never show you afterwards.",
-    watch:
-      "Three tries, each kept as a row: how long it took, what came back, and <b>how long Invokr actually waited</b> before trying again — not what the policy asked for. There is ±25% jitter, so the numbers are never round.",
+    lede: "Two failures, then it works. Watch it fly back to the queue each time.",
     fields: [
-      { key: "order_id", label: "Which order", value: "order-9931", width: 160 },
-      { key: "amount", label: "How much", value: "₹1,499", width: 120 },
+      { key: "order_id", label: "order", value: "order-9931", width: 140 },
+      { key: "amount", label: "amount", value: "₹1,499", width: 110 },
     ],
     action: "Take the payment",
-    extras: [{ id: "prearm", label: "Start scene 5's schedule now" }],
-    layout: () => `
-      <div class="banner info">This endpoint retries up to <b>3 times</b>, backing off exponentially from 2 seconds, with ±25% jitter.</div>
-      <div class="two-up">${storyCard()}${saidCard("the payment processor")}</div>
-      <div class="two-up" style="margin-top:20px">${jobCard()}${triesCard()}</div>
-      ${rawCard()}`,
+    extras: [{ id: "prearm", label: "Start scene 5's job now" }],
     async onExtra(id, run) {
       if (id !== "prearm") return;
       const started = await startCron();
-      run?.say(
-        started
-          ? "Scene 5's every-minute schedule is running now, so a tick will have landed by the time you get there."
-          : "Could not start that schedule.",
-        { tone: started ? "ok" : "bad" },
-      );
+      run?.tick(started ? "scene 5's every-minute job is running now" : "could not start it", started ? "ok" : "bad");
     },
     async run(run, v) {
-      await control("/mock/reset"); // the processor's failure counter is global
+      await control("/mock/reset");
       const since = await targetLogHead();
+      run.emit("target-is", { who: "the payment processor" });
 
-      const body = {
+      const execId = await fire(run, {
         endpoint: "charge-webhook",
-        trigger: "IMMEDIATE",
-        idempotency_key: key(`${v.order_id}-charge`),
         input: { order_id: v.order_id, amount: v.amount },
-      };
+        label: v.amount,
+        token: "t1",
+      });
+      if (!execId) return false;
 
-      run.emit("target-is", { who: "The payment processor", what: "having a bad day" });
-      run.emit("hop", { hop: "you", state: "active", said: "asking" });
-      run.emit("req", { method: "POST", path: "/v1/jobs", body });
-      run.say(`You asked Invokr to take <b>${esc(v.amount)}</b> for ${esc(v.order_id)}.`);
-
-      const res = await api("POST", "/v1/jobs", { body });
-      run.emit("res", { status: res.status, body: res.body });
-      if (!res.ok) return false;
-
-      run.emit("hop", { hop: "you", state: "done", said: "asked" });
-      run.emit("hop", { hop: "api", state: "done", said: "accepted" });
-      run.emit("hop", { hop: "db", state: "active", said: "queued" });
-
-      const done = await watchExecution(run, res.body.data.execution.execution_id, {
+      const done = await watchExecution(run, execId, {
         timeout: 120000,
         targetSince: since,
+        token: "t1",
+        label: v.amount,
       });
-
       if (done?.status === "SUCCESS") {
-        run.emit("hop", { hop: "db", state: "done", said: "every try recorded" });
-        run.say("It went through on the third try — and the two failures are still on the record.", {
-          tone: "ok",
-          mech: "Nobody had to be watching. Nobody had to re-run anything by hand.",
-        });
-        run.say("Look at the processor's own log: all three tries carry <b>the same key</b>.", {
-          tone: "act",
-          mech:
-            "That is how the other side avoids charging twice if our first request did land and only the answer " +
-            "was lost. Invokr delivers at least once; the key is what makes that safe.",
-        });
-      } else {
-        run.say("It never got through. That is also recorded, try by try.", { tone: "bad" });
+        run.tick("third try worked — and all three carried <b>the same key</b>", "ok");
       }
       return done?.status === "SUCCESS";
     },
@@ -849,121 +834,65 @@ const scenes = [
     n: 5,
     group: "core",
     title: "Every minute, forever",
-    lede: "A recurring job, with no scheduler process anywhere. PostgreSQL itself writes the row when it's due.",
-    watch:
-      "<b>pg_cron puts the work in the queue</b> from inside the database, on schedule, whether or not a worker happens to be up. Cancel it and the schedule goes with it, in the same transaction.",
+    lede: "No scheduler process. PostgreSQL drops the job into the queue itself.",
     fields: [],
     action: "Start the every-minute job",
     extras: [{ id: "cancel", label: "Cancel it", danger: true }],
-    layout: () => `
-      <div class="banner warn">A minute is the finest schedule pg_cron offers, so the first tick can take up to 60 seconds. Scene 4 has a button to start this early.</div>
-      <div class="two-up">
-        ${card("Next tick", "", `<div id="p-countdown"><span class="empty">Not started.</span></div>`)}
-        ${storyCard()}
-      </div>
-      <div class="two-up" style="margin-top:20px">
-        ${card("Ticks so far", "written by PostgreSQL", `<div id="p-cron"><span class="empty">None yet.</span></div>`, { tight: true })}
-        ${saidCard("the service being poked")}
-      </div>`,
     async onExtra(id, run) {
       if (id !== "cancel") return;
-      // Looked up rather than remembered: a reloaded page has no state, but the
-      // schedule is still out there firing every minute.
       const job = state.cronJob ?? (await findActiveCron());
-      if (!job) return run?.say("Nothing is scheduled right now.", { tone: "warn" });
+      if (!job) return run?.tick("nothing is scheduled", "warn");
       const res = await api("POST", `/v1/jobs/${job}/cancel`);
-      run?.say(res.ok ? "<b>Cancelled.</b> It will not fire again." : "That cancel did not take.", {
-        tone: res.ok ? "ok" : "bad",
-        mech: res.ok ? "The pg_cron entry is removed in the same transaction that retires the job." : "",
-      });
+      run?.tick(res.ok ? "<b>cancelled</b> — the pg_cron entry goes with it" : "that cancel did not take", res.ok ? "ok" : "bad");
       state.cronJob = null;
-    },
-    panel(k, data, els) {
-      if (k !== "cron" || !els.cron) return;
-      if (!data.executions.length) {
-        els.cron.innerHTML = `<div class="body"><span class="empty">Waiting for the first tick…</span></div>`;
-        return;
-      }
-      els.cron.innerHTML = `<table>
-        <thead><tr><th>tick</th><th>when</th><th></th><th>took</th></tr></thead>
-        <tbody>${data.executions
-          .map(
-            (e, i) => `<tr>
-              <td class="num">${data.executions.length - i}</td>
-              <td>${esc(clock(e.created_at))}</td>
-              <td>${
-                e.status === "SUCCESS"
-                  ? '<span class="pill ok">worked</span>'
-                  : e.status === "FAILED"
-                    ? '<span class="pill bad">failed</span>'
-                    : `<span class="pill wait">${esc(e.status.toLowerCase())}</span>`
-              }</td>
-              <td class="num">${e.duration_ms != null ? ms(e.duration_ms) : "—"}</td>
-            </tr>`,
-          )
-          .join("")}</tbody></table>`;
     },
     async run(run) {
       const since = await targetLogHead();
-      run.emit("target-is", { who: "The health sweep", what: "an internal service" });
+      run.emit("target-is", { who: "the health sweep" });
 
       let jobId = state.cronJob;
       if (jobId) {
-        run.say("Using the schedule that was started back in scene 4.", { tone: "act" });
+        run.tick("using the job started back in scene 4", "act");
       } else {
         jobId = await startCron();
-        if (!jobId) {
-          run.say("Could not start the schedule.", { tone: "bad" });
-          return false;
-        }
-        run.say("Invokr handed the schedule <b>to PostgreSQL</b> the moment the job was created.", {
-          tone: "act",
-          mech: "pg_cron owns it now. No scheduler process exists to fall over.",
-        });
+        if (!jobId) return false;
+        run.tick("pg_cron owns the schedule now — <b>inside the database</b>", "act");
       }
 
-      const job = (await api("GET", `/v1/jobs/${jobId}`)).body?.data;
-      run.emit("res", { status: 200, body: job });
-      run.emit("hop", { hop: "db", state: "active", said: "every minute" });
-
-      const next = job?.next_run_at ? new Date(job.next_run_at).getTime() : Date.now() + 60000;
       const started = performance.now();
       let seen = 0;
       let logSeq = since;
 
-      while (performance.now() - started < 75000 && !run.cancelled) {
-        run.emit("countdown", { remaining: Math.max(0, next - Date.now()), label: "until the next tick" });
-
+      while (performance.now() - started < 78000 && !run.cancelled) {
         const execs = (await api("GET", `/v1/jobs/${jobId}/executions?limit=10`)).body?.data ?? [];
-        if (execs.length !== seen) {
-          run.emit("panel", { key: "cron", data: { executions: execs } });
-          if (execs.length > seen) {
-            run.emit("hop", { hop: "worker", state: "active", said: `tick ${execs.length}` });
-            run.say("A tick just appeared in the queue — <b>nobody put it there</b>.", {
-              tone: "act",
-              mech: "PostgreSQL wrote that row itself, then a worker claimed it like any other.",
-            });
+        if (execs.length > seen) {
+          run.emit("cron", { on: true });
+          for (const e of execs.slice(0, execs.length - seen).reverse()) {
+            const id = `tick-${e.execution_id.slice(0, 6)}`;
+            run.emit("token", { id, zone: "ready", state: "ready", label: "tick", note: clock(e.created_at) });
+            await sleep(120);
           }
+          run.tick("<b>nobody put that there</b> — PostgreSQL wrote the row itself", "act");
+          setTimeout(() => run.emit("cron", { on: false }), 1200);
           seen = execs.length;
-        }
 
-        try {
-          const res = await fetch(`/control/mock/log?since=${logSeq}&limit=10`);
-          const entries = ((await res.json())?.data ?? []).slice().reverse();
-          if (entries.length) {
-            logSeq = Math.max(logSeq, ...entries.map((e) => e.seq));
-            run.emit("said", { entries });
-            run.emit("hop", { hop: "target", state: "done", said: "swept" });
+          const newest = execs[0];
+          if (newest) {
+            await watchExecution(run, newest.execution_id, {
+              timeout: 20000,
+              targetSince: logSeq,
+              token: `tick-${newest.execution_id.slice(0, 6)}`,
+              label: "tick",
+            });
+            logSeq = await targetLogHead();
           }
-        } catch {}
-
-        if (seen >= 1) break;
+          break;
+        }
         await sleep(900);
       }
 
-      run.say(seen > 0 ? "Remember to cancel it — otherwise it keeps going, every minute." : "No tick landed in the time we waited.", {
-        tone: seen > 0 ? "warn" : "warn",
-      });
+      if (seen === 0) run.tick("no tick landed in the time we waited", "warn");
+      else run.tick("cancel it before moving on — it keeps going", "warn");
       return seen > 0;
     },
   },
@@ -972,94 +901,42 @@ const scenes = [
     id: "any-transport",
     n: 6,
     group: "overflow",
-    title: "Somewhere other than HTTP",
-    lede: "The same job, delivered to a Kafka topic or a Redis Stream instead. Only the endpoint's address changes.",
-    watch: "Same request, same retry policy, same history to debug from. The transport is a detail of the endpoint, not of your code.",
-    fields: [{ key: "order_id", label: "Which order", value: "order-4410", width: 160 }],
+    title: "Not just HTTP",
+    lede: "Same job, same retries. A Kafka topic or a Redis Stream instead of a URL.",
+    fields: [{ key: "order_id", label: "order", value: "order-4410", width: 140 }],
     action: "Send it three ways",
-    layout: () => {
-      const t = state.status?.transports ?? {};
-      const missing = [!t.kafka && "Kafka", !t.redis && "Redis"].filter(Boolean);
-      return `
-      ${
-        missing.length
-          ? `<div class="banner warn">${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} not running here,
-             so ${missing.length > 1 ? "those two" : "that one"} will be skipped — you will see the instructions instead of a
-             delivery. To fire them for real: <code>docker compose --profile kafka --profile redis up -d</code>, then
-             <code>INVOKR_DEMO_WORKER_FEATURES=kafka,redis-stream just demo</code>.</div>`
-          : ""
-      }
-      <div class="transports">
-        ${["HTTP", "KAFKA", "REDIS_STREAM"]
-          .map((k) => card(k.replace("_", " "), "", `<div id="p-t-${k}"><span class="empty">Not sent.</span></div>`))
-          .join("")}
-      </div>
-      <div class="two-up" style="margin-top:20px">${storyCard()}${triesCard()}</div>`;
-    },
-    panel(k, data) {
-      if (k !== "transport") return;
-      const box = document.getElementById(`p-t-${data.type}`);
-      if (!box) return;
-      box.innerHTML = data.skipped
-        ? `<p style="margin:0 0 10px;color:var(--muted);font-size:14px">Not running here. These are the only instructions that differ:</p>
-           <pre>${highlightJson(data.spec ?? {})}</pre>`
-        : `<dl class="facts">
-             <dt>endpoint</dt><dd class="id">${esc(data.endpoint)}</dd>
-             <dt>result</dt><dd><span class="pill ${data.ok ? "ok" : "bad"}">${esc(data.status)}</span></dd>
-             ${data.detail ? `<dt>detail</dt><dd>${esc(data.detail)}</dd>` : ""}
-           </dl>`;
-    },
     async run(run, v) {
       const probes = state.status?.transports ?? {};
       const targets = [
         { type: "HTTP", endpoint: "send-welcome-email", up: true },
-        { type: "KAFKA", endpoint: "order-events-kafka", up: !!probes.kafka },
-        { type: "REDIS_STREAM", endpoint: "order-events-redis", up: !!probes.redis },
+        { type: "Kafka", endpoint: "order-events-kafka", up: !!probes.kafka },
+        { type: "Redis", endpoint: "order-events-redis", up: !!probes.redis },
       ];
 
       let ok = true;
+      let i = 0;
       for (const t of targets) {
-        // Firing at a broker that isn't there only proves the broker isn't
-        // there. Show the instructions instead — that is the whole claim anyway.
+        i++;
         if (!t.up) {
-          const ep = (await api("GET", `/v1/endpoints/${t.endpoint}`)).body?.data;
-          run.emit("panel", { key: "transport", data: { type: t.type, skipped: true, spec: ep?.spec ?? {} } });
-          run.say(`Skipped <b>${t.type.replace("_", " ")}</b> — that broker is not running here.`, { tone: "warn" });
+          run.emit("token", { id: `t${i}`, zone: "app", state: "waiting", label: t.type, note: "not running here" });
+          run.tick(`<b>${t.type}</b> is not running here — same job, nowhere to put it`, "warn");
+          await sleep(700);
           continue;
         }
-
-        run.emit("target-is", { who: `The ${t.type.replace("_", " ").toLowerCase()} side`, what: "same job, different pipe" });
-        const body = {
+        run.emit("target-is", { who: `the ${t.type.toLowerCase()} side` });
+        const execId = await fire(run, {
           endpoint: t.endpoint,
-          trigger: "IMMEDIATE",
-          idempotency_key: key(`${v.order_id}-${t.type.toLowerCase()}`),
           input: { order_id: v.order_id, customer: "Priya Sharma", email: "priya@example.com" },
-          max_attempts: 1,
-        };
-        run.emit("req", { method: "POST", path: "/v1/jobs", body });
-        const res = await api("POST", "/v1/jobs", { body });
-        if (!res.ok) {
-          run.emit("panel", { key: "transport", data: { type: t.type, endpoint: t.endpoint, ok: false, status: `refused ${res.status}` } });
+          label: t.type,
+          token: `t${i}`,
+          maxAttempts: 1,
+        });
+        if (!execId) {
           ok = false;
           continue;
         }
-
-        const execId = res.body.data.execution.execution_id;
-        const done = await watchExecution(run, execId, { timeout: 30000 });
-        const attempts = (await api("GET", `/v1/executions/${execId}/attempts`)).body?.data ?? [];
-        const err = attempts.find((a) => a.error)?.error;
-        const delivered = done?.status === "SUCCESS";
-        ok = ok && delivered;
-        run.emit("panel", {
-          key: "transport",
-          data: {
-            type: t.type,
-            endpoint: t.endpoint,
-            ok: delivered,
-            status: delivered ? "delivered" : (done?.status ?? "timed out").toLowerCase(),
-            detail: delivered ? `in ${ms(attempts[0]?.duration_ms)}` : `${err?.type ?? ""} ${String(err?.message ?? "").slice(0, 80)}`,
-          },
-        });
+        const done = await watchExecution(run, execId, { timeout: 30000, token: `t${i}`, label: t.type });
+        ok = ok && done?.status === "SUCCESS";
       }
       return ok;
     },
@@ -1070,86 +947,44 @@ const scenes = [
     n: 7,
     group: "overflow",
     title: "Two teams, one name",
-    lede: "Payments and Risk both have an endpoint called send-welcome-email. They are not the same endpoint, and they cannot see each other.",
-    watch:
-      "Same name, two <b>separate schemas</b> in the same database. The connection's search path decides which one you are talking to — there is no shared table to leak through.",
+    lede: "Both teams have an endpoint called send-welcome-email. They cannot see each other.",
     fields: [
-      { key: "customer", label: "Who is it for?", value: "Neha Rao", width: 190 },
-      { key: "order_id", label: "About which order", value: "order-7782", width: 160 },
+      { key: "customer", label: "for", value: "Neha Rao", width: 170 },
+      { key: "order_id", label: "order", value: "order-7782", width: 140 },
     ],
-    action: "Send it from both teams",
-    layout: () => `
-      <div class="tenants">
-        ${card("Payments", "", `<div id="p-ws-a"><span class="empty">Not sent.</span></div>`)}
-        ${card("Risk", "", `<div id="p-ws-b"><span class="empty">Not sent.</span></div>`)}
-      </div>
-      <div class="two-up" style="margin-top:20px">${storyCard()}${saidCard("the email service")}</div>`,
-    panel(k, data) {
-      if (k !== "tenant") return;
-      const box = document.getElementById(`p-ws-${data.ws}`);
-      if (!box) return;
-      box.innerHTML = `<dl class="facts">
-        <dt>lives in</dt><dd class="id">${esc(data.schema)}</dd>
-        <dt>endpoint</dt><dd class="id">send-welcome-email</dd>
-        <dt>job</dt><dd class="id">${esc(short(data.job_id))}</dd>
-        <dt>result</dt><dd><span class="pill ${data.status === "SUCCESS" ? "ok" : "bad"}">${esc(
-          data.status === "SUCCESS" ? "delivered" : data.status.toLowerCase(),
-        )}</span></dd>
-        <dt>sent as</dt><dd>${esc(data.sender ?? "—")}</dd>
-      </dl>`;
-    },
+    action: "Send from both teams",
     async run(run, v) {
       const teams = state.status?.provisioned?.workspaces ?? {};
       const email = `${String(v.customer).split(" ")[0].toLowerCase()}@example.com`;
+      run.emit("target-is", { who: "the email service" });
       let ok = true;
+      let i = 0;
 
       for (const wsKey of ["a", "b"]) {
-        // A fresh head per team: otherwise the second watch replays the first
-        // team's line out of the target's log.
-        const since = await targetLogHead();
+        i++;
         const team = teams[wsKey];
-        const body = {
+        const since = await targetLogHead();
+        const execId = await fire(run, {
           endpoint: "send-welcome-email",
-          trigger: "IMMEDIATE",
-          idempotency_key: key(`${v.order_id}-${wsKey}`),
           input: { order_id: v.order_id, customer: v.customer, email },
-        };
-        run.emit("req", { method: "POST", path: "/v1/jobs", body });
-        const res = await api("POST", "/v1/jobs", { body, ws: wsKey });
-        if (!res.ok) {
+          ws: wsKey,
+          label: team?.name ?? wsKey,
+          token: `t${i}`,
+        });
+        if (!execId) {
           ok = false;
           continue;
         }
-        run.say(`Sent from <b>${esc(team?.name ?? wsKey)}</b> — same endpoint name, different schema.`, { tone: "act" });
-
-        const execId = res.body.data.execution.execution_id;
         const done = await watchExecution(run, execId, {
           ws: wsKey,
           timeout: 30000,
           targetSince: since,
-          who: team?.name,
+          token: `t${i}`,
+          label: team?.name ?? wsKey,
         });
-        const attempts = (await api("GET", `/v1/executions/${execId}/attempts`, { ws: wsKey })).body?.data ?? [];
-        let sender = null;
-        try {
-          sender = JSON.parse(attempts[0]?.output?.body ?? "{}")?.subject ?? null;
-        } catch {}
         ok = ok && done?.status === "SUCCESS";
-        run.emit("panel", {
-          key: "tenant",
-          data: {
-            ws: wsKey,
-            schema: team?.schema_name ?? "—",
-            job_id: res.body.data.job_id,
-            status: done?.status ?? "timed out",
-            sender: team ? `noreply@${team.slug}.invokr.internal` : null,
-          },
-        });
       }
-      run.say("Same name, same input — and the other side can tell them apart by who sent them.", {
-        tone: ok ? "ok" : "warn",
-        mech: "Each team's sender came out of its own config, in its own schema. Nothing in either query path crosses over.",
-      });
+      run.tick("same name, same input — <b>different sender</b>, because the config is each team's own", ok ? "ok" : "warn");
       return ok;
     },
   },
@@ -1158,26 +993,23 @@ const scenes = [
     id: "handoff",
     n: 8,
     group: "overflow",
-    title: "Hand over to the real thing",
-    lede: "Everything you just watched was read back out of ordinary rows. Here is the tool the people on call actually use.",
-    watch: "This page is a demo. The dashboard is the product — same data, no narration.",
+    title: "Hand over",
+    lede: "All of that was read back out of ordinary rows. This is the tool people on call use.",
     fields: [],
-    layout: () => {
+    html: () => {
       const url = state.status?.dashboardUrl || "";
       return `<div class="handoff">
         ${
           url
-            ? `<div class="banner info">Dashboard: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>`
-            : `<div class="banner warn">No dashboard URL is configured. Build it with <code>just dashboard-build</code>, run the
-               API with <code>INVOKR_MODE=both</code>, and set <code>INVOKR_DEMO_DASHBOARD_URL</code> before <code>just demo</code>.</div>`
+            ? `<p style="margin:0 0 6px">Dashboard: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p>`
+            : `<div class="banner warn">No dashboard URL set — <code>just dashboard-build</code>, run the API with
+               <code>INVOKR_MODE=both</code>, then set <code>INVOKR_DEMO_DASHBOARD_URL</code>.</div>`
         }
-        <p class="lede">Three things to point at, in this order:</p>
         <ol>
-          <li><b>The list of everything that ran.</b> Including this session's failures.</li>
-          <li><b>One delivery's attempts.</b> The same rows this page has been reading — durations, responses, errors.</li>
-          <li><b>Fire one by hand.</b> Which is how most "can you just re-run it" requests get answered.</li>
+          <li>Everything that ran, failures included.</li>
+          <li>One delivery's attempts — the same rows this page was reading.</li>
+          <li>Fire one by hand.</li>
         </ol>
-        <p style="color:var(--muted)">Then stop talking and take questions.</p>
       </div>`;
     },
     async run() {
@@ -1200,13 +1032,7 @@ async function startCron() {
     await api("POST", `/v1/jobs/${existing}/cancel`);
   }
   const res = await api("POST", "/v1/jobs", {
-    body: {
-      endpoint: "minute-heartbeat",
-      trigger: "CRON",
-      cron: "* * * * *",
-      timezone: "Asia/Kolkata",
-      input: {},
-    },
+    body: { endpoint: "minute-heartbeat", trigger: "CRON", cron: "* * * * *", timezone: "Asia/Kolkata", input: {} },
   });
   if (!res.ok) return null;
   state.cronJob = res.body.data.job_id;
@@ -1216,18 +1042,17 @@ async function startCron() {
 // ─── the shell ───────────────────────────────────────────────────────────────
 
 function renderRail() {
-  const rail = $("#rail");
   const link = (s) =>
-    `<button class="scene-link ${s.group} ${state.current === scenes.indexOf(s) ? "current" : ""} ${
+    `<button class="scene-link ${state.current === scenes.indexOf(s) ? "current" : ""} ${
       state.ran.has(s.id) ? "ran" : ""
     }" data-i="${scenes.indexOf(s)}"><span class="n">${s.n}</span><span>${esc(s.title)}</span></button>`;
 
+  const rail = $("#rail");
   rail.innerHTML = `
     <div class="rail-label">the run</div>
     ${scenes.filter((s) => s.group === "core").map(link).join("")}
     <div class="rail-label">if there's time</div>
     ${scenes.filter((s) => s.group === "overflow").map(link).join("")}`;
-
   rail.querySelectorAll(".scene-link").forEach((b) =>
     b.addEventListener("click", () => mountScene(Number(b.dataset.i))),
   );
@@ -1249,17 +1074,15 @@ function readFields(scene) {
   return v;
 }
 
-function collectEls(scene) {
-  scene._els = {
-    story: $("#story"),
-    said: $("#said"),
-    exec: $("#p-exec"),
-    tries: $("#p-tries"),
-    countdown: $("#p-countdown"),
-    cron: $("#p-cron"),
-    request: $("#p-request"),
-    response: $("#p-response"),
-  };
+function resetStage() {
+  clearTokens();
+  clearReceipts();
+  $("#ticker").innerHTML = "";
+  $("#p-tries").innerHTML = `<span class="empty">nothing yet</span>`;
+  $("#z-target").classList.remove("hit", "refused");
+  $("#cron-badge").classList.remove("tick");
+  for (const id of workerBoxes.keys()) setWorkerState(id, null, "");
+  renderWorkers(state.status?.workers ?? []);
 }
 
 function mountScene(i) {
@@ -1269,53 +1092,42 @@ function mountScene(i) {
   const scene = scenes[state.current];
   const v = valuesFor(scene);
 
-  journey.reset();
+  resetStage();
+  $("#target-label").textContent = "the other side";
+  $("#scene-title").textContent = scene.title;
+  $("#scene-lede").textContent = scene.lede;
 
   const fields = (scene.fields ?? [])
     .map(
       (f) => `<div class="field">
         <label for="f-${f.key}">${esc(f.label)}</label>
-        <input id="f-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 190}px"
+        <input id="f-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 170}px"
                ${state.replay ? "disabled" : ""} />
-        ${f.hint ? `<span class="hint">${esc(f.hint)}</span>` : ""}
       </div>`,
     )
     .join("");
 
-  const compose = scene.action
-    ? `<div class="compose">
-         ${fields ? `<h2>change any of this — it is really sent</h2><div class="fields">${fields}</div>` : ""}
-         <div class="actions">
-           <button class="primary" id="act-run">${state.replay ? "Play the recording" : esc(scene.action)}</button>
-           ${(scene.extras ?? [])
-             .map(
-               (a) =>
-                 `<button class="${a.danger ? "danger" : ""}" data-act="${esc(a.id)}" ${
-                   state.replay ? "disabled" : ""
-                 }>${esc(a.label)}</button>`,
-             )
-             .join("")}
-           <span class="spacer"></span>
-           <span class="aside">${
-             state.status?.recordings?.includes(scene.id) ? "a recording of this exists" : "not recorded yet"
-           }</span>
-           <button class="quiet" id="act-next">next →</button>
-         </div>
-       </div>`
-    : `<div class="actions" style="margin-bottom:22px"><span class="spacer"></span><button class="quiet" id="act-next">next →</button></div>`;
-
-  $("#stage").innerHTML = `
-    <h1>${esc(scene.title)}</h1>
-    <p class="lede">${esc(scene.lede)}</p>
-    <div class="watch">${scene.watch}</div>
-    ${compose}
-    ${scene.layout()}`;
-
-  collectEls(scene);
+  $("#scene-controls").innerHTML = `
+    ${scene.html ? scene.html() : ""}
+    ${fields ? `<div class="fields">${fields}</div>` : ""}
+    <div class="actions">
+      ${scene.action ? `<button class="primary" id="act-run">${state.replay ? "Play the recording" : esc(scene.action)}</button>` : ""}
+      ${(scene.extras ?? [])
+        .map(
+          (a) =>
+            `<button class="${a.danger ? "danger" : ""}" data-act="${esc(a.id)}" ${
+              state.replay ? "disabled" : ""
+            }>${esc(a.label)}</button>`,
+        )
+        .join("")}
+      <span class="spacer"></span>
+      <span class="aside">${state.status?.recordings?.includes(scene.id) ? "recorded" : "not recorded yet"}</span>
+      <button class="quiet" id="act-next">next →</button>
+    </div>`;
 
   $("#act-run")?.addEventListener("click", () => (state.replay ? replayScene() : runScene()));
   $("#act-next")?.addEventListener("click", () => mountScene(state.current + 1));
-  $("#stage")
+  $("#scene-controls")
     .querySelectorAll("[data-act]")
     .forEach((b) =>
       b.addEventListener("click", async () => {
@@ -1329,10 +1141,11 @@ function mountScene(i) {
     );
 
   renderRail();
+  fitBoard();
 }
 
-// Controls can fire outside a run — killing the worker before anything is
-// scheduled, say. Those sentences still need somewhere to go.
+// Controls can fire outside a run — killing a worker before anything is
+// scheduled, say. Those events still need somewhere to go.
 function ensureRun(scene) {
   if (state.run && !state.run.cancelled) return state.run;
   const run = new Run(scene, { replay: state.replay });
@@ -1347,17 +1160,19 @@ async function runScene() {
   const values = readFields(scene);
 
   btn.disabled = true;
-  btn.textContent = "sending…";
+  btn.textContent = "running…";
+  resetStage();
 
   const run = new Run(scene);
   state.run = run;
-  journey.reset();
+  // Recorded first, so a replay rebuilds the same worker boxes.
+  run.emit("workers", { list: state.status?.workers ?? [] });
 
   let ok = false;
   try {
     ok = await scene.run(run, values);
   } catch (err) {
-    run.say(`Something went wrong here: <b>${esc(String(err.message ?? err))}</b>`, { tone: "bad" });
+    run.tick(`something broke here: <b>${esc(String(err.message ?? err))}</b>`, "bad");
   }
 
   if (ok) state.ran.add(scene.id);
@@ -1365,10 +1180,8 @@ async function runScene() {
   renderRail();
 
   btn.disabled = false;
-  btn.textContent = state.replay ? "Play the recording" : scene.action;
-  if (!ok) {
-    run.say("That did not finish. Switch on replay if you need this scene right now.", { tone: "warn" });
-  }
+  btn.textContent = scene.action;
+  if (!ok) run.tick("that did not finish — switch on replay if you need this scene now", "warn");
 }
 
 async function replayScene() {
@@ -1381,22 +1194,19 @@ async function replayScene() {
   let tape;
   try {
     const res = await fetch(`/control/recordings/${scene.id}`);
-    if (!res.ok) throw new Error("there is no recording of this scene yet");
+    if (!res.ok) throw new Error("no recording of this scene yet");
     tape = await res.json();
   } catch (err) {
-    $("#stage").insertAdjacentHTML(
-      "afterbegin",
-      `<div class="banner bad">${esc(String(err.message ?? err))} — run it live once and it will be kept.</div>`,
-    );
+    $("#ticker").innerHTML =
+      `<span class="line now bad"><span>${esc(String(err.message ?? err))} — run it live once and it is kept</span></span>`;
     btn.disabled = false;
     btn.textContent = "Play the recording";
     return;
   }
 
+  resetStage();
   const run = new Run(scene, { replay: true });
   state.run = run;
-  journey.reset();
-  remountPanels(scene);
 
   const startedAt = performance.now();
   for (const ev of tape.events ?? []) {
@@ -1412,16 +1222,6 @@ async function replayScene() {
   renderRail();
 }
 
-// Re-render just the output area so a replay starts clean, without rebuilding
-// the header and its listeners.
-function remountPanels(scene) {
-  const stage = $("#stage");
-  const anchor = stage.querySelector(".compose") ?? stage.querySelector(".actions");
-  while (anchor.nextSibling) anchor.nextSibling.remove();
-  anchor.insertAdjacentHTML("afterend", scene.layout());
-  collectEls(scene);
-}
-
 function setReplay(on) {
   state.replay = on;
   document.body.classList.toggle("replaying", on);
@@ -1432,6 +1232,8 @@ function setReplay(on) {
 // ─── boot ────────────────────────────────────────────────────────────────────
 
 $("#replay-toggle").addEventListener("click", () => setReplay(!state.replay));
+$("#toggle-details").addEventListener("click", () => $("#drawer").classList.toggle("open"));
+addEventListener("resize", fitBoard);
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) return;
@@ -1442,12 +1244,16 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     return (state.replay ? replayScene : runScene)();
   }
-  if (typing) return; // arrow keys belong to the text field being edited
+  if (e.key === "Escape") return $("#drawer").classList.remove("open");
+  if (typing) return; // arrows belong to the field being edited
   if (e.key === "ArrowRight") mountScene(state.current + 1);
   else if (e.key === "ArrowLeft") mountScene(state.current - 1);
   else if (k === "r") setReplay(!state.replay);
+  else if (k === "d") $("#drawer").classList.toggle("open");
 });
 
+layoutBoard();
+fitBoard();
 await refreshStatus();
 setInterval(refreshStatus, 4000);
 mountScene(0);

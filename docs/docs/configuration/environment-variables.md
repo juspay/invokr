@@ -16,7 +16,7 @@ The `just` task runner has `set dotenv-load` enabled, so variables defined in a 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INVOKR_DATABASE_URL` | *(required)* | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). Required for both API and worker. |
-| `INVOKR_DB_POOL_SIZE` | `50` | Maximum number of connections in the database connection pool. |
+| `INVOKR_DB_POOL_SIZE` | `50` | Maximum number of connections in the database connection pool. Every API and worker process opens its own pool, so size this against the server's `max_connections` — a stock PostgreSQL allows 100, which two workers at the default already exhaust. |
 | `INVOKR_TABLE_PREFIX` | *(empty)* | Prefix for all per-workspace Invokr tables. Set to e.g. `sched` to get `sched_jobs`, `sched_executions`, etc. Only alphanumeric and underscore characters allowed. |
 
 :::warning

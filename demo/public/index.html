@@ -14,74 +14,87 @@
     <span class="name">Invokr</span>
     <span class="tag">do this thing — later, and reliably</span>
   </div>
-
   <div class="chips">
-    <span class="replay-flag">Replay — a recorded run, at its real speed</span>
+    <span class="replay-flag">Replay</span>
     <span class="chip" id="chip-api"><i></i>Invokr</span>
-    <span class="chip" id="chip-worker"><i></i>worker</span>
-    <span class="chip" id="chip-target"><i></i>email service</span>
-    <span class="chip" id="chip-transports"><i></i>Kafka · Redis</span>
+    <span class="chip" id="chip-target"><i></i>target</span>
     <button class="toggle" id="replay-toggle" title="Play a recorded run instead of firing live jobs">
       <span class="track"></span><span>replay</span>
     </button>
   </div>
 </header>
 
-<!-- Stays on screen all session. Each scene lights the hops it actually reaches. -->
-<div class="journey">
-  <div class="hop" id="hop-you">
-    <div class="box">
-      <div class="who">You</div>
-      <div class="what">this page, or your service</div>
-      <div class="said" id="said-you"></div>
-    </div>
-    <div class="arrow">→</div>
-  </div>
-  <div class="hop" id="hop-api">
-    <div class="box">
-      <div class="who">Invokr</div>
-      <div class="what">takes the request</div>
-      <div class="said" id="said-api"></div>
-    </div>
-    <div class="arrow">→</div>
-  </div>
-  <div class="hop" id="hop-db">
-    <div class="box">
-      <div class="who">Its database</div>
-      <div class="what">remembers, and schedules</div>
-      <div class="said" id="said-db"></div>
-    </div>
-    <div class="arrow">→</div>
-  </div>
-  <div class="hop" id="hop-worker">
-    <div class="box">
-      <div class="who">A worker</div>
-      <div class="what">picks up what's due</div>
-      <div class="said" id="said-worker"></div>
-    </div>
-    <div class="arrow">→</div>
-  </div>
-  <div class="hop" id="hop-target">
-    <div class="box">
-      <div class="who" id="who-target">The email service</div>
-      <div class="what" id="what-target">someone else's system</div>
-      <div class="said" id="said-target"></div>
-    </div>
-  </div>
-</div>
-
 <main>
   <nav id="rail"></nav>
-  <section class="stage"><div class="wrap" id="stage"></div></section>
+
+  <div class="right">
+    <!-- The stage. Everything that happens to a job happens here, by moving. -->
+    <div class="stage" id="stage">
+      <!-- Every box is a direct child of the board, so one set of coordinates
+           describes the whole stage and tokens can move between any of them. -->
+      <div class="board" id="board">
+        <div class="zone zone-app" id="z-app">
+          <div class="zone-label">your app</div>
+        </div>
+
+        <div class="zone zone-db" id="z-db">
+          <div class="zone-label">PostgreSQL <span class="cron" id="cron-badge">pg_cron</span></div>
+        </div>
+        <div class="sub-zone" id="z-waiting"><div class="sub-label">not due yet</div></div>
+        <div class="drop" id="drop-arrow">↓</div>
+        <div class="sub-zone ready" id="z-ready"><div class="sub-label">due now</div></div>
+
+        <div class="zone zone-workers" id="z-workers">
+          <div class="zone-label">workers</div>
+        </div>
+        <div class="worker-layer" id="workers"></div>
+
+        <div class="zone zone-target" id="z-target">
+          <div class="zone-label" id="target-label">the email service</div>
+        </div>
+
+        <div class="zone zone-done" id="z-done">
+          <div class="zone-label">done</div>
+        </div>
+
+        <!-- every job in flight is one of these, moved by changing its zone -->
+        <div class="tokens" id="tokens"></div>
+      </div>
+    </div>
+
+    <div class="ticker" id="ticker"></div>
+
+    <div class="bottom">
+      <div class="controls-pane">
+        <h1 id="scene-title"></h1>
+        <p class="lede" id="scene-lede"></p>
+        <div id="scene-controls"></div>
+      </div>
+      <div class="receipts-pane">
+        <h3>what the target says <span id="receipts-meta"></span></h3>
+        <div id="receipts"><span class="empty">nothing yet</span></div>
+      </div>
+    </div>
+  </div>
 </main>
 
 <footer class="hintbar">
   <span><kbd>→</kbd> next</span>
   <span><kbd>←</kbd> back</span>
-  <span><kbd>Enter</kbd> send</span>
+  <span><kbd>Enter</kbd> go</span>
   <span><kbd>R</kbd> replay</span>
   <span id="foot-note"></span>
+  <span class="spacer"></span>
+  <button class="quiet" id="toggle-details">details</button>
 </footer>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-inner">
+    <div class="pane"><h4>every try</h4><div id="p-tries"><span class="empty">nothing yet</span></div></div>
+    <div class="pane"><h4>what we sent</h4><div id="p-request"><span class="empty">nothing yet</span></div></div>
+    <div class="pane"><h4>what Invokr sent back</h4><div id="p-response"><span class="empty">nothing yet</span></div></div>
+  </div>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>
