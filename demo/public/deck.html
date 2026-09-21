@@ -534,13 +534,13 @@ GET …/attempts</pre>
     </section>
 
     <!-- 9 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~7min. Switch to the demo tab. Three pages, and you drive: nothing advances until you press → (or hand it to auto). Page 1, set it up: four POSTs, and the placeholders in the endpoint light up as each one lands — do not read the JSON out, let them watch the colours arrive. Page 2, one short task: ask the room for a mandate id, set when = in a few seconds, then kill both workers while it counts down and start a fresh one. Run it again with failures first = 2 and point at Aarokya&#39;s own log: three calls, one key. Page 3, work that takes minutes: two lanes, and every arrow is a real row — the 202, the Location, each poll with its Retry-After. The line that lands is polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
+    <section class="slide" data-notes="~7min. Switch to the demo tab. Three pages, and you drive: nothing advances until you press → (or hand it to auto). One idea per screen — say the idea, press →, let the picture do the rest; do not read the JSON out. Each page opens on an analogy with no system on it: the payee, the hotel wake-up call, the garage ticket. Page 1, set it up: four POSTs; stop on the secret frame (what you send beside what you can read back — there is no read path for the value) and on the endpoint frame, where the arrows name which namespace each placeholder comes from. Page 2, one short task: ask the room for a mandate id, set when = in a few seconds, then kill both workers on the waits-until-due frame and start a fresh one. Run it again with failures = 2 and stop on the answer frame: three tries, one key. Page 3, work that takes minutes: a two-rail ladder where every rung is a real row — the 202, the Location, each check with its Retry-After. The line that lands is the last frame: polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
       <div class="holding">
         <div>
           <div class="eyebrow" style="text-align:center">live</div>
           <h2>Demo</h2>
           <p class="sub">Real jobs, real database, real retries.<br/>Give me a mandate id.</p>
-          <p class="kicker-note" style="text-align:center;max-width:none;margin-top:26px">Three pages: what has to exist, a task that takes a second, a task that takes minutes.<br/>Nothing on the next screen is drawn in advance.</p>
+          <p class="kicker-note" style="text-align:center;max-width:none;margin-top:26px">Three pages: what has to exist, a task that takes a second, a task that takes minutes.<br/>One idea per screen, and nothing on it is drawn in advance.</p>
         </div>
       </div>
     </section>

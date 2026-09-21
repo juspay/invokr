@@ -9,10 +9,9 @@
 </head>
 <body>
 
-<!-- Three pages, one screen each: what has to exist, a short task end to end,
-     and a task that takes minutes. Four regions and no more — what you are
-     looking at, the picture beside both sides of the wire, and one line of
-     narration with the controls that drive it. No sidebar, nothing hidden. -->
+<!-- One idea at a time. Each step owns the whole canvas and is drawn for that
+     idea alone; the list on the left is a table of contents, not the
+     explanation. Real data underneath — the frames are fed by a live run. -->
 
 <header>
   <span class="brand">Invokr</span>
@@ -31,103 +30,46 @@
   <span class="replay-flag">replaying</span>
 </header>
 
-<!-- Variations within the current page, when there is more than one. -->
 <div class="takes" id="takes"></div>
 
 <main>
-  <section class="canvas" id="canvas">
+  <!-- The question the room is already holding, and its one-line answer. -->
+  <div class="pagehead">
+    <h1 id="claim"></h1>
+    <p id="subclaim"></p>
+  </div>
 
-    <!-- 1 · the five things that have to exist -->
-    <div class="view view-setup" id="view-setup">
-      <div class="slots" id="slots"></div>
-      <div class="spec-card">
-        <div class="spec-head">
-          <span class="spec-title">the call you are describing</span>
-          <span class="spec-sub">every placeholder waits on one of those</span>
-        </div>
-        <pre class="spec-body" id="spec-body"></pre>
-        <div class="legend">
-          <span class="key k-config">config</span>
-          <span class="key k-secret">secret</span>
-          <span class="key k-input">input</span>
-          <span class="legend-note">
-            <code>x-terminal-after</code> and <code>x-fail-times</code> are the demo dialling the fake bank — a real endpoint has neither
-          </span>
-        </div>
+  <div class="body">
+    <ol class="steps" id="steps"></ol>
+
+    <!-- One frame. It is replaced wholesale each step. -->
+    <section class="frame" id="frame"></section>
+
+    <!-- Evidence, on request: both sides of every call. -->
+    <aside class="drawer" id="drawer">
+      <div class="wire-half">
+        <h4>on the wire <span class="meta" id="wire-meta"></span></h4>
+        <div class="wire-body" id="wire-body"><span class="empty">nothing yet</span></div>
       </div>
-    </div>
-
-    <!-- 2 · a short task, trigger to end -->
-    <div class="view view-short" id="view-short">
-      <!-- Every box is a direct child of the board, so one set of coordinates
-           describes the whole stage and tokens can move between any of them. -->
-      <div class="board" id="board">
-        <div class="zone zone-app" id="z-app"><div class="zone-label">your service</div></div>
-
-        <div class="zone zone-db" id="z-db">
-          <div class="zone-label">PostgreSQL <span class="cron" id="cron-badge">pg_cron</span></div>
-        </div>
-        <div class="sub-zone shelf" id="z-endpoints"><div class="sub-label">endpoints</div></div>
-        <div class="sub-zone" id="z-waiting"><div class="sub-label">jobs · not due yet</div></div>
-        <div class="drop" id="drop-arrow">↓</div>
-        <div class="sub-zone ready" id="z-ready"><div class="sub-label">jobs · due now</div></div>
-
-        <div class="zone zone-workers" id="z-workers"><div class="zone-label">workers</div></div>
-        <div class="worker-layer" id="workers"></div>
-
-        <div class="zone zone-target" id="z-target"><div class="zone-label" id="target-label">Aarokya</div></div>
-        <div class="zone zone-done" id="z-done"><div class="zone-label">done</div></div>
-
-        <div class="tokens" id="tokens"></div>
+      <div class="wire-half">
+        <h4>aarokya's own log <span class="meta" id="log-meta"></span></h4>
+        <div class="wire-body" id="target-log"><span class="empty">nothing yet</span></div>
       </div>
-    </div>
-
-    <!-- 3 · work that takes minutes: who called whom, and when -->
-    <div class="view view-long" id="view-long">
-      <div class="async-panel">
-        <div class="panel-head"><span>the <code>async</code> block</span><span class="hint">edit it, then run</span></div>
-        <div class="async-form" id="async-form"></div>
-        <div class="panel-head"><span>this execution</span></div>
-        <div class="exec-state" id="exec-state"><span class="empty">not started</span></div>
-      </div>
-
-      <div class="lanes" id="lanes">
-        <div class="lane-heads">
-          <span class="lane-head left">Invokr <i>worker</i></span>
-          <span class="lane-head right">Aarokya <i>the target</i></span>
-        </div>
-        <div class="msgs" id="msgs"><span class="empty">nothing has been sent yet</span></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Both sides of every call: what Invokr sent, and what the receiving
-       service says it did. This is what the old details drawer was hiding. -->
-  <aside class="wire">
-    <div class="wire-half">
-      <h4>on the wire <span class="meta" id="wire-meta"></span></h4>
-      <div class="wire-body" id="wire-body"><span class="empty">nothing yet</span></div>
-    </div>
-    <div class="wire-half">
-      <h4>aarokya's own log <span class="meta" id="log-meta"></span></h4>
-      <div class="wire-body" id="target-log"><span class="empty">nothing yet</span></div>
-    </div>
-  </aside>
+    </aside>
+  </div>
 </main>
 
 <footer class="console">
-  <!-- The controller. Step through it yourself, or let it walk. -->
   <div class="transport" id="transport">
     <button id="t-back" title="Back one step (←)">◀</button>
     <button id="t-next" title="Next step (→ or space)">▶</button>
     <button id="t-auto" class="wide" title="Walk the rest on its own">auto</button>
   </div>
   <span class="step-count" id="step-count"></span>
-  <span class="step-dot" id="step-dot"></span>
-  <span class="narration" id="narration"></span>
   <span class="spacer"></span>
   <div class="inputs" id="inputs"></div>
   <div class="extras" id="extras"></div>
+  <button id="t-wire" title="Both sides of every call (W)">wire<span class="badge" id="wire-badge"></span></button>
   <button class="primary" id="go"></button>
 </footer>
 
