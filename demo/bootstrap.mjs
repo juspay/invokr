@@ -1,9 +1,12 @@
 // Provisions everything the demo scenes need, idempotently.
 //
-// Every call is "create, or accept that it already exists", so the demo can be
-// re-bootstrapped between rehearsals without a database reset. The objects are
-// deliberately boring — the point of the demo is the execution path, not the
-// fixtures.
+// Everything is upserted (create, else update in place) so a demo database that
+// was provisioned by an older version of this file gets brought up to date
+// instead of quietly keeping stale endpoint specs.
+//
+// The endpoints point at the mock server's business-shaped routes — an email
+// service, a payment processor, a health sweep — because "Sent the welcome
+// email to Priya" is a thing a room can picture, and "echoed your JSON" is not.
 
 const ORG = { name: "Invokr Demo", slug: "invokr-demo" };
 
@@ -14,14 +17,25 @@ export const WORKSPACES = [
   { key: "b", name: "Risk", slug: "risk" },
 ];
 
-const RETRY_FAST = {
+const RETRY = {
   max_attempts: 3,
   backoff: "exponential",
   initial_delay_ms: 2000,
   max_delay_ms: 30000,
 };
 
-function endpoints(mockUrl) {
+const ORDER_INPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    order_id: { type: "string" },
+    customer: { type: "string" },
+    email: { type: "string" },
+    user_id: { type: "string" },
+  },
+  required: ["order_id"],
+};
+
+function endpoints() {
   return [
     {
       name: "send-welcome-email",
@@ -29,53 +43,57 @@ function endpoints(mockUrl) {
       payload_spec: "order-input",
       config: "email-service",
       spec: {
-        url: "{{config.api_base_url}}/echo",
+        url: "{{config.api_base_url}}/emails/welcome",
         method: "POST",
         headers: {
-          // Resolved from the encrypted secret store at execution time. The demo
-          // shows this rendered as bullets to make the point that the plaintext
-          // never leaves the worker.
+          // Resolved from the encrypted secret store at execution time — the
+          // demo shows that the API will not hand the value back.
           Authorization: "Bearer {{secret.email_api_key}}",
           "Content-Type": "application/json",
         },
         body_template: {
+          customer: "{{input.customer}}",
+          email: "{{input.email}}",
           order_id: "{{input.order_id}}",
-          sender: "{{config.sender}}",
-          attempt: "{{execution.attempt_count}}",
+          sent_by: "{{config.sender}}",
         },
         timeout_ms: 5000,
         expected_status_codes: [200],
       },
-      retry_policy: { ...RETRY_FAST, initial_delay_ms: 1000 },
+      retry_policy: { ...RETRY, initial_delay_ms: 1000 },
     },
     {
-      // Points at the mock server's /flaky route: fails until the third call.
+      // Fails twice before it succeeds, so the retry scene has something real
+      // to retry.
       name: "charge-webhook",
       type: "HTTP",
       config: "email-service",
       spec: {
-        url: "{{config.api_base_url}}/flaky?succeed_after=3",
+        url: "{{config.api_base_url}}/billing/charge?succeed_after=3",
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body_template: { order_id: "{{input.order_id}}" },
+        body_template: {
+          order_id: "{{input.order_id}}",
+          amount: "{{input.amount}}",
+        },
         timeout_ms: 5000,
         expected_status_codes: [200],
       },
-      retry_policy: RETRY_FAST,
+      retry_policy: RETRY,
     },
     {
       name: "minute-heartbeat",
       type: "HTTP",
       config: "email-service",
       spec: {
-        url: "{{config.api_base_url}}/echo",
+        url: "{{config.api_base_url}}/ops/heartbeat",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body_template: { tick: "{{execution.execution_id}}" },
         timeout_ms: 5000,
         expected_status_codes: [200],
       },
-      retry_policy: { ...RETRY_FAST, max_attempts: 1 },
+      retry_policy: { ...RETRY, max_attempts: 1 },
     },
     {
       // Kafka and Redis Stream dispatches do not propagate the idempotency key
@@ -86,12 +104,12 @@ function endpoints(mockUrl) {
         bootstrap_servers: "localhost:9092",
         topic: "invokr-demo-orders",
         key_template: "{{input.order_id}}",
-        value_template: { order_id: "{{input.order_id}}", source: "invokr-demo" },
+        value_template: { order_id: "{{input.order_id}}", customer: "{{input.customer}}" },
         headers: { "idempotency-key": "{{execution.idempotency_key}}" },
         acks: "all",
         timeout_ms: 10000,
       },
-      retry_policy: RETRY_FAST,
+      retry_policy: RETRY,
     },
     {
       name: "order-events-redis",
@@ -106,7 +124,7 @@ function endpoints(mockUrl) {
         max_len: 1000,
         approximate_trimming: true,
       },
-      retry_policy: RETRY_FAST,
+      retry_policy: RETRY,
     },
   ];
 }
@@ -138,19 +156,25 @@ export class InvokrAdmin {
     return { status: res.status, ok: res.ok, body: parsed };
   }
 
-  // Create, or fall back to reading what is already there. Anything else throws
-  // loudly — a half-provisioned demo is worse than one that refuses to start.
-  async ensure(label, createFn, readFn) {
-    const created = await createFn();
+  /// Create it, or update what's already there. Anything else throws loudly —
+  /// a half-provisioned demo is worse than one that refuses to start.
+  async upsert(label, collection, name, createBody, updateBody) {
+    const created = await this.call("POST", `/v1/${collection}`, {
+      ...this.scope,
+      body: createBody,
+    });
     if (created.ok) return created.body?.data ?? created.body;
-    if (created.status === 409 || created.status === 200) {
-      const existing = await readFn?.();
-      if (existing?.ok) return existing.body?.data ?? existing.body;
-      if (created.status === 200) return created.body?.data ?? created.body;
+
+    if (created.status === 409) {
+      const updated = await this.call("PUT", `/v1/${collection}/${name}`, {
+        ...this.scope,
+        body: updateBody,
+      });
+      if (updated.ok) return updated.body?.data ?? updated.body;
+      throw new Error(`${label}: update failed ${updated.status} ${JSON.stringify(updated.body)?.slice(0, 200)}`);
     }
-    throw new Error(
-      `${label}: ${created.status} ${JSON.stringify(created.body)?.slice(0, 300)}`,
-    );
+
+    throw new Error(`${label}: ${created.status} ${JSON.stringify(created.body)?.slice(0, 250)}`);
   }
 }
 
@@ -187,61 +211,31 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
       schema_name: row.schema_name,
     };
 
-    const scope = { org: org.org_id, workspace: row.workspace_id };
+    api.scope = { org: org.org_id, workspace: row.workspace_id };
 
-    await api.ensure(
+    await api.upsert(
       `payload-spec in ${ws.slug}`,
-      () =>
-        api.call("POST", "/v1/payload-specs", {
-          ...scope,
-          body: {
-            name: "order-input",
-            schema: {
-              type: "object",
-              properties: { order_id: { type: "string" }, user_id: { type: "string" } },
-              required: ["order_id"],
-            },
-          },
-        }),
-      () => api.call("GET", "/v1/payload-specs/order-input", scope),
+      "payload-specs",
+      "order-input",
+      { name: "order-input", schema: ORDER_INPUT_SCHEMA },
+      { schema: ORDER_INPUT_SCHEMA },
     );
 
-    await api.ensure(
-      `config in ${ws.slug}`,
-      () =>
-        api.call("POST", "/v1/configs", {
-          ...scope,
-          body: {
-            name: "email-service",
-            values: {
-              api_base_url: mockUrl,
-              sender: `noreply@${ws.slug}.invokr.internal`,
-            },
-          },
-        }),
-      () => api.call("GET", "/v1/configs/email-service", scope),
-    );
+    const values = {
+      api_base_url: mockUrl,
+      sender: `noreply@${ws.slug}.invokr.internal`,
+    };
+    await api.upsert(`config in ${ws.slug}`, "configs", "email-service", { name: "email-service", values }, { values });
 
-    await api.ensure(
-      `secret in ${ws.slug}`,
-      () =>
-        api.call("POST", "/v1/secrets", {
-          ...scope,
-          body: { name: "email_api_key", value: `sk-demo-${ws.slug}-9f2b41c7` },
-        }),
-      () => api.call("GET", "/v1/secrets/email_api_key", scope),
-    );
+    // Not a real key — a fixture, so that what the demo resolves and masks is
+    // recognisably fake if it ever ends up on a projector.
+    const value = `sk-demo-${ws.slug}-9f2b41c7`;
+    await api.upsert(`secret in ${ws.slug}`, "secrets", "email_api_key", { name: "email_api_key", value }, { value });
 
-    for (const ep of endpoints(mockUrl)) {
-      const created = await api.call("POST", "/v1/endpoints", { ...scope, body: ep });
-      if (!created.ok && created.status !== 409) {
-        // A missing Kafka/Redis feature is a dispatch-time error, not a
-        // registration error, so anything failing here is a real problem.
-        throw new Error(
-          `create endpoint ${ep.name} in ${ws.slug}: ${created.status} ${JSON.stringify(created.body)?.slice(0, 200)}`,
-        );
-      }
-      if (ws.key === "a") result.endpoints.push({ name: ep.name, type: ep.type });
+    for (const ep of endpoints()) {
+      const { name, ...rest } = ep;
+      await api.upsert(`endpoint ${name} in ${ws.slug}`, "endpoints", name, ep, rest);
+      if (ws.key === "a") result.endpoints.push({ name, type: ep.type });
     }
   }
 

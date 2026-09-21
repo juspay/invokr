@@ -228,6 +228,29 @@ async function handleControl(req, res, url) {
     }
   }
 
+  // The receiving end's own account of what it did. The page shows this next to
+  // Invokr's account of what it delivered, so the room is not taking either
+  // side's word for it.
+  if (path === "/mock/log" && req.method === "GET") {
+    try {
+      const upstream = await fetch(`${MOCK_URL}/_log${url.search}`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      return send(res, upstream.status, await upstream.text());
+    } catch (err) {
+      return send(res, 502, { error: "target unreachable", detail: String(err) });
+    }
+  }
+
+  if (path === "/mock/log/clear" && req.method === "POST") {
+    try {
+      await fetch(`${MOCK_URL}/_log/clear`, { method: "POST", signal: AbortSignal.timeout(2000) });
+      return send(res, 200, { ok: true });
+    } catch (err) {
+      return send(res, 502, { ok: false, error: String(err) });
+    }
+  }
+
   if (path === "/bootstrap" && req.method === "POST") {
     try {
       provisioned = await bootstrap({ baseUrl: API_URL, apiKey: API_KEY, mockUrl: MOCK_URL });
