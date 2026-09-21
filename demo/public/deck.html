@@ -534,13 +534,13 @@ GET …/attempts</pre>
     </section>
 
     <!-- 9 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~7min. Switch to the demo tab. Two acts. Act 1, set it up: four POSTs and the placeholders in the endpoint light up as each one lands — do not read the JSON out, let them watch the colours arrive. Then the payload spec take: a job with no mandate_id is refused with a 422 before any worker sees it. Act 2, run it: the poll loop first, because it is their own loop — schedule, tick, pick up, ask Aarokya, ACTIVE, cancel. Then kill both workers and let the countdown keep running with nobody left to do it. In When Aarokya is down, point at Aarokya&#39;s own log: three calls, one key. Long-running needs the feature branch; on any other build it says so and you replay it. Ask the room for a mandate id and type it in; the fields are real. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
+    <section class="slide" data-notes="~7min. Switch to the demo tab. Three pages, and you drive: nothing advances until you press → (or hand it to auto). Page 1, set it up: four POSTs, and the placeholders in the endpoint light up as each one lands — do not read the JSON out, let them watch the colours arrive. Page 2, one short task: ask the room for a mandate id, set when = in a few seconds, then kill both workers while it counts down and start a fresh one. Run it again with failures first = 2 and point at Aarokya&#39;s own log: three calls, one key. Page 3, work that takes minutes: two lanes, and every arrow is a real row — the 202, the Location, each poll with its Retry-After. The line that lands is polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
       <div class="holding">
         <div>
           <div class="eyebrow" style="text-align:center">live</div>
           <h2>Demo</h2>
           <p class="sub">Real jobs, real database, real retries.<br/>Give me a mandate id.</p>
-          <p class="kicker-note" style="text-align:center;max-width:none;margin-top:26px">Two acts: what has to exist, and what happens when it runs.<br/>Nothing on the next screen is drawn in advance.</p>
+          <p class="kicker-note" style="text-align:center;max-width:none;margin-top:26px">Three pages: what has to exist, a task that takes a second, a task that takes minutes.<br/>Nothing on the next screen is drawn in advance.</p>
         </div>
       </div>
     </section>

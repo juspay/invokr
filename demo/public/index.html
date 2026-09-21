@@ -9,17 +9,14 @@
 </head>
 <body>
 
-<!-- Four regions and no more: what you are looking at, which variation of it,
-     the picture beside both sides of the wire, and one line of narration with
-     the controls that drive it. No sidebar, no drawer, nothing hidden. -->
+<!-- Three pages, one screen each: what has to exist, a short task end to end,
+     and a task that takes minutes. Four regions and no more — what you are
+     looking at, the picture beside both sides of the wire, and one line of
+     narration with the controls that drive it. No sidebar, nothing hidden. -->
 
 <header>
   <span class="brand">Invokr</span>
-
-  <!-- The whole demo is two halves: what has to exist, and what happens when
-       it runs. Everything else is a variation inside one of them. -->
-  <nav class="acts" id="acts"></nav>
-
+  <nav class="pages" id="pages"></nav>
   <span class="spacer"></span>
 
   <div class="lights">
@@ -28,25 +25,19 @@
     <span class="light" id="light-target"><i></i>aarokya</span>
   </div>
 
-  <div class="pace" id="pace" title="How long each step is held on screen. Real waits are never shortened.">
-    <button data-pace="1400" class="on">slow</button>
-    <button data-pace="900">normal</button>
-    <button data-pace="450">quick</button>
-  </div>
-
   <button class="toggle" id="replay-toggle" title="Play a recorded run instead of firing live jobs">
     <span class="track"></span><span>replay</span>
   </button>
   <span class="replay-flag">replaying</span>
 </header>
 
-<!-- Variations within the current act. One thin line, not a sidebar. -->
+<!-- Variations within the current page, when there is more than one. -->
 <div class="takes" id="takes"></div>
 
 <main>
-  <!-- The picture. Act 1 swaps in a card grid; act 2 swaps in the board. -->
   <section class="canvas" id="canvas">
 
+    <!-- 1 · the five things that have to exist -->
     <div class="view view-setup" id="view-setup">
       <div class="slots" id="slots"></div>
       <div class="spec-card">
@@ -66,7 +57,8 @@
       </div>
     </div>
 
-    <div class="view view-run" id="view-run">
+    <!-- 2 · a short task, trigger to end -->
+    <div class="view view-short" id="view-short">
       <!-- Every box is a direct child of the board, so one set of coordinates
            describes the whole stage and tokens can move between any of them. -->
       <div class="board" id="board">
@@ -89,10 +81,28 @@
         <div class="tokens" id="tokens"></div>
       </div>
     </div>
+
+    <!-- 3 · work that takes minutes: who called whom, and when -->
+    <div class="view view-long" id="view-long">
+      <div class="async-panel">
+        <div class="panel-head"><span>the <code>async</code> block</span><span class="hint">edit it, then run</span></div>
+        <div class="async-form" id="async-form"></div>
+        <div class="panel-head"><span>this execution</span></div>
+        <div class="exec-state" id="exec-state"><span class="empty">not started</span></div>
+      </div>
+
+      <div class="lanes" id="lanes">
+        <div class="lane-heads">
+          <span class="lane-head left">Invokr <i>worker</i></span>
+          <span class="lane-head right">Aarokya <i>the target</i></span>
+        </div>
+        <div class="msgs" id="msgs"><span class="empty">nothing has been sent yet</span></div>
+      </div>
+    </div>
   </section>
 
-  <!-- The wire. One panel, two stacked halves: what Invokr sent, and what the
-       other side says it did. Replaces the old drawer, ticker and side panel. -->
+  <!-- Both sides of every call: what Invokr sent, and what the receiving
+       service says it did. This is what the old details drawer was hiding. -->
   <aside class="wire">
     <div class="wire-half">
       <h4>on the wire <span class="meta" id="wire-meta"></span></h4>
@@ -106,6 +116,13 @@
 </main>
 
 <footer class="console">
+  <!-- The controller. Step through it yourself, or let it walk. -->
+  <div class="transport" id="transport">
+    <button id="t-back" title="Back one step (←)">◀</button>
+    <button id="t-next" title="Next step (→ or space)">▶</button>
+    <button id="t-auto" class="wide" title="Walk the rest on its own">auto</button>
+  </div>
+  <span class="step-count" id="step-count"></span>
   <span class="step-dot" id="step-dot"></span>
   <span class="narration" id="narration"></span>
   <span class="spacer"></span>

@@ -5,7 +5,7 @@ Two artifacts for the 30-minute session:
 | | |
 |---|---|
 | **Deck** | `demo/public/deck.html` — 14 slides plus an unshown appendix. Self-contained: no network, no build, opens from a file path |
-| **Demo site** | `demo/public/index.html` — two acts that fire real jobs at a real Invokr, served by `demo/server.mjs`, with the receiving service reporting what it did |
+| **Demo site** | `demo/public/index.html` — three pages that fire real jobs at a real Invokr, served by `demo/server.mjs`, with the receiving service reporting what it did |
 
 The narrative and the timing budget live in the design doc. This file is about
 running the thing.
@@ -30,7 +30,7 @@ runs `demo/server.mjs`, which:
 1. serves the two pages,
 2. proxies `/api/*` to Invokr with the API key and tenant headers attached
    server-side — no credential is ever in the page,
-3. **owns the worker process**, so the pick-up take can actually kill it,
+3. **owns the worker process**, so page 2 can actually kill it,
 4. provisions the demo org, two workspaces and the supporting endpoints on
    startup (idempotent — re-running between rehearsals is fine).
 
@@ -44,7 +44,6 @@ orphaned and quietly undo the point.
 | `INVOKR_DEMO_PORT` | `4173` | Port clash |
 | `INVOKR_URL` | `http://localhost:8080` | Demoing against a deployed Invokr |
 | `INVOKR_MOCK_URL` | `http://localhost:9999` | A different target service |
-| `INVOKR_DEMO_DASHBOARD_URL` | _(unset)_ | The hand-over link |
 | `INVOKR_DEMO_WORKER_FEATURES` | _(unset)_ | `kafka,redis-stream` for the transports take |
 | `INVOKR_DEMO_MANAGE_WORKER` | `1` | `0` if you want to run the worker yourself (the kill button then has nothing to kill) |
 
@@ -76,9 +75,9 @@ Four regions, and no more:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Invokr   ① Set it up  ② Run it            ● api ● workers ● aarokya    │  header
+│ Invokr   ① Set it up  ② Short tasks  ③ Long-running   ● api ● workers  │  header
 ├────────────────────────────────────────────────────────────────────────┤
-│  Poll until it is done · Exactly one worker takes it · …               │  takes
+│  One task, end to end · Same name, two teams · Not just HTTP           │  takes
 ├──────────────────────────────────────────┬─────────────────────────────┤
 │                                          │  ON THE WIRE                │
 │           the picture                    │  → POST /v1/jobs   ← 201    │
@@ -86,21 +85,42 @@ Four regions, and no more:
 │                                          │  AAROKYA'S OWN LOG          │
 │                                          │  ✓ 200 Asked the bank …     │
 ├──────────────────────────────────────────┴─────────────────────────────┤
-│ ●●●○○○○  3.4s  a worker took it — the others skipped the locked row    │  console
+│ ◀ ▶ auto  4/7  ●●●○○○○  3.4s  a worker took it — the others skipped …  │  console
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-The **takes** row is one line, not a sidebar. The **wire** panel is both sides
-of every call — what Invokr sent, and what the receiving service says it did —
-so there is no drawer to open and nothing hidden. The **console** is one dot per
-step of the current journey, one sentence, and the inputs that drive it.
+The **takes** row is one line, not a sidebar, and disappears when a page has
+only one. The **wire** panel is both sides of every call, so there is no drawer
+to open and nothing hidden. The **console** is the controller, one dot per step
+of the current journey, one sentence, and the fields that drive it.
 
-### Act 1 — Set it up
+### The controller
+
+Nothing advances on its own until you say so.
+
+| | |
+|---|---|
+| `▶` or `→` or `space` | draw the next step |
+| `◀` or `←` | go back one step |
+| `auto` or `A` | hand it over: each step is held for a beat, then the next |
+| `Enter` | run (or replay) the current take |
+| `1` `2` `3` | pages · `Tab` cycles takes on this page |
+
+Backwards is real, not a rewind animation: what is on screen is always the
+first *n* events of the run drawn in order, so `◀` draws one fewer. The run
+carries on behind you either way — real work does not wait for the presenter —
+and every step keeps the time it actually happened at.
+
+`auto`'s beat is a *floor*, never a substitute. A 15-second wait still takes
+fifteen seconds; it is only the 8-millisecond bursts that get stretched enough
+to read.
+
+## 1 · Set it up
 
 Five slots on the left, and on the right the one request they all feed. Each
 placeholder in that request — `{{config.base_url}}`, `{{secret.…}}`,
-`{{input.mandate_id}}` — is grey until the thing it needs exists, then takes its
-namespace's colour.
+`{{input.mandate_id}}` — is grey until the thing it needs exists, then takes
+its namespace's colour.
 
 | | What it is | What the room learns |
 |---|---|---|
@@ -113,10 +133,30 @@ namespace's colour.
 The second take fires a job with no `mandate_id` and watches Invokr refuse it
 with a 422 before any worker sees it, then fires a good one.
 
-### Act 2 — Run it
+## 2 · Short tasks
 
-The board. A job is a **token** — a small card with a real name on it — and it
-moves:
+One task from trigger to end, with everything that shapes it under your hand:
+
+| Field | What it changes |
+|---|---|
+| **when** | `now` (IMMEDIATE), `in a few seconds` (DELAYED), `on a schedule` (CRON) |
+| **seconds** | how far out a DELAYED job is due |
+| **every** | the cron expression — minute, 2 minutes, 5 minutes |
+| **stop after** | how many ticks to watch before cancelling the schedule |
+| **failures first** | how many times Aarokya refuses before it works |
+| **max tries** | the job's own `max_attempts`, overriding the endpoint's |
+
+The journey changes shape with the trigger: pick `on a schedule` and the dots
+become nine, with *pg_cron owns it*, *the database makes a row* and *cancelled*
+in place of *waits until due*.
+
+Ask for failures and the run switches to `aarokya-mandate-sync-impatient` — the
+same call with retries measured in seconds rather than the minutes the real
+policy uses — and says so on screen, so nobody thinks Invokr retries that fast
+by default.
+
+The board is the picture. A job is a **token** — a small card with a real name
+on it — and it moves:
 
 ```
                     ┌ endpoints ─────────────┐
@@ -124,16 +164,6 @@ your service  →  PostgreSQL ├ jobs · not due yet ┤  →  workers  →  Aa
                     └ jobs · due now ────────┘        ↑
                                         one takes it, the rest skip the locked row
 ```
-
-| Take | Runs for | What you can change |
-|---|---|---|
-| **Poll until it is done** | up to ~70s | mandate, which check the bank says yes on |
-| **Exactly one worker takes it** | your delay + a few s | mandate, delay |
-| **When Aarokya is down** | ~25s | mandate, how many failures first |
-| **When the work takes minutes** | ~20s | job name, check-ins |
-| **Not just HTTP** | ~10s | mandate |
-| **Same name, two teams** | ~15s | mandate |
-| **Hand over** | — | — |
 
 Everything you would otherwise have to say out loud is something the room can
 watch instead:
@@ -147,16 +177,49 @@ watch instead:
 | Retry with backoff | it flies **back** to the queue, amber, counting down to the next try |
 | Crashes don't lose work | kill every worker and the token is still there, still counting |
 | pg_cron schedules from inside the database | a token appears in the queue that nobody put there |
-| A poll loop ends when the answer does | terminal status, and the caller cancels the job on screen |
-| Long work doesn't hold a connection | the token parks on the other side and Invokr checks back |
+| A poll loop ends when the answer does | the schedule is cancelled on screen once the status is terminal |
 
-### One step at a time, at a pace you choose
+Two more takes sit on the same page: **Same name, two teams** fires the same
+endpoint name into both workspaces, and **Not just HTTP** sends the same job to
+Kafka and a Redis Stream.
 
-`slow` / `normal` / `quick` in the header sets how long each step is held. That
-dwell is a *floor*, never a substitute: each step carries the real time it
-happened at, and anything that genuinely took longer keeps its own timing. A
-15-second wait still takes fifteen seconds; it is only the 8-millisecond bursts
-that get stretched enough to read.
+## 3 · Long-running
+
+When the other side answers `202` and keeps working, the interesting thing is
+not where a token is — it is **who called whom, in what order, and how long
+apart**. So this page drops the board for two lanes with time running
+downwards:
+
+```
+        INVOKR                                   AAROKYA
+  142ms  ├────────── POST /async/start ─────────────▶│  here is the work
+  149ms  │◀───────── 202  Location: /async/status/… ─┤  accepted, still working
+         │  parked · WAITING, no connection held      │
+  1.2s   ├────────── GET /async/status/… ───────────▶│  poll 1
+  1.2s   │◀───────── 202  still working ─────────────┤  Retry-After 2s
+  3.3s   ├────────── GET /async/status/… ───────────▶│  poll 2
+  ⋮
+  7.5s   │◀───────── 200  success ───────────────────┤  done
+```
+
+Each arrow is a real row: the first pair from `attempts`, every poll from the
+`polls` table with its own `status_code` and `retry_after_ms`, and a callback
+from Aarokya's own log. The panel on the left is the `async` block itself, as a
+form — edit it and the next run is sent with what you typed:
+
+| Field | What it is |
+|---|---|
+| **mode** | `poll`, `callback`, or both — the spec allows either or both, and whichever finalizes first wins |
+| **poll.initial_delay_ms** / **max_delay_ms** / **backoff** | the cadence when the target does not send `Retry-After` |
+| **max_polls** / **max_wait_ms** | the bounds; either one trips and the execution is FAILED with `TIMEOUT` |
+| **202s before it finishes** | how many times Aarokya says "still working" |
+| **Retry-After (s)** | what Aarokya asks for between checks — Invokr honours it over the backoff |
+| **calls back after (s)** | in callback mode, how long Aarokya works before POSTing `/v1/callbacks/…/complete` |
+
+The state panel underneath tracks the execution through `QUEUED → WAITING →
+POLLING → SUCCESS` and counts the polls against `max_polls`, which is where the
+point lands: **polls are not attempts.** Ten check-ins and the execution still
+has one attempt on the record.
 
 ---
 
@@ -165,10 +228,10 @@ that get stretched enough to read.
 ### Workers are real processes, and you can kill them
 
 `just demo` starts **two** workers, so the board can show one taking a job while
-the other skips it. The pick-up take has **Add a worker** (up to three) and
-**Kill a worker** — a real `SIGKILL` to a real process, which is what makes it
-worth doing: kill both, watch the job keep counting down with nobody left to run
-it, start a fresh one, and it goes out on time.
+the other skips it. Page 2 has **Add a worker** (up to three) and **Kill a
+worker** — a real `SIGKILL` to a real process, which is what makes it worth
+doing: set `when = in a few seconds`, kill both, watch the job keep counting
+down with nobody left to run it, start a fresh one, and it goes out on time.
 
 The worker boxes are labelled with each process's own worker id, scraped from
 its startup log, and a claimed job lands in the box of the worker that actually
@@ -177,24 +240,21 @@ claimed it — the same id Invokr wrote on the execution row.
 Spawned workers get `INVOKR_DB_POOL_SIZE=8` and `INVOKR_WORKER_MAX_CONCURRENT=4`.
 The defaults (50 connections each) exhaust a stock PostgreSQL's 100 once you run
 two of them alongside the API, and the first thing to break is pg_cron — which
-is the poll loop.
+is what `when = on a schedule` needs.
 
-### The poll loop and the one-minute wait
+### The schedule and the one-minute wait
 
-`pg_cron` ticks on minute boundaries, so the poll take can sit waiting for up to
-60 seconds. That wait *is* a point worth making — nothing is holding a
-connection open, the next tick is a row the database will write — but if you
-would rather not spend it, press **Arm it now** when you start act 1 and the
-first tick will have landed by the time you arrive.
+`pg_cron` ticks on minute boundaries, so `when = on a schedule` sits waiting for
+up to 60 seconds before the first row appears. That wait *is* a point worth
+making — nothing is holding a connection open, the next tick is a row the
+database will write — but it is a minute, so know it is coming. `stop after`
+decides how many ticks you watch; the run cancels the schedule itself on the
+way out, so nothing is left firing.
 
-The take cancels its own schedule as soon as the bank answers `ACTIVE`, so
-nothing is left firing. Leave **terminal on check** at `1` unless you want to
-watch it stay `PENDING` and wait another minute.
-
-### Act 1 is creation the first time and an update after that
+### Page 1 is creation the first time and an update after that
 
 `just demo` deliberately leaves the **mandates** workspace empty of the config,
-secret, payload spec and endpoint, so act 1's first run in a session is four
+secret, payload spec and endpoint, so page 1's first run in a session is four
 real `201 Created`s. Run it again and each POST comes back `409`, the page
 follows with a `PUT`, and says so — *already there, so the same call updates it
 in place, still one row, still no deploy*, which is its own point.
@@ -208,16 +268,16 @@ config an endpoint points at cannot be deleted either.
 
 The target is `invokr-mock-server`, and it is not a silent echo. It prints a
 plain sentence for every request it handles — to its own terminal, and to
-`GET /_log`, which is what fills the bottom half of the wire panel. In the
-retry take that is the whole point: Aarokya's log shows three calls carrying
-**one** de-duplication key, which is the honest answer to "would a retry
-register the mandate twice?".
+`GET /_log`, which is what fills the bottom half of the wire panel. With
+**failures first** turned up that is the whole point: Aarokya's log shows three
+calls carrying **one** de-duplication key, which is the honest answer to "would
+a retry register the mandate twice?".
 
-Aarokya remembers how many times it has been asked about each mandate, so the
-takes that poll it reset that first. If you are testing by hand,
-`POST /_polls/reset` clears it.
+Aarokya remembers how many times it has been asked about each mandate, so every
+run resets that first. If you are testing by hand, `POST /_polls/reset` clears
+it.
 
-### The transports take and the brokers
+### Not just HTTP, and the brokers
 
 Kafka and Redis Stream dispatchers are feature-gated in the worker, and the
 brokers have to be running:
@@ -230,7 +290,7 @@ INVOKR_DEMO_WORKER_FEATURES=kafka,redis-stream just demo
 Without them the take skips those two and says why. That is deliberate: firing
 at a broker that isn't there only proves the broker isn't there.
 
-### The long-running take needs another branch
+### Page 3 needs another branch
 
 Long-running jobs — an endpoint that answers `202 Accepted` and keeps working,
 which Invokr then polls until it finishes — live on **`feat/long-running-jobs`**.
@@ -239,26 +299,35 @@ API an endpoint whose `async` block enables neither polling nor callbacks: a
 build with the feature rejects it, a build without it stores it as opaque JSON
 and says 201. The throwaway endpoint is deleted either way.
 
-On a build without the feature the take says so and points at replay. On a build
-with it, the take registers an async endpoint, fires it, and the token parks on
-the other side while the console counts the check-ins.
+On a build without the feature the page says so and points at replay. On a build
+with it, the page writes the endpoint fresh from the form on every run, so what
+is sent is what you typed.
 
 The target side works on any build: `invokr-mock-server` has `/async/start` and
 `/async/status/{id}`, which take a script — "say 202 three times, then 200" —
-from the request body, so the take's *check-ins* field is really the script it
-sends.
+from the request body. Give `/async/start` a `callback_url` and a
+`callback_after_ms` instead and it stops waiting to be asked: it sleeps, then
+POSTs the result to `/v1/callbacks/…/complete` itself, which is what the page's
+**callback** mode shows.
 
-### The hand-over and the dashboard
+Three things make callback mode work, and all three are things a real
+integration needs:
 
-The dashboard needs its own build:
+- The worker builds `{{execution.callback_url}}`, so it needs
+  `INVOKR_API_BASE_URL` — without it the URL is a bare path the target cannot
+  call. `demo/server.mjs` sets it from `INVOKR_URL` when it spawns a worker.
+- The target is the one calling Invokr, so it needs Invokr's API key. It is
+  held as a secret named `invokr-api-key` and templated into the body the
+  target is given, rather than pasted into the endpoint spec.
+- The `async` block's `callback` field is a plain boolean. The design doc shows
+  `{"enabled": true}`; the implementation takes `true`. The implementation is
+  what runs.
 
-```bash
-just dashboard-build
-INVOKR_MODE=both INVOKR_DASHBOARD_DIST_DIR=crates/dashboard/pkg cargo run -p invokr-api
-INVOKR_DEMO_DASHBOARD_URL=http://localhost:8080/dashboard just demo
-```
-
-Without a URL the take says so and tells you the command.
+Each mode keeps its own tape — `long-running-poll`, `long-running-callback`,
+`long-running-both` — so replay shows the one you have selected. **both** is
+worth a minute of anyone's time: two polls go out, the callback lands first,
+and the execution is finalized by whichever got there first, exactly as the
+spec says.
 
 ---
 
@@ -289,19 +358,19 @@ take can't clobber a good one.
 
 ## The ten minutes before the session
 
-1. `just demo`, then run both acts live with the values you plan to use. This
-   re-records them and warms every code path.
+1. `just demo`, then run all three pages live with the values you plan to use.
+   This re-records them and warms every code path.
 2. Check the header lights are green (api, workers, aarokya).
-3. Make sure no schedule is left running — the poll take cancels its own, but a
-   run you interrupted may not have.
+3. Make sure no schedule is left running — a page-2 run on a schedule cancels
+   its own, but one you interrupted may not have.
 4. Open the deck in a second tab or window (`http://localhost:4173/deck`), press
    `F` for full screen, `N` if you want speaker notes.
-5. Decide now whether you are showing the transports, long-running and hand-over
-   takes, and configure the brokers and dashboard URL if so. Deciding live costs
-   you a minute you do not have.
+5. Decide now whether you are showing **Not just HTTP** and page 3, and
+   configure the brokers if so. Deciding live costs you a minute you do not
+   have.
 
-**Keys:** `1` / `2` switch acts, `←` `→` move between takes, `Enter` runs the
-current one, `R` toggles replay.
+**Keys:** `1` `2` `3` pages, `Tab` cycles takes, `→` / `←` step through a run,
+`A` hands it to auto, `Enter` runs the current one, `R` toggles replay.
 
 **If a live take fails in the room:** the console says so and suggests replay.
 Flip the toggle, re-run it, carry on. Do not debug in front of the room — the

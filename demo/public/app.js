@@ -1,30 +1,32 @@
-// Invokr live demo — a control room in two halves.
+// Invokr live demo — three pages, one screen each.
 //
-//   Act 1  What has to exist before a job can run: a config, a secret, a
-//          payload spec, an endpoint. Five slots fill in, and the one request
-//          they all feed lights up placeholder by placeholder.
+//   1  Set it up    What has to exist before a job can run. Five slots fill in,
+//                   and the one request they all feed lights up placeholder by
+//                   placeholder.
+//   2  Short tasks  One task from trigger to end, with the trigger, the delay,
+//                   the schedule and the failures all under your hand.
+//   3  Long-running When the other side answers 202 and keeps working: who
+//                   called whom, in what order, and how long apart.
 //
-//   Act 2  What happens when it runs: a row becomes due, exactly one worker
-//          takes it, the other side answers, the try is recorded — and, in the
-//          story this demo tells, the caller cancels the job once the answer is
-//          terminal.
+// Three rules hold it together:
 //
-// Two rules hold it together:
-//
-//   1. A take's `run()` never touches the DOM. It emits events, and one
-//      renderer draws them — which is what lets a recorded run replay through
-//      the same code.
-//   2. Steps are drawn one at a time with a dwell between them, so the eye can
-//      follow. The dwell is a *floor*, never a substitute: a 15-second wait
-//      still takes fifteen seconds, and every step carries the real time it
-//      happened at.
+//   1. A take's `run()` never touches the DOM. It emits events; one renderer
+//      draws them — which is what lets a recorded run replay through the same
+//      code.
+//   2. Events are delivered as they happen and drawn one step at a time. You
+//      step through them yourself, or hand it to `auto`, which holds each step
+//      for a dwell. The dwell is a *floor*, never a substitute: a 15-second
+//      wait still takes fifteen seconds, and every step carries the real time
+//      it happened at.
+//   3. What is on screen is always `film.events.slice(0, film.cursor)` drawn in
+//      order, so stepping backwards is just drawing less of the same film.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
 const state = {
   status: null,
-  act: "setup",
-  current: 0, // index into takesIn(state.act)
+  page: "setup",
+  current: 0, // index into takesIn(state.page)
   replay: false,
   recording: true,
   ran: new Set(),
@@ -40,6 +42,7 @@ const ms = (n) => (n == null ? "—" : n < 1000 ? `${Math.round(n)}ms` : `${(n /
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const short = (id) => (id ? String(id).replace("worker_", "").slice(0, 6) : "—");
 const sleep = (t) => new Promise((r) => setTimeout(r, t));
+const clamp = (v, lo, hi, dflt) => Math.max(lo, Math.min(hi, Number(v) || dflt));
 
 const maskSecrets = (text) =>
   String(text).replace(/(\\?"authorization\\?"\s*:\s*\\?")(?!\{\{)([^"\\]*)/gi, "$1••••••••");
@@ -65,7 +68,7 @@ function highlightJson(value) {
     .replace(/\{\{execution\.[^}]+\}\}/g, (m) => `<span class="tok-exec">${m}</span>`);
 }
 
-// ─── act 2: the board ────────────────────────────────────────────────────────
+// ─── page 2: the board ───────────────────────────────────────────────────────
 
 const BOARD = { w: 1420, h: 620 };
 const TOKEN = { w: 152, h: 34, gap: 8 };
@@ -106,10 +109,10 @@ function layoutBoard() {
 }
 
 function fitBoard() {
-  const view = $("#view-run");
+  const view = $("#view-short");
   const board = $("#board");
-  // The run view is display:none while act 1 is up, so a fit asked for during
-  // the switch measures zero. Try again once layout has flushed.
+  // The board's view is display:none while another page is up, so a fit asked
+  // for during the switch measures zero. Try again once layout has flushed.
   if (!view.clientWidth) {
     if (view.classList.contains("on")) requestAnimationFrame(fitBoard);
     return;
@@ -243,7 +246,7 @@ function flashZone(cls) {
   }
 }
 
-// ─── act 1: the slots and the spec card ──────────────────────────────────────
+// ─── page 1: the slots and the spec card ─────────────────────────────────────
 //
 // Five things have to exist before a job can run, and four of them are made by
 // a plain POST. The slots are those five; the card beside them is the one
@@ -271,31 +274,27 @@ function renderSlots() {
 function setSlot({ id, cls, name, detail, mark }) {
   const el = $(`#slots [data-slot="${id}"]`);
   if (!el) return;
-  if (cls) {
+  if (cls !== undefined) {
     el.classList.remove("doing", "done", "bad");
-    el.classList.add(cls);
+    if (cls) el.classList.add(cls);
   }
   if (name !== undefined) el.querySelector(".name").textContent = name;
   if (detail !== undefined) el.querySelector(".detail").innerHTML = detail;
   if (mark !== undefined) el.querySelector(".mark").textContent = mark;
 }
 
-/// The hero endpoint, pretty-printed with every `{{namespace.key}}` wrapped so
-/// it can be lit up when the thing it needs exists.
+/// The endpoint being described, pretty-printed with every `{{namespace.key}}`
+/// wrapped so it can be lit up when the thing it needs exists.
 function renderSpecCard(specSource) {
   const spec = specSource ?? state.status?.mandateSpec;
   if (!spec) {
     $("#spec-body").innerHTML = `<span class="empty">waiting for the demo server</span>`;
     return;
   }
-  const text = esc(JSON.stringify(spec, null, 2));
-  $("#spec-body").innerHTML = text.replace(
+  $("#spec-body").innerHTML = esc(JSON.stringify(spec, null, 2)).replace(
     /\{\{(input|config|secret|execution)\.([^}]+)\}\}/g,
     (m, ns) => `<span class="ph p-${ns}" data-ns="${ns}">${m}</span>`,
   );
-  $("#spec-body")
-    .querySelectorAll(".ph")
-    .forEach((n) => n.classList.remove("live"));
 }
 
 function lightPlaceholders(ns) {
@@ -304,17 +303,66 @@ function lightPlaceholders(ns) {
     .forEach((n) => n.classList.add("live"));
 }
 
-// ─── the step pips ───────────────────────────────────────────────────────────
+// ─── page 3: who called whom ─────────────────────────────────────────────────
 //
-// A take's journey, compressed to one row of dots in the console. The dot tells
-// you where you are; the line beside it tells you what is happening.
+// Two lanes and time running downwards. Every message is one arrow, labelled
+// with what was sent and stamped with when. It is not a sequence diagram — no
+// activation bars, no lifelines you have to decode — just the calls, in order,
+// with the gap between them visible.
+
+function addMsg({ dir, verb, path, code, note, at, tone }) {
+  const host = $("#msgs");
+  host.querySelector(".empty")?.remove();
+  const row = document.createElement("div");
+  row.className = `msg ${dir} ${tone ?? ""}`;
+  row.innerHTML = `
+    <span class="at">${at == null ? "" : at < 1000 ? `${Math.round(at)}ms` : `${(at / 1000).toFixed(1)}s`}</span>
+    <div class="wirebox">
+      <span class="label">${verb ? `<b>${esc(verb)}</b> ` : ""}${esc(path ?? "")}${
+        code ? ` <span class="code ${code >= 200 && code < 300 ? "ok" : "bad"}">${code}</span>` : ""
+      }</span>
+      <span class="line"></span>
+    </div>
+    <span class="tail">${note ?? ""}</span>`;
+  host.appendChild(row);
+  host.scrollTop = host.scrollHeight;
+}
+
+function setExecState({ status, polls, maxPolls, note }) {
+  const el = $("#exec-state");
+  if (!status) {
+    el.innerHTML = `<span class="empty">not started</span>`;
+    return;
+  }
+  const tone =
+    status === "SUCCESS" ? "ok" : status === "FAILED" || status === "CANCELLED" ? "bad" : status === "WAITING" ? "warn" : "act";
+  el.innerHTML = `
+    <div class="state-row"><span class="k">status</span><span class="pill ${tone}">${esc(status)}</span></div>
+    <div class="state-row"><span class="k">polls</span><span class="v">${polls ?? 0}${maxPolls ? ` / ${maxPolls}` : ""}</span></div>
+    ${note ? `<div class="state-note">${note}</div>` : ""}`;
+}
+
+function clearLanes() {
+  $("#msgs").innerHTML = `<span class="empty">nothing has been sent yet</span>`;
+  setExecState({});
+}
+
+// ─── the step dots ───────────────────────────────────────────────────────────
 
 function renderPips(take) {
-  const steps = take.steps ?? [];
+  const steps = stepsOf(take) ?? [];
   $("#step-dot").innerHTML = steps
     .map((s) => `<i class="pip" data-step="${esc(s.id)}" title="${esc(s.label)}"></i>`)
     .join("");
-  $("#step-dot").classList.toggle("has-pips", steps.length > 0);
+  updateStepCount();
+}
+
+function updateStepCount() {
+  const host = $("#step-dot");
+  const all = host.querySelectorAll(".pip").length;
+  if (!all) return ($("#step-count").textContent = "");
+  const at = host.querySelectorAll(".pip.done, .pip.now, .pip.bad, .pip.skipped").length;
+  $("#step-count").textContent = `${at} / ${all}`;
 }
 
 /// Mark a step, and remember the time it claims so a later step is never shown
@@ -327,33 +375,29 @@ function renderPips(take) {
 function markStep(id, cls, at) {
   const host = $("#step-dot");
   const el = host.querySelector(`[data-step="${id}"]`);
-  if (!el) return null;
+  if (!el) return;
   host.querySelectorAll(".pip.now").forEach((n) => {
     n.classList.remove("now");
     if (!n.classList.contains("bad") && !n.classList.contains("skipped")) n.classList.add("done");
   });
   el.classList.remove("skipped", "bad");
   el.classList.add(cls ?? "now");
-  if (at != null) {
-    const pips = [...host.querySelectorAll(".pip")];
-    const before = pips
-      .slice(0, pips.indexOf(el))
-      .reverse()
-      .find((s) => s.dataset.at !== undefined);
-    el.dataset.at = String(Math.max(at, before ? Number(before.dataset.at) : 0));
-  }
-  return el;
+  if (at != null) el.dataset.at = String(Math.max(at, priorStepTime(el)));
+  updateStepCount();
 }
 
-function retimeStep(id, at) {
-  const el = $("#step-dot").querySelector(`[data-step="${id}"]`);
-  if (!el) return;
+function priorStepTime(el) {
   const pips = [...$("#step-dot").querySelectorAll(".pip")];
   const before = pips
     .slice(0, pips.indexOf(el))
     .reverse()
     .find((s) => s.dataset.at !== undefined);
-  el.dataset.at = String(Math.max(at, before ? Number(before.dataset.at) : 0));
+  return before ? Number(before.dataset.at) : 0;
+}
+
+function retimeStep(id, at) {
+  const el = $("#step-dot").querySelector(`[data-step="${id}"]`);
+  if (el) el.dataset.at = String(Math.max(at, priorStepTime(el)));
 }
 
 /// A finished run has no current step. A run that stopped early keeps its
@@ -410,7 +454,9 @@ function addHits(entries) {
     row.innerHTML = `<span class="mark">${e.ok ? "✓" : "!"}</span>
       <div>
         <div class="said">${esc(e.summary)}</div>
-        <div class="sub">${esc(clock(e.at))} · ${e.status}${e.idempotency_key ? ` · key ${esc(e.idempotency_key)}` : ""}</div>
+        <div class="sub">${esc(clock(e.at))}${e.status ? ` · ${e.status}` : ""}${
+          e.idempotency_key ? ` · key ${esc(e.idempotency_key)}` : ""
+        }</div>
       </div>`;
     host.appendChild(row);
   }
@@ -458,43 +504,126 @@ async function targetLogHead() {
   }
 }
 
-// ─── the pacer ───────────────────────────────────────────────────────────────
+// ─── the film ────────────────────────────────────────────────────────────────
 //
-// Steps are drawn no closer together than `dwell`. Anything that took longer
-// than that in real life keeps its own timing — the floor only stretches the
-// bursts the eye would otherwise miss.
+// Events are delivered as they happen. What is on screen is always the first
+// `cursor` of them, drawn in order — so Next draws one more group, Back draws
+// one fewer, and `auto` is Next on a timer.
 
-const pacer = { dwell: 1400, queue: [], running: false, lastStep: 0, waiters: [] };
+const PACED = new Set(["step", "slot", "msg"]);
 
-function enqueue(take, ev) {
-  pacer.queue.push([take, ev]);
-  if (!pacer.running) drainLoop();
+const film = {
+  events: [],
+  cursor: 0,
+  closed: false,
+  playing: false,
+  mode: "manual", // "manual" | "auto"
+  dwell: 1200,
+  nudge: null, // resolves when the viewer asks for the next step
+  waiters: [],
+};
+
+function deliver(ev) {
+  film.events.push(ev);
 }
 
-async function drainLoop() {
-  pacer.running = true;
-  while (pacer.queue.length) {
-    const [take, ev] = pacer.queue.shift();
-    if (ev.type === "step" || ev.type === "slot") {
-      const earliest = pacer.lastStep + pacer.dwell;
-      const now = performance.now();
-      if (now < earliest) await sleep(earliest - now);
-      pacer.lastStep = performance.now();
-    }
-    applyNow(take, ev);
+function resetFilm() {
+  film.events.length = 0;
+  film.cursor = 0;
+  film.closed = false;
+  releaseNudge();
+  film.waiters.splice(0).forEach((r) => r());
+}
+
+function waitForNudge() {
+  return new Promise((r) => {
+    film.nudge = r;
+  });
+}
+
+function releaseNudge() {
+  const r = film.nudge;
+  film.nudge = null;
+  r?.();
+}
+
+/// Draw events up to and including the next paced one.
+function advanceOneGroup(take) {
+  while (film.cursor < film.events.length) {
+    const ev = film.events[film.cursor++];
+    draw(take, ev);
+    if (PACED.has(ev.type)) return true;
   }
-  pacer.running = false;
-  pacer.waiters.splice(0).forEach((r) => r());
+  return false;
 }
 
-const drained = () =>
-  pacer.running || pacer.queue.length ? new Promise((r) => pacer.waiters.push(r)) : Promise.resolve();
-
-function resetPacer() {
-  pacer.queue.length = 0;
-  pacer.lastStep = 0;
-  pacer.waiters.splice(0).forEach((r) => r());
+/// Redraw the film from the start, showing exactly `n` events.
+function redrawTo(take, n) {
+  resetStage();
+  renderPips(take);
+  film.cursor = 0;
+  while (film.cursor < n) draw(take, film.events[film.cursor++]);
 }
+
+function pacedIndices() {
+  const out = [];
+  film.events.forEach((e, i) => PACED.has(e.type) && out.push(i));
+  return out;
+}
+
+function stepBack() {
+  const take = currentTake();
+  const before = pacedIndices().filter((i) => i < film.cursor - 1);
+  redrawTo(take, before.length ? before[before.length - 1] + 1 : 0);
+  syncTransport();
+}
+
+function stepNext() {
+  if (film.cursor < film.events.length) {
+    advanceOneGroup(currentTake());
+    syncTransport();
+    return;
+  }
+  releaseNudge(); // nothing buffered: let the run deliver the next one
+}
+
+function setMode(mode) {
+  film.mode = mode;
+  $("#t-auto").classList.toggle("on", mode === "auto");
+  $("#t-auto").textContent = mode === "auto" ? "pause" : "auto";
+  if (mode === "auto") releaseNudge();
+  syncTransport();
+}
+
+function syncTransport() {
+  $("#t-back").disabled = film.cursor <= 0 || film.mode === "auto";
+  $("#t-next").disabled = film.mode === "auto";
+  updateStepCount();
+}
+
+/// Walk the film. Ends when every delivered event has been drawn and the run
+/// says there will be no more.
+async function play(take) {
+  film.playing = true;
+  syncTransport();
+  while (film.playing) {
+    if (film.cursor < film.events.length) {
+      const drewStep = advanceOneGroup(take);
+      syncTransport();
+      if (!drewStep) continue; // tail of un-paced events; keep going
+      if (film.mode === "auto") await sleep(film.dwell);
+      else await waitForNudge();
+      continue;
+    }
+    if (film.closed) break;
+    await sleep(40);
+  }
+  film.playing = false;
+  film.waiters.splice(0).forEach((r) => r());
+  syncTransport();
+}
+
+const played = () => (film.playing ? new Promise((r) => film.waiters.push(r)) : Promise.resolve());
 
 // ─── the event tape ──────────────────────────────────────────────────────────
 
@@ -510,22 +639,35 @@ class Run {
 
   emit(type, payload = {}) {
     if (this.cancelled) return;
-    this.events.push({ t: Math.round(performance.now() - this.t0), type, ...payload });
-    enqueue(this.take, this.events[this.events.length - 1]);
+    const ev = { t: Math.round(performance.now() - this.t0), type, ...payload };
+    this.events.push(ev);
+    deliver(ev);
   }
 
-  /// One step of act 2's journey.
+  /// One step of a journey.
   step(id, opts = {}) {
     this.emit("step", { id, at: Math.round(performance.now() - this.t0), ...opts });
   }
 
-  /// One of act 1's five slots.
+  /// One of page 1's five slots.
   slot(id, opts = {}) {
     this.emit("slot", { id, ...opts });
   }
 
+  /// One arrow on page 3.
+  msg(opts) {
+    this.emit("msg", { at: Math.round(performance.now() - this.t0), ...opts });
+  }
+
   say(text, tone = "") {
     this.emit("say", { text, tone });
+  }
+
+  /// Say why it stopped, and keep that as the last word — the generic "that
+  /// did not finish" helps nobody once the take has explained itself.
+  halt(text, tone = "bad") {
+    this.halted = true;
+    this.say(text, tone);
   }
 
   wire(entry) {
@@ -535,7 +677,7 @@ class Run {
   async save(ok) {
     if (!ok || this.replay || !state.recording) return;
     try {
-      await fetch(`/control/recordings/${this.take.id}`, {
+      await fetch(`/control/recordings/${tapeId(this.take)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: maskSecrets(
@@ -543,7 +685,8 @@ class Run {
         ),
       });
       const known = state.status?.recordings;
-      if (known && !known.includes(this.take.id)) known.push(this.take.id);
+      const id = tapeId(this.take);
+      if (known && !known.includes(id)) known.push(id);
     } catch {
       /* a failed save must never take the demo down */
     }
@@ -552,7 +695,7 @@ class Run {
 
 // ─── the one renderer ────────────────────────────────────────────────────────
 
-function applyNow(take, ev) {
+function draw(take, ev) {
   switch (ev.type) {
     case "step":
       markStep(ev.id, ev.skip ? "skipped" : ev.bad ? "bad" : "now", ev.skip ? null : ev.at);
@@ -573,6 +716,17 @@ function applyNow(take, ev) {
       setSlot(ev);
       if (ev.lights) lightPlaceholders(ev.lights);
       if (ev.text) narrate(ev.t, ev.text, ev.tone);
+      break;
+
+    case "msg":
+      addMsg(ev);
+      if (ev.id) markStep(ev.id, ev.bad ? "bad" : "now", ev.at);
+      if (ev.exec) setExecState(ev.exec);
+      if (ev.text) narrate(ev.at ?? ev.t, ev.text, ev.tone);
+      break;
+
+    case "exec":
+      setExecState(ev);
       break;
 
     case "slots-reset":
@@ -650,8 +804,6 @@ async function watchExecution(run, executionId, opts = {}) {
   let seenAttempts = 0;
   let claimedAttempt = 0;
   let announcedRetry = 0;
-  let seenPolls = 0;
-  let sawWaiting = false;
   let logSeq = targetSince;
   let lastBody = null;
 
@@ -662,21 +814,6 @@ async function watchExecution(run, executionId, opts = {}) {
       if (!entries.length) return;
       logSeq = Math.max(logSeq, ...entries.map((e) => e.seq));
       run.emit("receipt", { entries });
-
-      // A long-running destination reports each check-in. Invokr's own
-      // execution row does not expose a poll count over the API, so the
-      // receiving side is where the evidence is.
-      for (const e of entries) {
-        if (!e.path?.startsWith("/async/status") || e.status !== 202) continue;
-        seenPolls += 1;
-        run.emit("step", {
-          id: "poll",
-          at: Math.max(0, new Date(e.at) - run.wallT0),
-          token: { id: token, zone: "target", state: "polling", note: `check ${seenPolls}` },
-          text: `still working — Invokr has checked back <b>${seenPolls}×</b>, honouring Retry-After`,
-          tone: "act",
-        });
-      }
     } catch {
       /* the target's log is a nicety, never a dependency */
     }
@@ -694,15 +831,6 @@ async function watchExecution(run, executionId, opts = {}) {
       if (exec.status === "RETRYING" && exec.run_at && exec.attempt_count > announcedRetry) {
         announcedRetry = exec.attempt_count;
         pendingRetry = exec;
-      }
-
-      if (exec.status === "WAITING" && !sawWaiting) {
-        sawWaiting = true;
-        run.step("accepted", {
-          token: { id: token, zone: "target", state: "polling", note: "202 · working" },
-          text: "the other side said <b>202</b> and kept working — Invokr parked the row",
-          tone: "act",
-        });
       }
 
       // `at` is the attempt's own start when we already have the row, so the
@@ -724,15 +852,6 @@ async function watchExecution(run, executionId, opts = {}) {
       };
       claim(exec.attempt_count, exec.worker_id);
 
-      if (exec.poll_count != null && exec.poll_count > seenPolls) {
-        seenPolls = exec.poll_count;
-        run.step("poll", {
-          token: { id: token, zone: "target", state: "polling", note: `poll ${seenPolls}` },
-          text: `still working — Invokr has checked back <b>${seenPolls}×</b>`,
-          tone: "act",
-        });
-      }
-
       const attempts = (await api("GET", `/v1/executions/${executionId}/attempts`, { ws })).body?.data ?? [];
       if (attempts.length !== seenAttempts) {
         const ordered = [...attempts].sort((a, b) => a.attempt_number - b.attempt_number);
@@ -741,27 +860,7 @@ async function watchExecution(run, executionId, opts = {}) {
           // The claim and this attempt start in the same transaction, so the
           // attempt's own timestamp is the truthful one for both.
           run.emit("retime", { id: "claim", at: offset(a.started_at) });
-
-          // The attempt that parks a long-running job is recorded as WAITING:
-          // the destination took the work, it has not finished it.
-          if (a.status === "WAITING") {
-            sawWaiting = true;
-            run.emit("step", {
-              id: "call",
-              at: offset(a.started_at),
-              token: { id: token, zone: "target", state: "running", note: "calling" },
-              text: "the worker calls Aarokya",
-              tone: "act",
-            });
-            run.emit("step", {
-              id: "accepted",
-              at: offset(a.completed_at ?? a.started_at),
-              token: { id: token, zone: "target", state: "polling", note: "202 · working" },
-              text: "the other side said <b>202</b> and kept working — Invokr parked the row",
-              tone: "act",
-            });
-            continue;
-          }
+          if (a.status === "WAITING") continue; // page 3 tells that story
 
           const ok = a.status === "SUCCESS";
           lastBody = asJson(a.output?.body) ?? lastBody;
@@ -770,7 +869,7 @@ async function watchExecution(run, executionId, opts = {}) {
             id: "call",
             at: offset(a.started_at),
             token: { id: token, zone: "target", state: "running", note: "calling" },
-            text: `the worker calls <b>Aarokya</b>, with the key resolved from the secret store`,
+            text: "the worker calls <b>Aarokya</b>, with the key resolved from the secret store",
             tone: "act",
           });
           run.emit("wire", {
@@ -816,18 +915,6 @@ async function watchExecution(run, executionId, opts = {}) {
 
       if (["SUCCESS", "FAILED", "CANCELLED"].includes(exec.status)) {
         await tailTarget();
-        if (sawWaiting) {
-          run.step("answer", {
-            bad: exec.status !== "SUCCESS",
-            token: { id: token, state: exec.status === "SUCCESS" ? "ok" : "bad", note: "finished" },
-            flash: exec.status === "SUCCESS" ? "hit" : "refused",
-            text:
-              exec.status === "SUCCESS"
-                ? `it finished after <b>${seenPolls} check-in${seenPolls === 1 ? "" : "s"}</b> — still one attempt`
-                : "it never finished",
-            tone: exec.status === "SUCCESS" ? "ok" : "bad",
-          });
-        }
         run.step("record", {
           token: {
             id: token,
@@ -868,18 +955,18 @@ function countdownToken(run, token, deadline, prefix) {
 }
 
 /// Waits for pg_cron to materialise a tick, then follows it like any other job.
-async function watchCronTick(run, jobId, { since, token, label, ws = "a" }) {
+async function watchCronTick(run, jobId, { since, token, label, ws = "a", nth = 1 }) {
   const started = performance.now();
-  let seen = (await api("GET", `/v1/jobs/${jobId}/executions?limit=10`, { ws })).body?.data?.length ?? 0;
+  let seen = (await api("GET", `/v1/jobs/${jobId}/executions?limit=20`, { ws })).body?.data?.length ?? 0;
 
-  while (performance.now() - started < 90000 && !run.cancelled) {
-    const execs = (await api("GET", `/v1/jobs/${jobId}/executions?limit=10`, { ws })).body?.data ?? [];
+  while (performance.now() - started < 190000 && !run.cancelled) {
+    const execs = (await api("GET", `/v1/jobs/${jobId}/executions?limit=20`, { ws })).body?.data ?? [];
     if (execs.length > seen) {
       const newest = execs[0];
       run.step("tick", {
         cron: true,
         token: { id: token, zone: "ready", state: "ready", label, note: clock(newest.created_at) },
-        text: "<b>nobody put that there</b> — PostgreSQL wrote the row itself, on the minute",
+        text: `tick ${nth} — <b>nobody put that there</b>, PostgreSQL wrote the row itself`,
         tone: "act",
       });
       // We poll for the row, so we notice it up to a second after it appears.
@@ -900,7 +987,7 @@ async function watchCronTick(run, jobId, { since, token, label, ws = "a" }) {
 const key = (p) => `${p}-${Date.now().toString(36)}`;
 
 /// Create the job and follow the row it makes, whatever the trigger is.
-async function invokePhase(run, { endpoint, input, trigger, runAt, cron, ws = "a", label, token, maxAttempts }) {
+async function invokePhase(run, { endpoint, input, trigger, runAt, cron, ws = "a", label, token, maxAttempts, asyncOverrides }) {
   const body = {
     trigger: trigger ?? (runAt ? "DELAYED" : "IMMEDIATE"),
     endpoint,
@@ -913,6 +1000,7 @@ async function invokePhase(run, { endpoint, input, trigger, runAt, cron, ws = "a
     body.timezone = "Asia/Kolkata";
   }
   if (maxAttempts) body.max_attempts = maxAttempts;
+  if (asyncOverrides) body.async_overrides = asyncOverrides;
 
   run.step("ask", {
     token: { id: token, zone: "app", label, note: "new" },
@@ -959,38 +1047,14 @@ async function invokePhase(run, { endpoint, input, trigger, runAt, cron, ws = "a
   return res.body.data;
 }
 
-// ─── act 2's journeys ────────────────────────────────────────────────────────
-
-const RUN_STEPS = [
-  { id: "ask", label: "you ask for a run" },
-  { id: "written", label: "written down" },
-  { id: "due", label: "waits until due" },
-  { id: "claim", label: "one worker takes it" },
-  { id: "call", label: "calls Aarokya" },
-  { id: "answer", label: "the answer" },
-  { id: "record", label: "recorded" },
-];
-
-const POLL_STEPS = [
-  { id: "ask", label: "schedule the check" },
-  { id: "written", label: "written down" },
-  { id: "due", label: "pg_cron owns it" },
-  { id: "tick", label: "the database makes a row" },
-  { id: "claim", label: "a worker takes it" },
-  { id: "call", label: "asks Aarokya" },
-  { id: "answer", label: "the status" },
-  { id: "record", label: "recorded" },
-  { id: "cancel", label: "terminal → cancel" },
-];
-
 /// POST it, and if it is already there, PUT instead — showing both calls on the
 /// wire either way.
 ///
-/// Act 1 cannot start from nothing: an endpoint any job has ever pointed at
-/// cannot be deleted (`jobs.endpoint` is a foreign key, and a retired job still
-/// holds it), and a config an endpoint points at cannot be deleted either. So
-/// the honest thing is the call a team actually makes the second time — the
-/// same body, and the row is updated in place.
+/// Page 1 cannot start from nothing twice: an endpoint any job has ever pointed
+/// at cannot be deleted (`jobs.endpoint` is a foreign key and a retired job
+/// still holds it), and a config an endpoint points at cannot be deleted
+/// either. So the honest thing on a second run is the call a team actually
+/// makes: the same body, and the row is updated in place.
 async function put(run, collection, name, body, shownBody) {
   const created = await api("POST", `/v1/${collection}`, { body });
   run.wire({
@@ -1015,11 +1079,29 @@ async function put(run, collection, name, body, shownBody) {
   return { ok: updated.ok, status: updated.status, mark: `${updated.status} · updated`, existed: true };
 }
 
-/// Make sure act 1's four exist, quietly.
+const SETUP_NAMES = () =>
+  state.status?.setup ?? {
+    config: "aarokya-config",
+    secret: "aarokya-callback-auth",
+    payloadSpec: "mandate-input",
+    endpoint: "aarokya-mandate-registration-sync",
+  };
+
+const MANDATE_SCHEMA = {
+  type: "object",
+  properties: {
+    mandate_id: { type: "string" },
+    checks: { type: "string" },
+    fail_times: { type: "string" },
+  },
+  required: ["mandate_id"],
+};
+
+/// Make sure page 1's four exist, quietly.
 ///
-/// Act 2 can be shown on its own, and `just demo` deliberately leaves the
-/// mandates workspace empty of them so act 1's first run is four real
-/// creations. Anything in act 2 that fires the hero endpoint calls this first.
+/// Pages 2 and 3 can be shown on their own, and `just demo` deliberately leaves
+/// the mandates workspace empty of them so page 1's first run is four real
+/// creations.
 async function ensureSetup() {
   const N = SETUP_NAMES();
   if ((await api("GET", `/v1/endpoints/${N.endpoint}`)).ok) return true;
@@ -1033,40 +1115,55 @@ async function ensureSetup() {
     },
   });
   await put(quiet, "secrets", N.secret, { name: N.secret, value: "Bearer aarokya-demo-mandates-7d41c9" });
-  await put(quiet, "payload-specs", N.payloadSpec, {
-    name: N.payloadSpec,
-    schema: {
-      type: "object",
-      properties: {
-        mandate_id: { type: "string" },
-        checks: { type: "string" },
-        fail_times: { type: "string" },
-      },
-      required: ["mandate_id"],
-    },
-  });
+  await put(quiet, "payload-specs", N.payloadSpec, { name: N.payloadSpec, schema: MANDATE_SCHEMA });
   const spec = state.status?.mandateSpec;
   if (!spec) return false;
   return (await put(quiet, "endpoints", N.endpoint, spec)).ok;
 }
 
+// ─── the journeys ────────────────────────────────────────────────────────────
+
+const RUN_STEPS = [
+  { id: "ask", label: "you ask for a run" },
+  { id: "written", label: "written down" },
+  { id: "due", label: "waits until due" },
+  { id: "claim", label: "one worker takes it" },
+  { id: "call", label: "calls Aarokya" },
+  { id: "answer", label: "the answer" },
+  { id: "record", label: "recorded" },
+];
+
+const CRON_STEPS = [
+  { id: "ask", label: "you ask for a schedule" },
+  { id: "written", label: "written down" },
+  { id: "due", label: "pg_cron owns it" },
+  { id: "tick", label: "the database makes a row" },
+  { id: "claim", label: "a worker takes it" },
+  { id: "call", label: "calls Aarokya" },
+  { id: "answer", label: "the answer" },
+  { id: "record", label: "recorded" },
+  { id: "cancel", label: "cancelled" },
+];
+
+const LONG_STEPS = [
+  { id: "ask", label: "you ask for a run" },
+  { id: "written", label: "written down" },
+  { id: "claim", label: "a worker takes it" },
+  { id: "send", label: "sends the work" },
+  { id: "accepted", label: "202 · Location" },
+  { id: "wait", label: "parked, WAITING" },
+  { id: "poll", label: "checks back" },
+  { id: "finish", label: "the terminal answer" },
+  { id: "record", label: "recorded" },
+];
+
 // ─── the takes ───────────────────────────────────────────────────────────────
 
-/// What act 1 builds. The demo server is the source of truth; these are the
-/// same names, so the page still reads sensibly before the first status poll.
-const SETUP_NAMES = () =>
-  state.status?.setup ?? {
-    config: "aarokya-config",
-    secret: "aarokya-callback-auth",
-    payloadSpec: "mandate-input",
-    endpoint: "aarokya-mandate-registration-sync",
-  };
-
 const takes = [
-  // ── act 1 ──────────────────────────────────────────────────────────────────
+  // ── 1 · set it up ──────────────────────────────────────────────────────────
   {
     id: "setup",
-    act: "setup",
+    page: "setup",
     label: "Everything a job needs",
     action: "Build it, live",
     fields: [],
@@ -1093,25 +1190,40 @@ const takes = [
       });
 
       // 2 — config: the values you would otherwise hardcode.
-      run.slot("config", { cls: "doing", name: N.config, detail: "where Aarokya lives", text: "first, the things that change between environments", tone: "act" });
+      run.slot("config", {
+        cls: "doing",
+        name: N.config,
+        detail: "where Aarokya lives",
+        text: "first, the things that change between environments",
+        tone: "act",
+      });
       const cfg = await put(run, "configs", N.config, {
         name: N.config,
-        values: { base_url: state.status?.mockUrl ?? "http://localhost:9999", team: wsA?.slug ?? "mandates" },
+        values: {
+          base_url: state.status?.mockUrl ?? "http://localhost:9999",
+          team: wsA?.slug ?? "mandates",
+        },
       });
       run.slot("config", {
         cls: cfg.ok ? "done" : "bad",
-        detail: `base_url, team — <b>2 values</b>`,
+        detail: "base_url, team — <b>2 values</b>",
         mark: cfg.mark,
         lights: "config",
         text: cfg.ok
-          ? `two values, one row${cfg.existed ? " (it was already there, so the same call updated it)" : ""} — and every <b>{{config.*}}</b> in the endpoint now has something to resolve to`
+          ? `two values, one row${cfg.existed ? " (already there, so the same call updated it)" : ""} — and every <b>{{config.*}}</b> in the endpoint now has something to resolve to`
           : `Invokr refused the config — <b>${cfg.status}</b>`,
         tone: cfg.ok ? "ok" : "bad",
       });
       if (!cfg.ok) return false;
 
       // 3 — secret: same idea, except it never comes back out.
-      run.slot("secret", { cls: "doing", name: N.secret, detail: "the callback credential", text: "then the one value you cannot put in a config", tone: "act" });
+      run.slot("secret", {
+        cls: "doing",
+        name: N.secret,
+        detail: "the callback credential",
+        text: "then the one value you cannot put in a config",
+        tone: "act",
+      });
       const sec = await put(
         run,
         "secrets",
@@ -1119,9 +1231,14 @@ const takes = [
         { name: N.secret, value: `Bearer aarokya-demo-${wsA?.slug ?? "mandates"}-7d41c9` },
         { name: N.secret, value: "••••••••" },
       );
-
       const readBack = await api("GET", `/v1/secrets/${N.secret}`);
-      run.wire({ verb: "GET", path: `/v1/secrets/${N.secret}`, status: readBack.status, res: readBack.body, said: "no value field" });
+      run.wire({
+        verb: "GET",
+        path: `/v1/secrets/${N.secret}`,
+        status: readBack.status,
+        res: readBack.body,
+        said: "no value field",
+      });
       const leaked = JSON.stringify(readBack.body ?? {}).includes('"value"');
       run.slot("secret", {
         cls: leaked ? "bad" : sec.ok ? "done" : "bad",
@@ -1136,17 +1253,14 @@ const takes = [
       if (!sec.ok || leaked) return false;
 
       // 4 — payload spec: the schema a job's input has to satisfy.
-      run.slot("payload", { cls: "doing", name: N.payloadSpec, detail: "what a caller must send", text: "next, what a caller is allowed to ask for", tone: "act" });
-      const schema = {
-        type: "object",
-        properties: {
-          mandate_id: { type: "string" },
-          checks: { type: "string" },
-          fail_times: { type: "string" },
-        },
-        required: ["mandate_id"],
-      };
-      const ps = await put(run, "payload-specs", N.payloadSpec, { name: N.payloadSpec, schema });
+      run.slot("payload", {
+        cls: "doing",
+        name: N.payloadSpec,
+        detail: "what a caller must send",
+        text: "next, what a caller is allowed to ask for",
+        tone: "act",
+      });
+      const ps = await put(run, "payload-specs", N.payloadSpec, { name: N.payloadSpec, schema: MANDATE_SCHEMA });
       run.slot("payload", {
         cls: ps.ok ? "done" : "bad",
         detail: "requires <b>mandate_id</b>",
@@ -1160,7 +1274,13 @@ const takes = [
       if (!ps.ok) return false;
 
       // 5 — the endpoint itself, which is just those three plus the call.
-      run.slot("endpoint", { cls: "doing", name: N.endpoint, detail: "the call itself", text: "and now the call — the same body your team already posts", tone: "act" });
+      run.slot("endpoint", {
+        cls: "doing",
+        name: N.endpoint,
+        detail: "the call itself",
+        text: "and now the call — the same body your team already posts",
+        tone: "act",
+      });
       const ep = await put(run, "endpoints", N.endpoint, spec);
       run.slot("endpoint", {
         cls: ep.ok ? "done" : "bad",
@@ -1177,10 +1297,10 @@ const takes = [
 
   {
     id: "bad-payload",
-    act: "setup",
+    page: "setup",
     label: "What the payload spec is for",
     action: "Send a bad one",
-    fields: [{ key: "mandate_id", label: "mandate", value: "MND-8842", width: 130 }],
+    fields: [{ key: "mandate_id", label: "mandate", value: "MND-8842", width: 120 }],
     async run(run, v) {
       const N = SETUP_NAMES();
       await ensureSetup();
@@ -1198,14 +1318,14 @@ const takes = [
       const bad = { trigger: "IMMEDIATE", endpoint: N.endpoint, input: { checks: "1" } };
       const res1 = await api("POST", "/v1/jobs", { body: bad });
       run.wire({ verb: "POST", path: "/v1/jobs", status: res1.status, req: bad, res: res1.body });
+      const refused = res1.status === 400 || res1.status === 422;
       run.slot("payload", {
-        cls: res1.status === 400 || res1.status === 422 ? "done" : "bad",
+        cls: refused ? "done" : "bad",
         mark: String(res1.status),
-        text:
-          res1.status === 400 || res1.status === 422
-            ? `refused with <b>${res1.status}</b>, before a worker ever saw it — the caller finds out now, not at 3am`
-            : `expected a refusal, got <b>${res1.status}</b>`,
-        tone: res1.status === 400 || res1.status === 422 ? "ok" : "bad",
+        text: refused
+          ? `refused with <b>${res1.status}</b>, before a worker ever saw it — the caller finds out now, not at 3am`
+          : `expected a refusal, got <b>${res1.status}</b>`,
+        tone: refused ? "ok" : "bad",
       });
       if (res1.ok) return false;
 
@@ -1231,89 +1351,44 @@ const takes = [
     },
   },
 
-  // ── act 2 ──────────────────────────────────────────────────────────────────
+  // ── 2 · short tasks ────────────────────────────────────────────────────────
   {
-    id: "poll-until-done",
-    act: "run",
-    label: "Poll until it is done",
-    action: "Start the check",
-    steps: POLL_STEPS,
+    id: "short-task",
+    page: "short",
+    label: "One task, end to end",
+    action: "Fire it",
+    steps: (v) => (v.trigger === "CRON" ? CRON_STEPS : RUN_STEPS),
     fields: [
-      { key: "mandate_id", label: "mandate", value: "MND-8842", width: 128 },
-      { key: "checks", label: "terminal on check", value: "1", width: 48 },
-    ],
-    extras: [{ id: "prearm", label: "Arm it now" }],
-    async onExtra(id, run) {
-      if (id !== "prearm") return;
-      const job = await armPoll(readValues(takes.find((t) => t.id === "poll-until-done")));
-      run?.say(job ? "armed — the first tick will land within the minute" : "could not arm it", job ? "ok" : "bad");
-    },
-    async run(run, v) {
-      const N = SETUP_NAMES();
-      // Aarokya counts how many times it has been asked about each mandate, so
-      // a second rehearsal of the same one would start halfway through.
-      await control("/mock/reset");
-      await ensureSetup();
-      const since = await targetLogHead();
-      run.emit("target-is", { who: "Aarokya" });
-      run.emit("token", { id: "ep", zone: "endpoints", state: "spec", label: N.endpoint.slice(8), note: "registered" });
-
-      let jobId = state.cronJob ?? (await findPollJob());
-      if (jobId) {
-        run.step("ask", { token: { id: "t1", zone: "waiting", state: "waiting", label: v.mandate_id, note: "on a schedule" }, text: "using the schedule armed earlier — <b>already running</b>", tone: "act" });
-        run.step("written", { text: "one row in <b>jobs</b>, one entry in pg_cron's own table", tone: "act" });
-        run.step("due", { text: "<b>pg_cron owns it</b> — the schedule lives in the database, not in a process", tone: "warn" });
-      } else {
-        const job = await invokePhase(run, {
-          endpoint: N.endpoint,
-          input: { mandate_id: v.mandate_id, checks: String(Math.max(1, Number(v.checks) || 1)), fail_times: "0" },
-          trigger: "CRON",
-          cron: "* * * * *",
-          label: v.mandate_id,
-          token: "t1",
-        });
-        if (!job) return false;
-        jobId = job.job_id;
-      }
-      state.cronJob = jobId;
-
-      run.say("nothing is holding a connection open — the next tick is a row pg_cron will write", "warn");
-      const exec = await watchCronTick(run, jobId, { since, token: "t1", label: v.mandate_id });
-      if (!exec) return false;
-
-      // The whole reason this job exists: read the answer, and if it is
-      // terminal, stop asking.
-      const body = exec.last_body ?? {};
-      const terminal = body?.terminal === true || body?.status === "ACTIVE";
-      if (!terminal) {
-        run.say(
-          `the bank still says <b>${esc(body?.status ?? "PENDING")}</b> — the job stays, and asks again next minute`,
-          "warn",
-        );
-        return true;
-      }
-
-      const cancel = await api("POST", `/v1/jobs/${jobId}/cancel`);
-      run.wire({ verb: "POST", path: `/v1/jobs/${jobId.slice(0, 8)}…/cancel`, status: cancel.status, res: cancel.body });
-      state.cronJob = null;
-      run.step("cancel", {
-        token: { id: "t1", zone: "done", state: "ok", label: v.mandate_id, note: "ACTIVE" },
-        text: `<b>ACTIVE</b> — terminal, so your service cancels the job and Invokr stops asking`,
-        tone: "ok",
-      });
-      return cancel.ok;
-    },
-  },
-
-  {
-    id: "pick-up",
-    act: "run",
-    label: "Exactly one worker takes it",
-    action: "Schedule it",
-    steps: RUN_STEPS,
-    fields: [
-      { key: "mandate_id", label: "mandate", value: "MND-5567", width: 128 },
-      { key: "seconds", label: "in (s)", value: "15", width: 48 },
+      { key: "mandate_id", label: "mandate", value: "MND-8842", width: 118 },
+      {
+        key: "trigger",
+        label: "when",
+        type: "select",
+        value: "IMMEDIATE",
+        width: 126,
+        options: [
+          { value: "IMMEDIATE", label: "now" },
+          { value: "DELAYED", label: "in a few seconds" },
+          { value: "CRON", label: "on a schedule" },
+        ],
+      },
+      { key: "seconds", label: "seconds", value: "15", width: 48, show: (v) => v.trigger === "DELAYED" },
+      {
+        key: "cron",
+        label: "every",
+        type: "select",
+        value: "* * * * *",
+        width: 108,
+        show: (v) => v.trigger === "CRON",
+        options: [
+          { value: "* * * * *", label: "minute" },
+          { value: "*/2 * * * *", label: "2 minutes" },
+          { value: "*/5 * * * *", label: "5 minutes" },
+        ],
+      },
+      { key: "ticks", label: "stop after", value: "1", width: 40, show: (v) => v.trigger === "CRON" },
+      { key: "fail_times", label: "failures first", value: "0", width: 40 },
+      { key: "attempts", label: "max tries", value: "3", width: 40 },
     ],
     extras: [
       { id: "kill", label: "Kill a worker", danger: true },
@@ -1343,179 +1418,161 @@ const takes = [
     },
     async run(run, v) {
       const N = SETUP_NAMES();
+      await control("/mock/reset");
       await ensureSetup();
       const since = await targetLogHead();
       run.emit("target-is", { who: "Aarokya" });
-      run.emit("token", { id: "ep", zone: "endpoints", state: "spec", label: N.endpoint.slice(8), note: "registered" });
 
-      const seconds = Math.max(5, Math.min(120, Number(v.seconds) || 15));
-      const runAt = new Date(Date.now() + seconds * 1000);
+      const failures = clamp(v.fail_times, 0, 2, 0);
+      const attempts = clamp(v.attempts, 1, 3, 3);
+      // The team's real policy waits a minute before the second try. When you
+      // ask for failures, the same call runs with seconds instead, so the shape
+      // is visible inside a demo slot.
+      const endpoint = failures > 0 ? "aarokya-mandate-sync-impatient" : N.endpoint;
+      run.emit("token", {
+        id: "ep",
+        zone: "endpoints",
+        state: "spec",
+        label: endpoint.replace("aarokya-", ""),
+        note: failures > 0 ? "retries in seconds" : "registered",
+      });
+      if (failures > 0) {
+        run.say(
+          `<b>${failures} failure${failures === 1 ? "" : "s"}</b> first, and retries measured in seconds rather than the minutes the real policy uses`,
+          "warn",
+        );
+      }
+
+      const input = {
+        mandate_id: `${v.mandate_id}-${Date.now().toString(36).slice(-4)}`,
+        checks: "1",
+        fail_times: String(failures),
+      };
+
+      if (v.trigger === "CRON") {
+        const wanted = clamp(v.ticks, 1, 3, 1);
+        const job = await invokePhase(run, {
+          endpoint,
+          input,
+          trigger: "CRON",
+          cron: v.cron || "* * * * *",
+          label: v.mandate_id,
+          token: "t1",
+          maxAttempts: attempts,
+        });
+        if (!job) return false;
+        state.cronJob = job.job_id;
+        run.say("nothing is holding a connection open — the next tick is a row pg_cron will write", "warn");
+
+        let ok = true;
+        for (let n = 1; n <= wanted; n++) {
+          const exec = await watchCronTick(run, job.job_id, { since, token: "t1", label: v.mandate_id, nth: n });
+          if (!exec) {
+            ok = false;
+            break;
+          }
+        }
+        const cancel = await api("POST", `/v1/jobs/${job.job_id}/cancel`);
+        run.wire({ verb: "POST", path: `/v1/jobs/${job.job_id.slice(0, 8)}…/cancel`, status: cancel.status, res: cancel.body });
+        state.cronJob = null;
+        run.step("cancel", {
+          token: { id: "t1", zone: "done", state: "ok", label: v.mandate_id, note: "cancelled" },
+          text: `<b>cancelled</b> after ${wanted} tick${wanted === 1 ? "" : "s"} — which is what your service does when the status is terminal`,
+          tone: "ok",
+        });
+        return ok && cancel.ok;
+      }
+
+      const seconds = clamp(v.seconds, 5, 120, 15);
+      const runAt = v.trigger === "DELAYED" ? new Date(Date.now() + seconds * 1000) : null;
       const job = await invokePhase(run, {
-        endpoint: N.endpoint,
-        input: { mandate_id: v.mandate_id, checks: "1", fail_times: "0" },
+        endpoint,
+        input,
         runAt,
         label: v.mandate_id,
         token: "t1",
+        maxAttempts: attempts,
       });
       if (!job) return false;
 
-      run.say("kill every worker now. The row does not care — <b>it is the timer</b>", "warn");
-      countdownToken(run, "t1", new Date(job.execution.created_at).getTime() + seconds * 1000, "due in");
+      if (runAt) {
+        run.say("kill every worker now. The row does not care — <b>it is the timer</b>", "warn");
+        countdownToken(run, "t1", new Date(job.execution.created_at).getTime() + seconds * 1000, "due in");
+      }
 
       const done = await watchExecution(run, job.execution.execution_id, {
         targetSince: since,
         token: "t1",
         label: v.mandate_id,
-        timeout: (seconds + 90) * 1000,
+        timeout: (seconds + 120) * 1000,
       });
+      if (failures > 0 && done?.status === "SUCCESS") {
+        run.say("look at Aarokya's own log: every try carried <b>one idempotency key</b>", "ok");
+      }
       return done?.status === "SUCCESS";
     },
   },
 
   {
-    id: "it-fails",
-    act: "run",
-    label: "When Aarokya is down",
-    action: "Make it fail twice",
+    id: "two-teams",
+    page: "short",
+    label: "Same name, two teams",
+    action: "Fire into both",
     steps: RUN_STEPS,
-    fields: [
-      { key: "mandate_id", label: "mandate", value: "MND-9001", width: 128 },
-      { key: "fail_times", label: "failures first", value: "2", width: 48 },
-    ],
+    fields: [{ key: "mandate_id", label: "mandate", value: "MND-4410", width: 118 }],
     async run(run, v) {
+      const N = SETUP_NAMES();
       await control("/mock/reset");
+      await ensureSetup();
       const since = await targetLogHead();
       run.emit("target-is", { who: "Aarokya" });
-      run.emit("token", { id: "ep", zone: "endpoints", state: "spec", label: "mandate-sync-impatient", note: "registered" });
 
-      const job = await invokePhase(run, {
-        // The team's real policy waits a minute before the second try. This is
-        // the same call with seconds instead, so the room sees the shape.
-        endpoint: "aarokya-mandate-sync-impatient",
-        input: {
-          mandate_id: `${v.mandate_id}-${Date.now().toString(36).slice(-4)}`,
-          checks: "1",
-          fail_times: String(Math.max(0, Math.min(2, Number(v.fail_times) || 2))),
-        },
-        label: v.mandate_id,
-        token: "t1",
-      });
-      if (!job) return false;
-
-      const done = await watchExecution(run, job.execution.execution_id, {
-        targetSince: since,
-        token: "t1",
-        label: v.mandate_id,
-        timeout: 90000,
-      });
-      run.say("look at Aarokya's own log: three calls, <b>one idempotency key</b>", done?.status === "SUCCESS" ? "ok" : "warn");
-      return done?.status === "SUCCESS";
-    },
-  },
-
-  {
-    id: "long-running",
-    act: "run",
-    label: "When the work takes minutes",
-    action: "Start the long job",
-    steps: [
-      { id: "ask", label: "you ask for a run" },
-      { id: "written", label: "written down" },
-      { id: "claim", label: "a worker takes it" },
-      { id: "call", label: "calls Aarokya" },
-      { id: "accepted", label: "202 · working" },
-      { id: "poll", label: "checks back" },
-      { id: "answer", label: "finished" },
-      { id: "record", label: "recorded" },
-    ],
-    fields: [
-      { key: "mandate_id", label: "job", value: "recon-0042", width: 128 },
-      { key: "polls", label: "check-ins", value: "3", width: 48 },
-    ],
-    async run(run, v) {
-      if (!state.status?.longRunning) {
-        run.say(
-          "this build has no long-running support — it lives on <b>feat/long-running-jobs</b>. Switch on replay to watch a recorded run.",
-          "bad",
-        );
-        return false;
+      let ok = true;
+      let i = 0;
+      for (const wsKey of ["a", "b"]) {
+        i++;
+        const team = state.status?.provisioned?.workspaces?.[wsKey];
+        run.emit("token", {
+          id: `t${i}`,
+          zone: "app",
+          label: team?.name ?? wsKey,
+          note: (team?.schema_name ?? "").slice(-14),
+        });
+        const job = await invokePhase(run, {
+          endpoint: N.endpoint,
+          input: { mandate_id: `${v.mandate_id}-${wsKey}`, checks: "1", fail_times: "0" },
+          ws: wsKey,
+          label: team?.name ?? wsKey,
+          token: `t${i}`,
+        });
+        if (!job) {
+          ok = false;
+          continue;
+        }
+        const done = await watchExecution(run, job.execution.execution_id, {
+          ws: wsKey,
+          timeout: 40000,
+          targetSince: since,
+          token: `t${i}`,
+          label: team?.name ?? wsKey,
+        });
+        ok = ok && done?.status === "SUCCESS";
       }
-
-      const since = await targetLogHead();
-      run.emit("target-is", { who: "Aarokya (bulk recon)" });
-
-      const pending = Math.max(1, Math.min(6, Number(v.polls) || 3));
-      const script = [
-        ...Array.from({ length: pending }, () => ({ status: 202, body: { state: "working" }, retry_after: 2 })),
-        { status: 200, body: { state: "done", mandates: 128_000 } },
-      ];
-
-      const spec = {
-        name: "aarokya-bulk-recon",
-        type: "HTTP",
-        config: SETUP_NAMES().config,
-        spec: {
-          url: "{{config.base_url}}/async/start",
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body_template: { job: "{{input.mandate_id}}", script },
-          timeout_ms: 5000,
-          expected_status_codes: [200],
-          async: {
-            status_codes: [202],
-            poll: {
-              success_statuses: [200],
-              pending_statuses: [202],
-              failure_statuses: [400, 404, 410],
-              initial_delay_ms: 1000,
-              max_delay_ms: 10000,
-              backoff: "exponential",
-            },
-            callback: false,
-            max_wait_ms: 120000,
-            max_polls: 20,
-          },
-        },
-        retry_policy: { max_attempts: 2, backoff: "exponential", initial_delay_ms: 2000, max_delay_ms: 10000 },
-      };
-
-      const exists = (await api("GET", `/v1/endpoints/${spec.name}`)).ok;
-      const { name: _n, ...rest } = spec;
-      const saved = exists
-        ? await api("PUT", `/v1/endpoints/${spec.name}`, { body: rest })
-        : await api("POST", "/v1/endpoints", { body: spec });
-      run.wire({ verb: exists ? "PUT" : "POST", path: `/v1/endpoints/${spec.name}`, status: saved.status, req: spec, res: saved.body });
-      if (!saved.ok) {
-        run.say(`Invokr refused the endpoint — <b>${saved.status}</b>`, "bad");
-        return false;
-      }
-      run.emit("token", { id: "ep", zone: "endpoints", state: "spec", label: "bulk-recon", note: "202 = pending" });
-
-      const job = await invokePhase(run, {
-        endpoint: spec.name,
-        input: { mandate_id: v.mandate_id },
-        label: v.mandate_id,
-        token: "t1",
-      });
-      if (!job) return false;
-
-      const done = await watchExecution(run, job.execution.execution_id, {
-        targetSince: since,
-        token: "t1",
-        label: v.mandate_id,
-        timeout: 150000,
-      });
-      return done?.status === "SUCCESS";
+      run.say(
+        "same endpoint name, same call — <b>different team</b> in Aarokya's log, because the config is each workspace's own",
+        ok ? "ok" : "warn",
+      );
+      return ok;
     },
   },
 
   {
     id: "any-transport",
-    act: "run",
+    page: "short",
     label: "Not just HTTP",
     action: "Send it three ways",
     steps: RUN_STEPS,
-    fields: [{ key: "mandate_id", label: "mandate", value: "MND-7781", width: 128 }],
+    fields: [{ key: "mandate_id", label: "mandate", value: "MND-7781", width: 118 }],
     async run(run, v) {
       const probes = state.status?.transports ?? {};
       await ensureSetup();
@@ -1556,135 +1613,399 @@ const takes = [
     },
   },
 
+  // ── 3 · long-running ───────────────────────────────────────────────────────
   {
-    id: "two-teams",
-    act: "run",
-    label: "Same name, two teams",
-    action: "Fire into both",
-    steps: RUN_STEPS,
-    fields: [{ key: "mandate_id", label: "id", value: "MND-4410", width: 128 }],
+    id: "long-running",
+    page: "long",
+    label: "Work that takes minutes",
+    action: "Start the long job",
+    steps: LONG_STEPS,
+    tape: () => `long-running-${asyncValues().mode}`,
+    fields: [{ key: "job", label: "job", value: "recon-0042", width: 118 }],
     async run(run, v) {
-      const N = SETUP_NAMES();
-      await ensureSetup();
-      const since = await targetLogHead();
-      run.emit("target-is", { who: "Aarokya" });
-
-      let ok = true;
-      let i = 0;
-      for (const wsKey of ["a", "b"]) {
-        i++;
-        const team = state.status?.provisioned?.workspaces?.[wsKey];
-        run.emit("token", {
-          id: `t${i}`,
-          zone: "app",
-          label: team?.name ?? wsKey,
-          note: (team?.schema_name ?? "").slice(-14),
-        });
-        const job = await invokePhase(run, {
-          endpoint: N.endpoint,
-          input: { mandate_id: `${v.mandate_id}-${wsKey}`, checks: "1", fail_times: "0" },
-          ws: wsKey,
-          label: team?.name ?? wsKey,
-          token: `t${i}`,
-        });
-        if (!job) {
-          ok = false;
-          continue;
-        }
-        const done = await watchExecution(run, job.execution.execution_id, {
-          ws: wsKey,
-          timeout: 40000,
-          targetSince: since,
-          token: `t${i}`,
-          label: team?.name ?? wsKey,
-        });
-        ok = ok && done?.status === "SUCCESS";
+      if (!state.status?.longRunning) {
+        run.halt(
+          "this build has no long-running support — it lives on <b>feat/long-running-jobs</b>. Switch on replay to watch a recorded run.",
+        );
+        return false;
       }
-      run.say("same endpoint name, same call — <b>different team</b> in Aarokya's log, because the config is each workspace's own", ok ? "ok" : "warn");
-      return ok;
-    },
-  },
-
-  {
-    id: "hand-over",
-    act: "run",
-    label: "Hand over",
-    prose: () => {
-      const url = state.status?.dashboardUrl || "";
-      return `<div class="prose">
-        <h2>Everything you just watched was ordinary rows</h2>
-        <p>The page read them over the same public API your service would. Here is the tool
-        the people on call use to read the same rows.</p>
-        ${
-          url
-            ? `<p>Dashboard: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p>`
-            : `<div class="banner warn">No dashboard URL set — <code>just dashboard-build</code>, run the API with
-               <code>INVOKR_MODE=both</code>, then set <code>INVOKR_DEMO_DASHBOARD_URL</code>.</div>`
-        }
-        <ol>
-          <li>Everything that ran, failures included.</li>
-          <li>One delivery's attempts — the same rows this page was reading.</li>
-          <li>Fire one by hand.</li>
-        </ol>
-      </div>`;
-    },
-    async run() {
-      return true;
+      return await runLongJob(run, v);
     },
   },
 ];
 
-const takesIn = (act) => takes.filter((t) => t.act === act);
+const takesIn = (page) => takes.filter((t) => t.page === page);
 
-/// Find the poll job this demo left running, if any.
-async function findPollJob() {
-  const jobs = (await api("GET", "/v1/jobs?limit=50")).body?.data ?? [];
-  return (
-    jobs.find((j) => j.trigger === "CRON" && j.status === "ACTIVE" && j.endpoint === SETUP_NAMES().endpoint)?.job_id ??
-    null
-  );
+// ─── page 3's run ────────────────────────────────────────────────────────────
+//
+// The async block is a form, so the endpoint is written fresh for each run. The
+// arrows come from real rows: `polls` for each check-in, `attempts` for the
+// original send, and Aarokya's own log for the callback it makes.
+
+const ASYNC_FORM = [
+  {
+    key: "mode",
+    label: "mode",
+    type: "select",
+    value: "poll",
+    options: [
+      { value: "poll", label: "Invokr polls" },
+      { value: "callback", label: "Aarokya calls back" },
+      { value: "both", label: "both — first one wins" },
+    ],
+    note: "at least one of <code>poll</code> or <code>callback</code> must be present · in replay this picks the tape",
+  },
+  { key: "initial_delay_ms", label: "poll.initial_delay_ms", value: "1000", width: 78, hide: (v) => v.mode === "callback" },
+  { key: "max_delay_ms", label: "poll.max_delay_ms", value: "10000", width: 78, hide: (v) => v.mode === "callback" },
+  {
+    key: "backoff",
+    label: "poll.backoff",
+    type: "select",
+    value: "exponential",
+    hide: (v) => v.mode === "callback",
+    options: [
+      { value: "exponential", label: "exponential" },
+      { value: "linear", label: "linear" },
+      { value: "fixed", label: "fixed" },
+    ],
+  },
+  { key: "max_polls", label: "max_polls", value: "20", width: 60, hide: (v) => v.mode === "callback" },
+  { key: "max_wait_ms", label: "max_wait_ms", value: "120000", width: 78 },
+  { sep: "what Aarokya does" },
+  { key: "pending", label: "202s before it finishes", value: "3", width: 60, hide: (v) => v.mode === "callback" },
+  { key: "retry_after", label: "Retry-After (s)", value: "2", width: 60, hide: (v) => v.mode === "callback" },
+  { key: "callback_after", label: "calls back after (s)", value: "5", width: 60, hide: (v) => v.mode === "poll" },
+];
+
+function asyncValues() {
+  if (!state.values.__async) {
+    state.values.__async = Object.fromEntries(ASYNC_FORM.filter((f) => f.key).map((f) => [f.key, f.value]));
+  }
+  const v = state.values.__async;
+  for (const f of ASYNC_FORM) {
+    if (!f.key) continue;
+    const el = document.getElementById(`a-${f.key}`);
+    if (el) v[f.key] = (el.value ?? "").trim() || f.value;
+  }
+  return v;
 }
 
-/// Start the poll job ahead of time, so the first tick has landed by the time
-/// you get to it. pg_cron fires on minute boundaries and will not be hurried.
-async function armPoll(v) {
-  await control("/mock/reset");
-  for (let existing = await findPollJob(); existing; existing = await findPollJob()) {
-    await api("POST", `/v1/jobs/${existing}/cancel`);
+function renderAsyncForm() {
+  const v = asyncValues();
+  $("#async-form").innerHTML = ASYNC_FORM.map((f) => {
+    if (f.sep) return `<div class="form-sep">${esc(f.sep)}</div>`;
+    if (f.hide?.(v)) return "";
+    // In replay the values are whatever was recorded — except `mode`, which
+    // chooses which recording to play.
+    const disabled = state.replay && f.key !== "mode" ? "disabled" : "";
+    const input =
+      f.type === "select"
+        ? `<select id="a-${f.key}" ${disabled}>${f.options
+            .map((o) => `<option value="${esc(o.value)}" ${v[f.key] === o.value ? "selected" : ""}>${esc(o.label)}</option>`)
+            .join("")}</select>`
+        : `<input id="a-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 78}px" ${disabled} />`;
+    return `<label class="form-row"><span class="fk">${esc(f.label)}</span>${input}
+      ${f.note ? `<span class="fn">${f.note}</span>` : ""}</label>`;
+  }).join("");
+
+  $("#async-form")
+    .querySelectorAll("input, select")
+    .forEach((el) =>
+      el.addEventListener("change", () => {
+        asyncValues();
+        renderAsyncForm();
+      }),
+    );
+}
+
+/// Build the `async` block the form describes.
+function asyncSpecFrom(v) {
+  const block = { status_codes: [202] };
+  if (v.mode !== "callback") {
+    block.poll = {
+      success_statuses: [200],
+      pending_statuses: [202],
+      failure_statuses: [400, 404, 410],
+      initial_delay_ms: clamp(v.initial_delay_ms, 100, 60000, 1000),
+      max_delay_ms: clamp(v.max_delay_ms, 100, 600000, 10000),
+      backoff: v.backoff || "exponential",
+    };
+    block.max_polls = clamp(v.max_polls, 1, 100, 20);
   }
-  const res = await api("POST", "/v1/jobs", {
-    body: {
-      endpoint: SETUP_NAMES().endpoint,
-      trigger: "CRON",
-      cron: "* * * * *",
-      timezone: "Asia/Kolkata",
-      input: { mandate_id: v.mandate_id, checks: String(Math.max(1, Number(v.checks) || 1)), fail_times: "0" },
+  // A plain boolean, not `{ enabled: true }` — the design doc says the latter,
+  // the implementation takes the former, and the implementation is what runs.
+  if (v.mode !== "poll") block.callback = true;
+  block.max_wait_ms = clamp(v.max_wait_ms, 1000, 1800000, 120000);
+  return block;
+}
+
+async function runLongJob(run, v) {
+  const a = asyncValues();
+  const asyncBlock = asyncSpecFrom(a);
+  const polls = a.mode === "callback" ? 0 : clamp(a.pending, 0, 8, 3);
+  const retryAfter = clamp(a.retry_after, 1, 30, 2);
+  const callbackAfter = clamp(a.callback_after, 1, 120, 5);
+
+  await control("/mock/reset");
+  const since = await targetLogHead();
+  run.emit("target-is", { who: "Aarokya" });
+
+  // The target answers 202 and then either waits to be asked or calls back.
+  const body = { job: "{{input.job}}" };
+  if (a.mode !== "callback") {
+    body.script = [
+      ...Array.from({ length: polls }, () => ({ status: 202, body: { state: "working" }, retry_after: retryAfter })),
+      { status: 200, body: { state: "done", mandates: 128_000 } },
+    ];
+  }
+  if (a.mode !== "poll") {
+    body.callback_url = "{{execution.callback_url}}";
+    // The target is the one calling Invokr, so it needs Invokr's key — held
+    // where credentials belong rather than pasted into the endpoint spec.
+    body.callback_auth = `{{secret.${state.status?.callbackKey ?? "invokr-api-key"}}}`;
+    body.callback_after_ms = callbackAfter * 1000;
+  }
+
+  const spec = {
+    name: "aarokya-bulk-recon",
+    type: "HTTP",
+    config: SETUP_NAMES().config,
+    spec: {
+      url: "{{config.base_url}}/async/start",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body_template: body,
+      timeout_ms: 5000,
+      expected_status_codes: [200],
+      async: asyncBlock,
     },
+    retry_policy: { max_attempts: 2, backoff: "exponential", initial_delay_ms: 2000, max_delay_ms: 10000 },
+  };
+
+  await ensureSetup(); // the endpoint borrows page 1's config and secret
+  const exists = (await api("GET", `/v1/endpoints/${spec.name}`)).ok;
+  const { name: _n, ...rest } = spec;
+  const saved = exists
+    ? await api("PUT", `/v1/endpoints/${spec.name}`, { body: rest })
+    : await api("POST", "/v1/endpoints", { body: spec });
+  run.wire({ verb: exists ? "PUT" : "POST", path: `/v1/endpoints/${spec.name}`, status: saved.status, req: spec, res: saved.body });
+  if (!saved.ok) {
+    run.say(`Invokr refused the endpoint — <b>${saved.status}</b>`, "bad");
+    return false;
+  }
+
+  const job = await invokePhaseQuiet(run, {
+    endpoint: spec.name,
+    input: { job: v.job },
+    asyncOverrides: { max_wait_ms: asyncBlock.max_wait_ms, ...(asyncBlock.max_polls ? { max_polls: asyncBlock.max_polls } : {}) },
   });
-  if (!res.ok) return null;
-  state.cronJob = res.body.data.job_id;
-  return state.cronJob;
+  if (!job) return false;
+
+  return await watchLongRunning(run, job.execution.execution_id, {
+    since,
+    maxPolls: asyncBlock.max_polls,
+    mode: a.mode,
+  });
+}
+
+/// Page 3 has no board, so the first two steps are narration plus one arrow.
+async function invokePhaseQuiet(run, { endpoint, input, asyncOverrides }) {
+  const body = {
+    trigger: "IMMEDIATE",
+    endpoint,
+    idempotency_key: key(`${input.job}-long`),
+    input,
+    ...(asyncOverrides ? { async_overrides: asyncOverrides } : {}),
+  };
+  run.step("ask", { text: "you ask for a run — <b>immediate</b>", tone: "act" });
+  const t0 = performance.now();
+  const res = await api("POST", "/v1/jobs", { body });
+  run.wire({ verb: "POST", path: "/v1/jobs", status: res.status, req: body, res: res.body });
+  if (!res.ok) {
+    run.step("written", { bad: true, text: `Invokr refused it — <b>${res.status}</b>`, tone: "bad" });
+    return null;
+  }
+  run.step("written", {
+    text: `Invokr answered in ${ms(performance.now() - t0)} — one row, already durable`,
+    tone: "act",
+  });
+  run.emit("exec", { status: "QUEUED", polls: 0 });
+  return res.body.data;
+}
+
+/// Follow a long-running execution, drawing one arrow per real call.
+async function watchLongRunning(run, executionId, { since, maxPolls, mode }) {
+  const started = performance.now();
+  const offset = (iso) => Math.max(0, new Date(iso) - run.wallT0);
+  let claimed = false;
+  let sentAt = null;
+  let seenPolls = 0;
+  let logSeq = since;
+  let sawCallback = false;
+
+  const tail = async () => {
+    try {
+      const res = await fetch(`/control/mock/log?since=${logSeq}&limit=30`);
+      const entries = ((await res.json())?.data ?? []).slice().reverse();
+      if (!entries.length) return;
+      logSeq = Math.max(logSeq, ...entries.map((e) => e.seq));
+      run.emit("receipt", { entries });
+      for (const e of entries) {
+        if (e.path !== "(callback)" || sawCallback) continue;
+        sawCallback = true;
+        run.msg({
+          dir: "in",
+          verb: "POST",
+          path: "/v1/callbacks/…/complete",
+          at: offset(e.at),
+          note: "Aarokya finished and said so",
+          tone: "ok",
+          text: "the other side <b>called back</b> — nobody polled anything",
+          id: "poll",
+        });
+      }
+    } catch {
+      /* the target's log is a nicety, never a dependency */
+    }
+  };
+
+  while (performance.now() - started < 240000 && !run.cancelled) {
+    const exec = (await api("GET", `/v1/executions/${executionId}`)).body?.data;
+    if (exec) {
+      if (!claimed && exec.attempt_count > 0) {
+        claimed = true;
+        run.step("claim", {
+          text: exec.worker_id
+            ? `worker <b>${esc(short(exec.worker_id))}</b> took it`
+            : "<b>one worker</b> took it",
+          tone: "act",
+        });
+        run.emit("exec", { status: exec.status, polls: exec.poll_count ?? 0, maxPolls });
+      }
+
+      const attempts = (await api("GET", `/v1/executions/${executionId}/attempts`)).body?.data ?? [];
+      const first = attempts.find((x) => x.attempt_number === 1);
+      if (first && sentAt == null) {
+        sentAt = offset(first.started_at);
+        run.msg({
+          dir: "out",
+          verb: "POST",
+          path: "/async/start",
+          at: sentAt,
+          note: "here is the work",
+          text: "the worker sends the work — one <b>attempt</b>, and the only one there will be",
+          tone: "act",
+          id: "send",
+        });
+        run.msg({
+          dir: "in",
+          code: 202,
+          path: "Location: /async/status/…",
+          at: offset(first.completed_at ?? first.started_at),
+          note: "accepted, still working",
+          text: "<b>202</b> is not success and not failure — and the <b>Location</b> is where to check back",
+          tone: "act",
+          id: "accepted",
+        });
+        run.emit("step", {
+          id: "wait",
+          at: offset(first.completed_at ?? first.started_at),
+          text:
+            mode === "callback"
+              ? "the row is parked <b>WAITING</b> — no connection is being held open, and nobody is polling"
+              : "the row is parked <b>WAITING</b> — no connection is being held open",
+          tone: "warn",
+        });
+        run.emit("exec", { status: "WAITING", polls: exec.poll_count ?? 0, maxPolls, note: "no connection held open" });
+      }
+
+      // Real poll rows, when the build has them.
+      const pollRows = (await api("GET", `/v1/executions/${executionId}/polls`)).body?.data ?? [];
+      const ordered = [...pollRows].sort((a, b) => a.poll_number - b.poll_number);
+      for (const p of ordered.slice(seenPolls)) {
+        const pending = p.classification === "PENDING";
+        run.msg({
+          dir: "out",
+          verb: "GET",
+          path: "/async/status/…",
+          at: offset(p.polled_at),
+          note: `check ${p.poll_number}`,
+          tone: "act",
+          text: `check ${p.poll_number} — Invokr asks, and is not holding anything open while it waits`,
+        });
+        run.msg({
+          dir: "in",
+          code: p.status_code ?? undefined,
+          path: pending ? "still working" : p.classification.toLowerCase().replace("_", " "),
+          at: offset(p.polled_at) + (p.duration_ms ?? 0),
+          note: p.retry_after_ms ? `Retry-After ${Math.round(p.retry_after_ms / 1000)}s` : "",
+          tone: pending ? "warn" : p.classification === "SUCCESS" ? "ok" : "bad",
+          text: pending
+            ? `check ${p.poll_number}: <b>${p.status_code}</b>, still working — asks again in ${ms(p.retry_after_ms ?? 0)}`
+            : `check ${p.poll_number}: <b>${p.status_code}</b> — ${esc(p.classification.toLowerCase())}, and that is the end of it`,
+          id: "poll",
+          exec: { status: exec.status, polls: p.poll_number, maxPolls, note: "polls are not attempts" },
+        });
+      }
+      seenPolls = ordered.length;
+
+      await tail();
+
+      if (["SUCCESS", "FAILED", "CANCELLED"].includes(exec.status)) {
+        await tail();
+        const ok = exec.status === "SUCCESS";
+        run.step("finish", {
+          bad: !ok,
+          text: ok
+            ? seenPolls > 0
+              ? `finished after <b>${seenPolls} check-in${seenPolls === 1 ? "" : "s"}</b> — and still <b>one attempt</b>`
+              : "finished because the other side <b>called back</b> — still one attempt"
+            : `it ended as <b>${exec.status.toLowerCase()}</b>`,
+          tone: ok ? "ok" : "bad",
+        });
+        run.emit("exec", {
+          status: exec.status,
+          polls: seenPolls,
+          maxPolls,
+          note: `${exec.attempt_count ?? 1} attempt · ${seenPolls} poll${seenPolls === 1 ? "" : "s"}`,
+        });
+        run.step("record", {
+          bad: !ok,
+          text: ok
+            ? "recorded — the attempt, every poll, the response and the key, all queryable"
+            : "recorded, with why it stopped",
+          tone: ok ? "ok" : "bad",
+        });
+        return ok;
+      }
+    }
+    await sleep(200);
+  }
+  run.halt("it did not finish inside the time we waited", "warn");
+  return false;
 }
 
 // ─── the shell ───────────────────────────────────────────────────────────────
 
-const ACTS = [
+const PAGES = [
   { id: "setup", n: 1, label: "Set it up" },
-  { id: "run", n: 2, label: "Run it" },
+  { id: "short", n: 2, label: "Short tasks" },
+  { id: "long", n: 3, label: "Long-running" },
 ];
 
-function renderActs() {
-  $("#acts").innerHTML = ACTS.map(
-    (a) => `<button data-act="${a.id}" class="${state.act === a.id ? "on" : ""}">
-      <span class="n">${a.n}</span>${esc(a.label)}</button>`,
+function renderPages() {
+  $("#pages").innerHTML = PAGES.map(
+    (p) => `<button data-page="${p.id}" class="${state.page === p.id ? "on" : ""}">
+      <span class="n">${p.n}</span>${esc(p.label)}</button>`,
   ).join("");
-  $("#acts")
+  $("#pages")
     .querySelectorAll("button")
-    .forEach((b) => b.addEventListener("click", () => setAct(b.dataset.act)));
+    .forEach((b) => b.addEventListener("click", () => setPage(b.dataset.page)));
 }
 
 function renderTakes() {
-  const list = takesIn(state.act);
+  const list = takesIn(state.page);
+  $("#takes").style.display = list.length > 1 ? "" : "none";
   $("#takes").innerHTML = list
     .map(
       (t, i) =>
@@ -1714,19 +2035,18 @@ function readValues(take) {
   return v;
 }
 
-function currentTake() {
-  return takesIn(state.act)[state.current];
-}
+const currentTake = () => takesIn(state.page)[state.current];
+
+/// Which recording belongs to this take. Page 3's three modes tell three
+/// different stories, so each keeps its own tape.
+const tapeId = (take) => (take.tape ? take.tape() : take.id);
+const stepsOf = (take) => (typeof take?.steps === "function" ? take.steps(valuesFor(take)) : take?.steps);
 
 function resetStage() {
   clearTokens();
   clearWire();
-  resetPacer();
+  clearLanes();
   narrate(null, "");
-  $("#step-dot").querySelectorAll(".pip").forEach((p) => {
-    p.className = "pip";
-    delete p.dataset.at;
-  });
   $("#z-target").classList.remove("hit", "refused");
   $("#cron-badge").classList.remove("tick");
   $("#drop-arrow").classList.remove("on");
@@ -1736,62 +2056,65 @@ function resetStage() {
   renderSpecCard();
 }
 
-function setAct(act) {
-  if (state.act === act) return;
-  state.act = act;
+function setPage(page) {
+  if (state.page === page) return;
+  state.page = page;
   state.current = 0;
-  renderActs();
+  renderPages();
   mountTake(0);
+}
+
+function renderInputs(take) {
+  const v = valuesFor(take);
+  const shown = (take.fields ?? []).filter((f) => !f.show || f.show(v));
+  $("#inputs").innerHTML = shown
+    .map((f) => {
+      const disabled = state.replay ? "disabled" : "";
+      const input =
+        f.type === "select"
+          ? `<select id="f-${f.key}" style="--w:${f.width ?? 140}px" ${disabled}>
+               ${f.options
+                 .map((o) => `<option value="${esc(o.value)}" ${String(v[f.key]) === o.value ? "selected" : ""}>${esc(o.label)}</option>`)
+                 .join("")}
+             </select>`
+          : `<input id="f-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 140}px" ${disabled} />`;
+      return `<div class="field"><label for="f-${f.key}">${esc(f.label)}</label>${input}</div>`;
+    })
+    .join("");
+
+  // A field can decide which other fields matter, so re-render on change — and
+  // the journey can change shape with them.
+  $("#inputs")
+    .querySelectorAll("input, select")
+    .forEach((el) =>
+      el.addEventListener("change", () => {
+        readValues(take);
+        renderInputs(take);
+        renderPips(take);
+      }),
+    );
 }
 
 function mountTake(i) {
   if (state.run) state.run.cancelled = true;
   state.run = null;
+  film.playing = false;
+  resetFilm();
 
-  const list = takesIn(state.act);
+  const list = takesIn(state.page);
   state.current = Math.max(0, Math.min(list.length - 1, i));
   const take = list[state.current];
-  const v = valuesFor(take);
 
-  // Act 1 gets the slots, act 2 gets the board — except the hand-over, which is
-  // prose and takes over the canvas.
-  const setupView = state.act === "setup" && !take.prose;
-  const runView = state.act === "run" && !take.prose;
-  $("#view-setup").classList.toggle("on", setupView);
-  $("#view-run").classList.toggle("on", runView);
-
-  let prose = $("#canvas .prose-host");
-  if (take.prose) {
-    if (!prose) {
-      prose = document.createElement("div");
-      prose.className = "view prose-host on";
-      prose.style.overflow = "auto";
-      $("#canvas").appendChild(prose);
-    }
-    prose.innerHTML = take.prose();
-    prose.classList.add("on");
-  } else {
-    prose?.classList.remove("on");
-  }
+  $("#view-setup").classList.toggle("on", state.page === "setup");
+  $("#view-short").classList.toggle("on", state.page === "short");
+  $("#view-long").classList.toggle("on", state.page === "long");
 
   resetStage();
   renderPips(take);
   $("#target-label").textContent = "Aarokya";
+  if (state.page === "long") renderAsyncForm();
 
-  const field = (f) => {
-    const disabled = state.replay ? "disabled" : "";
-    const input =
-      f.type === "select"
-        ? `<select id="f-${f.key}" style="--w:${f.width ?? 140}px" ${disabled}>
-             ${f.options
-               .map((o) => `<option value="${esc(o.value)}" ${String(v[f.key]) === o.value ? "selected" : ""}>${esc(o.label)}</option>`)
-               .join("")}
-           </select>`
-        : `<input id="f-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 140}px" ${disabled} />`;
-    return `<div class="field"><label for="f-${f.key}">${esc(f.label)}</label>${input}</div>`;
-  };
-
-  $("#inputs").innerHTML = (take.fields ?? []).map(field).join("");
+  renderInputs(take);
   $("#extras").innerHTML = (take.extras ?? [])
     .map(
       (a) =>
@@ -1818,8 +2141,9 @@ function mountTake(i) {
   go.textContent = state.replay ? "Play the recording" : (take.action ?? "");
   go.disabled = false;
 
-  narrate(null, take.prose ? "" : `<span style="color:var(--faint)">ready</span>`);
+  narrate(null, `<span style="color:var(--faint)">ready</span>`);
   renderTakes();
+  syncTransport();
   fitBoard();
 }
 
@@ -1839,19 +2163,22 @@ async function runTake() {
   go.disabled = true;
   go.textContent = "running…";
   resetStage();
+  resetFilm();
   renderPips(take);
 
   const run = new Run(take);
   state.run = run;
   run.emit("workers", { list: state.status?.workers ?? [] });
 
+  const walking = play(take);
   let ok = false;
   try {
     ok = await take.run(run, values);
   } catch (err) {
     run.say(`something broke here: <b>${esc(String(err.message ?? err))}</b>`, "bad");
   }
-  await drained(); // the stage is still walking through the steps
+  film.closed = true;
+  await walking;
   if (ok) settlePips();
 
   if (ok) state.ran.add(take.id);
@@ -1860,7 +2187,7 @@ async function runTake() {
 
   go.disabled = false;
   go.textContent = take.action;
-  if (!ok) run.say("that did not finish — switch on replay if you need this now", "warn");
+  if (!ok && !run.halted) run.say("that did not finish — switch on replay if you need this now", "warn");
 }
 
 async function replayTake() {
@@ -1872,7 +2199,7 @@ async function replayTake() {
 
   let tape;
   try {
-    const res = await fetch(`/control/recordings/${take.id}`);
+    const res = await fetch(`/control/recordings/${tapeId(take)}`);
     if (!res.ok) throw new Error("no recording of this one yet");
     tape = await res.json();
   } catch (err) {
@@ -1883,20 +2210,23 @@ async function replayTake() {
   }
 
   resetStage();
+  resetFilm();
   renderPips(take);
   const run = new Run(take, { replay: true });
   state.run = run;
 
-  // Recorded offsets decide when an event becomes available; the pacer still
-  // holds each step long enough to read.
+  const walking = play(take);
+  // Recorded offsets decide when an event becomes available; the controller
+  // still decides when it is drawn.
   const startedAt = performance.now();
   for (const ev of tape.events ?? []) {
     if (run.cancelled) return;
     const due = startedAt + ev.t - performance.now();
     if (due > 0) await sleep(due);
-    enqueue(take, ev);
+    deliver(ev);
   }
-  await drained();
+  film.closed = true;
+  await walking;
   settlePips();
 
   go.disabled = false;
@@ -1916,12 +2246,9 @@ function setReplay(on) {
 
 $("#go").addEventListener("click", () => (state.replay ? replayTake() : runTake()));
 $("#replay-toggle").addEventListener("click", () => setReplay(!state.replay));
-$("#pace").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  pacer.dwell = Number(b.dataset.pace);
-  $("#pace").querySelectorAll("button").forEach((n) => n.classList.toggle("on", n === b));
-});
+$("#t-next").addEventListener("click", stepNext);
+$("#t-back").addEventListener("click", stepBack);
+$("#t-auto").addEventListener("click", () => setMode(film.mode === "auto" ? "manual" : "auto"));
 addEventListener("resize", fitBoard);
 
 document.addEventListener("keydown", (e) => {
@@ -1933,16 +2260,26 @@ document.addEventListener("keydown", (e) => {
     return (state.replay ? replayTake : runTake)();
   }
   if (typing) return;
-  if (e.key === "ArrowRight") mountTake(state.current + 1);
-  else if (e.key === "ArrowLeft") mountTake(state.current - 1);
-  else if (e.key === "1") setAct("setup");
-  else if (e.key === "2") setAct("run");
-  else if (e.key.toLowerCase() === "r") setReplay(!state.replay);
+  if (e.key === "ArrowRight" || e.key === " ") {
+    e.preventDefault();
+    return stepNext();
+  }
+  if (e.key === "ArrowLeft") return stepBack();
+  if (e.key === "1") return setPage("setup");
+  if (e.key === "2") return setPage("short");
+  if (e.key === "3") return setPage("long");
+  if (e.key.toLowerCase() === "a") return setMode(film.mode === "auto" ? "manual" : "auto");
+  if (e.key.toLowerCase() === "r") return setReplay(!state.replay);
+  if (e.key === "Tab") {
+    e.preventDefault();
+    mountTake(state.current + 1 >= takesIn(state.page).length ? 0 : state.current + 1);
+  }
 });
 
 layoutBoard();
 renderSlots();
-renderActs();
+renderPages();
+setMode("manual");
 await refreshStatus();
 setInterval(refreshStatus, 4000);
 mountTake(0);

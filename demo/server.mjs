@@ -86,6 +86,10 @@ function startWorker() {
       // demo needs a handful of connections, so ask for a handful.
       INVOKR_DB_POOL_SIZE: "8",
       INVOKR_WORKER_MAX_CONCURRENT: "4",
+      // Long-running callbacks: `{{execution.callback_url}}` is built by the
+      // worker, and without a base URL it resolves to a path the target cannot
+      // call. The demo knows where the API is, so say so.
+      INVOKR_API_BASE_URL: API_URL,
       ...process.env,
       INVOKR_METRICS_PORT: metricsPort,
     },
@@ -246,6 +250,7 @@ async function handleControl(req, res, url) {
       // One definition of the hero endpoint, shared with the page.
       mandateSpec: provisioned?.mandateSpec ?? null,
       setup: provisioned?.setup ?? null,
+      callbackKey: provisioned?.callbackKey ?? null,
       dashboardUrl: DASHBOARD_URL,
       apiUrl: API_URL,
       mockUrl: MOCK_URL,

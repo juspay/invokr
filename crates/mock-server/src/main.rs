@@ -463,6 +463,63 @@ async fn reset_flaky(state: web::Data<AppState>) -> HttpResponse {
 // work, replies 202 with a `Location` to poll, and hands out the scripted
 // answers one at a time. The script comes from the request body, so a demo or a
 // test decides how many times it says "still working" before it finishes.
+//
+// It can also finish the other way round. Give it `callback_url` and
+// `callback_after_ms` and it stops waiting to be asked: it sleeps, then POSTs
+// the result back itself, which is the shape Invokr's callback mode expects.
+
+/// Call the caller back once the work is "done". Fire and forget: whether the
+/// callback lands is the caller's problem, and saying so in the log is ours.
+fn schedule_callback(
+    state: AppState,
+    url: String,
+    auth: Option<String>,
+    after_ms: u64,
+    output: serde_json::Value,
+) {
+    actix_web::rt::spawn(async move {
+        actix_web::rt::time::sleep(Duration::from_millis(after_ms)).await;
+        let client = reqwest::Client::new();
+        let mut req = client
+            .post(&url)
+            .json(&serde_json::json!({ "output": output }))
+            .timeout(Duration::from_secs(5));
+        if let Some(token) = auth {
+            req = req.header("Authorization", token);
+        }
+        let (told, landed) = match req.send().await {
+            Ok(res) => (
+                format!(
+                    "Called back to {url} — it answered {}",
+                    res.status().as_u16()
+                ),
+                res.status().is_success(),
+            ),
+            Err(e) => (format!("Could not call back to {url} — {e}"), false),
+        };
+        // No HttpRequest to hang this off, so log it directly rather than
+        // through `record`, which describes a request we handled.
+        let now = chrono::Local::now();
+        println!("  {}  → {}", now.format("%H:%M:%S%.3f"), told);
+        if let Ok(mut log) = state.log.lock() {
+            if log.len() >= LOG_CAPACITY {
+                log.pop_front();
+            }
+            log.push_back(Received {
+                seq: state.seq.fetch_add(1, Ordering::SeqCst) + 1,
+                at: now.to_rfc3339(),
+                method: "POST".into(),
+                path: "(callback)".into(),
+                status: 0,
+                ok: landed,
+                summary: told,
+                idempotency_key: None,
+                authenticated: true,
+                body: serde_json::Value::Null,
+            });
+        }
+    });
+}
 
 /// Accept a long-running task and return where to check on it.
 async fn async_start(
@@ -495,14 +552,43 @@ async fn async_start(
         jobs.push_back((id.clone(), script));
     }
 
+    // Callback mode: nobody is going to ask, so answer on our own schedule.
+    let calling_back = body
+        .get("callback_url")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    if let Some(url) = calling_back.clone() {
+        let after = body
+            .get("callback_after_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(3000);
+        let auth = body
+            .get("callback_auth")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        schedule_callback(
+            state.get_ref().clone(),
+            url,
+            auth,
+            after,
+            serde_json::json!({ "state": "done", "task_id": id, "finished_by": "callback" }),
+        );
+    }
+
     record(
         &state,
         &req,
         202,
-        format!(
-            "Took on {} — working on it, ask me again ({pending} more to go)",
-            str_field(&body, "job", "a long job")
-        ),
+        match &calling_back {
+            Some(_) => format!(
+                "Took on {} — working on it, I will call you back",
+                str_field(&body, "job", "a long job")
+            ),
+            None => format!(
+                "Took on {} — working on it, ask me again ({pending} more to go)",
+                str_field(&body, "job", "a long job")
+            ),
+        },
         &body,
     );
 

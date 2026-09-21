@@ -14,3 +14,5 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+# Callback mode: the target calls Invokr back instead of waiting to be polled.
+reqwest.workspace = true

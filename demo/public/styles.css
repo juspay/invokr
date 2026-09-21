@@ -85,9 +85,9 @@ header {
 }
 .brand { font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 
-/* The two halves of the story. Everything else is a variation inside one. */
-.acts { display: inline-flex; gap: 2px; background: var(--sunk); border-radius: 10px; padding: 3px; }
-.acts button {
+/* Three pages. Everything else is a variation inside one. */
+.pages { display: inline-flex; gap: 2px; background: var(--sunk); border-radius: 10px; padding: 3px; }
+.pages button {
   border: 0;
   background: transparent;
   border-radius: 7px;
@@ -98,8 +98,8 @@ header {
   align-items: baseline;
   gap: 8px;
 }
-.acts button .n { font-family: var(--mono); font-size: 11px; opacity: 0.7; }
-.acts button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(35, 32, 28, 0.08); }
+.pages button .n { font-family: var(--mono); font-size: 11px; opacity: 0.7; }
+.pages button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(35, 32, 28, 0.08); }
 
 .lights { display: inline-flex; gap: 14px; align-items: center; }
 .light { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
@@ -180,7 +180,7 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) 372p
 .view { flex: 1 1 auto; min-width: 0; min-height: 0; display: none; }
 .view.on { display: flex; }
 
-/* ─── act 1: the slots ────────────────────────────────────────────────────── */
+/* ─── page 1: the slots ───────────────────────────────────────────────────── */
 
 .view-setup { padding: 18px 22px; gap: 20px; align-items: stretch; }
 .slots { flex: 0 0 372px; display: flex; flex-direction: column; gap: 9px; min-height: 0; overflow-y: auto; }
@@ -283,10 +283,10 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) 372p
 .k-input { background: var(--blue-soft); color: var(--blue); }
 .k-exec { background: var(--plum-soft); color: var(--plum); }
 
-/* ─── act 2: the board ────────────────────────────────────────────────────── */
+/* ─── page 2: the board ───────────────────────────────────────────────────── */
 
-.view-run { overflow: hidden; }
-.view-run.on { display: block; position: relative; }
+.view-short { overflow: hidden; }
+.view-short.on { display: block; position: relative; }
 
 /* Fixed coordinate space, scaled to fit and pinned to the middle.
    Absolutely positioned rather than centred by the layout: a grid refuses to
@@ -369,6 +369,173 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) 372p
 
 .zone-target.hit { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 4px rgba(47, 125, 79, 0.1); }
 .zone-target.refused { border-color: var(--clay); background: var(--clay-soft); box-shadow: 0 0 0 4px rgba(176, 64, 42, 0.1); }
+
+/* ─── page 3: who called whom ─────────────────────────────────────────────── */
+
+.view-long { padding: 16px 20px; gap: 18px; align-items: stretch; }
+
+.async-panel {
+  flex: 0 0 332px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: auto;
+  min-height: 0;
+}
+.panel-head {
+  padding: 10px 14px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 650;
+  border-bottom: 1px solid var(--rule-soft);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel-head + .panel-head { border-top: 1px solid var(--rule); }
+.panel-head code { font-family: var(--mono); text-transform: none; letter-spacing: 0; color: var(--muted); }
+.panel-head .hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+
+.async-form { padding: 8px 14px 12px; }
+.form-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
+.form-row .fk { flex: 1 1 auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+.form-row .fn { flex: 1 0 100%; font-size: 10.5px; color: var(--faint); }
+.form-row .fn code { font-family: var(--mono); }
+.form-row input, .form-row select {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 7px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  width: var(--w, 92px);
+  text-align: right;
+}
+.form-row select { width: auto; text-align: left; font-family: inherit; font-size: 12.5px; }
+.form-row input:focus, .form-row select:focus { outline: none; border-color: var(--teal); background: #fff; }
+.form-sep {
+  margin: 10px 0 2px;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 650;
+  border-top: 1px dashed var(--rule);
+  padding-top: 9px;
+}
+
+.exec-state { padding: 10px 14px 14px; }
+.state-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 0; }
+.state-row .k { font-size: 11.5px; color: var(--faint); }
+.state-row .v { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); }
+.state-note { margin-top: 7px; font-size: 11.5px; color: var(--muted); }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-family: var(--mono); background: var(--sunk); color: var(--muted); }
+.pill.ok { background: var(--green-soft); color: var(--green); }
+.pill.bad { background: var(--clay-soft); color: var(--clay); }
+.pill.warn { background: var(--amber-soft); color: var(--amber); }
+.pill.act { background: var(--teal-soft); color: var(--teal); }
+
+/* Two lanes, time downwards. Not a sequence diagram — no lifelines to decode,
+   just the calls in order with the gap between them visible. */
+.lanes {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.lane-heads { display: flex; justify-content: space-between; padding: 11px 16px; border-bottom: 1px solid var(--rule-soft); }
+.lane-head { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.lane-head i { font-style: normal; font-weight: 400; color: var(--faint); font-size: 11.5px; margin-left: 6px; }
+
+.msgs { flex: 1 1 auto; overflow-y: auto; padding: 14px 0 20px; position: relative; }
+/* The two rails the arrows run between. */
+.msgs::before, .msgs::after {
+  content: "";
+  position: absolute;
+  top: 6px; bottom: 6px;
+  width: 1px;
+  background: var(--rule);
+}
+.msgs::before { left: 74px; }
+.msgs::after { right: 186px; }
+.msgs .empty { text-align: center; }
+
+.msg {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 186px;
+  align-items: center;
+  padding: 3px 0;
+  animation: rise 0.22s ease;
+}
+.msg .at {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  text-align: right;
+  padding-right: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.msg .wirebox { position: relative; padding: 0 10px; height: 34px; }
+.msg .label {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg .label b { font-family: var(--mono); font-size: 11px; font-weight: 650; color: var(--teal); }
+.msg .label .code { font-family: var(--mono); font-size: 11px; font-weight: 650; }
+.msg .label .code.ok { color: var(--green); }
+.msg .label .code.bad { color: var(--clay); }
+.msg .line {
+  position: absolute;
+  left: 0; right: 0; top: 22px;
+  height: 1px;
+  background: var(--rule);
+}
+/* An arrow head at the end it is travelling towards. */
+.msg .line::after {
+  content: "";
+  position: absolute;
+  top: -3.5px;
+  border: 4px solid transparent;
+}
+.msg.out .line::after { right: -1px; border-left-color: var(--faint); border-right-width: 0; }
+.msg.in .line::after { left: -1px; border-right-color: var(--faint); border-left-width: 0; }
+.msg.in .line { border-top: 1px dashed transparent; background: none; box-shadow: inset 0 1px 0 var(--rule); }
+
+.msg.act .line { background: var(--teal); }
+.msg.act.out .line::after { border-left-color: var(--teal); }
+.msg.act.in .line { box-shadow: inset 0 1px 0 var(--teal); }
+.msg.act.in .line::after { border-right-color: var(--teal); }
+.msg.ok .line { background: var(--green); }
+.msg.ok.out .line::after { border-left-color: var(--green); }
+.msg.ok.in .line { box-shadow: inset 0 1px 0 var(--green); }
+.msg.ok.in .line::after { border-right-color: var(--green); }
+.msg.warn .line { background: var(--amber); opacity: 0.7; }
+.msg.warn.in .line { box-shadow: inset 0 1px 0 var(--amber); }
+.msg.warn.in .line::after { border-right-color: var(--amber); }
+.msg.warn.out .line::after { border-left-color: var(--amber); }
+.msg.bad .line { background: var(--clay); }
+.msg.bad.in .line { box-shadow: inset 0 1px 0 var(--clay); }
+.msg.bad.in .line::after { border-right-color: var(--clay); }
+.msg.bad.out .line::after { border-left-color: var(--clay); }
+
+.msg .tail { font-size: 11.5px; color: var(--muted); padding-left: 12px; }
 
 /* ─── tokens ──────────────────────────────────────────────────────────────── */
 
@@ -489,10 +656,34 @@ footer.console {
   min-height: 62px;
 }
 
+/* The controller. Step through it yourself, or hand it to `auto`. */
+.transport { flex: 0 0 auto; display: inline-flex; gap: 0; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+.transport button {
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 6px 11px;
+  min-width: 34px;
+}
+.transport button + button { border-left: 1px solid var(--rule); }
+.transport button.wide { min-width: 54px; }
+.transport button.on { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 600; }
+.transport button:disabled { opacity: 0.3; }
+
+.step-count {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+}
+
 /* The journey, compressed to a row of dots. No extra bar: where you are is a
    dot, what is happening is the line next to it. */
 .step-dot { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 12px; }
-.step-dot.has-pips { margin-right: 4px; }
 .pip {
   width: 8px; height: 8px;
   border-radius: 50%;

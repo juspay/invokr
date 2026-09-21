@@ -39,7 +39,16 @@ const RETRY = {
   max_delay_ms: 600000,
 };
 
-/// Short gaps, for the take that shows a retry inside a demo slot.
+/// The impatient variant's own config and secret. Page 1 owns the hero's four
+/// and is the only thing that should ever be rewriting them, so nothing else
+/// points at them.
+const FAST = { config: "aarokya-config-fast", secret: "aarokya-callback-auth-fast" };
+
+/// Callback mode needs the target to hold a credential for Invokr, because it
+/// is the one making the call. A secret is where that belongs.
+const CALLBACK_KEY = "invokr-api-key";
+
+/// Short gaps, for the run that shows a retry inside a demo slot.
 const RETRY_FAST = {
   max_attempts: 3,
   backoff: "exponential",
@@ -92,22 +101,24 @@ export function mandateSyncSpec() {
 /// The endpoints the other takes need.
 ///
 /// Deliberately self-contained: none of them references the config, secret or
-/// payload spec that act 1 builds. Invokr refuses to delete a config a live
-/// endpoint still points at — rightly — and act 1's whole point is deleting
-/// those four and watching them come back, so nothing else may depend on them.
-function supportingEndpoints(mockUrl) {
+/// payload spec that page 1 builds, so page 1 is the only writer of those.
+function supportingEndpoints() {
   return [
     {
-      // The same call as the hero, with retries measured in seconds so the
-      // retry take fits in a demo slot instead of a coffee break.
+      // The same call as the hero, with retries measured in seconds so a page-2
+      // run with failures in it fits a demo slot instead of a coffee break.
+      // Its own config and secret, so page 1 can delete the hero's.
       name: "aarokya-mandate-sync-impatient",
       type: "HTTP",
+      config: FAST.config,
       spec: {
-        url: `${mockUrl}/mandates/{{input.mandate_id}}/sync`,
+        url: "{{config.base_url}}/mandates/{{input.mandate_id}}/sync",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `{{secret.${FAST.secret}}}`,
           "api-version": "2026-08-15",
+          "x-team": "{{config.team}}",
           "x-terminal-after": "{{input.checks}}",
           "x-fail-times": "{{input.fail_times}}",
         },
@@ -243,6 +254,7 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
   const result = {
     org_id: org.org_id,
     org_name: ORG.name,
+    callbackKey: CALLBACK_KEY,
     workspaces: {},
     endpoints: [],
     longRunning: false,
@@ -294,7 +306,20 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
       await api.upsert(`endpoint ${SETUP.endpoint} in ${ws.slug}`, "endpoints", SETUP.endpoint, mandateSyncSpec());
     }
 
-    for (const ep of supportingEndpoints(mockUrl)) {
+    await api.upsert(`fast config in ${ws.slug}`, "configs", FAST.config, {
+      name: FAST.config,
+      values: { base_url: mockUrl, team: ws.slug },
+    });
+    await api.upsert(`fast secret in ${ws.slug}`, "secrets", FAST.secret, {
+      name: FAST.secret,
+      value: `Bearer aarokya-demo-${ws.slug}-7d41c9`,
+    });
+    await api.upsert(`callback key in ${ws.slug}`, "secrets", CALLBACK_KEY, {
+      name: CALLBACK_KEY,
+      value: `Bearer ${apiKey}`,
+    });
+
+    for (const ep of supportingEndpoints()) {
       await api.upsert(`endpoint ${ep.name} in ${ws.slug}`, "endpoints", ep.name, ep);
       if (ws.key === "a") result.endpoints.push({ name: ep.name, type: ep.type });
     }
