@@ -17,11 +17,32 @@ use std::time::Duration;
 /// scene it is in.
 const LOG_CAPACITY: usize = 200;
 
+/// How many long-running tasks to keep answers for. Oldest is dropped first,
+/// so a process that runs all day does not grow one accepted task at a time.
+const ASYNC_CAPACITY: usize = 64;
+
 #[derive(Clone)]
 struct AppState {
     request_count: Arc<AtomicU64>,
     seq: Arc<AtomicU64>,
     log: Arc<Mutex<VecDeque<Received>>>,
+    /// Scripted answers for long-running tasks, oldest first.
+    async_jobs: Arc<Mutex<AsyncJobs>>,
+    async_seq: Arc<AtomicU64>,
+}
+
+/// Accepted long-running tasks and the answers each still owes, oldest first.
+type AsyncJobs = VecDeque<(String, Vec<ScriptStep>)>;
+
+/// One scripted answer from a long-running task: a status, a body, and
+/// optionally how long the caller should wait before asking again.
+#[derive(Clone, Deserialize)]
+struct ScriptStep {
+    status: u16,
+    #[serde(default)]
+    body: serde_json::Value,
+    #[serde(default)]
+    retry_after: Option<u64>,
 }
 
 /// One handled request, as the receiving service would describe it.
@@ -412,6 +433,124 @@ async fn reset_flaky(state: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({ "reset": true }))
 }
 
+// ─── long-running tasks ──────────────────────────────────────────────────────
+//
+// Stands in for a destination that cannot answer straight away: it takes the
+// work, replies 202 with a `Location` to poll, and hands out the scripted
+// answers one at a time. The script comes from the request body, so a demo or a
+// test decides how many times it says "still working" before it finishes.
+
+/// Accept a long-running task and return where to check on it.
+async fn async_start(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    body: web::Json<serde_json::Value>,
+) -> HttpResponse {
+    let body = body.into_inner();
+    let id = format!(
+        "task-{}",
+        state.async_seq.fetch_add(1, Ordering::SeqCst) + 1
+    );
+
+    let script: Vec<ScriptStep> = body
+        .get("script")
+        .and_then(|s| serde_json::from_value(s.clone()).ok())
+        .unwrap_or_else(|| {
+            vec![ScriptStep {
+                status: 200,
+                body: serde_json::json!({ "state": "done" }),
+                retry_after: None,
+            }]
+        });
+
+    let pending = script.iter().filter(|s| s.status == 202).count();
+    if let Ok(mut jobs) = state.async_jobs.lock() {
+        if jobs.len() >= ASYNC_CAPACITY {
+            jobs.pop_front();
+        }
+        jobs.push_back((id.clone(), script));
+    }
+
+    record(
+        &state,
+        &req,
+        202,
+        format!(
+            "Took on {} — working on it, ask me again ({pending} more to go)",
+            str_field(&body, "job", "a long job")
+        ),
+        &body,
+    );
+
+    HttpResponse::Accepted()
+        .insert_header(("Location", format!("/async/status/{id}")))
+        .json(serde_json::json!({ "task_id": id, "state": "working" }))
+}
+
+/// Answer a check-in, consuming one scripted step. The last step repeats, so a
+/// late poll still gets the terminal answer.
+async fn async_status(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let id = path.into_inner();
+    let step = {
+        let Ok(mut jobs) = state.async_jobs.lock() else {
+            return HttpResponse::InternalServerError().finish();
+        };
+        let Some((_, script)) = jobs.iter_mut().find(|(known, _)| *known == id) else {
+            return HttpResponse::NotFound().json(serde_json::json!({ "error": "no such task" }));
+        };
+        if script.len() > 1 {
+            script.remove(0)
+        } else {
+            script[0].clone()
+        }
+    };
+
+    record(
+        &state,
+        &req,
+        step.status,
+        if step.status == 202 {
+            format!("Checked on {id} — still working")
+        } else {
+            format!("Checked on {id} — finished")
+        },
+        &serde_json::Value::Null,
+    );
+
+    let mut res = HttpResponse::build(
+        actix_web::http::StatusCode::from_u16(step.status)
+            .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR),
+    );
+    if let Some(after) = step.retry_after {
+        res.insert_header(("Retry-After", after.to_string()));
+    }
+    res.json(step.body)
+}
+
+/// Give up on a long-running task.
+async fn async_cancel(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let id = path.into_inner();
+    if let Ok(mut jobs) = state.async_jobs.lock() {
+        jobs.retain(|(known, _)| *known != id);
+    }
+    record(
+        &state,
+        &req,
+        204,
+        format!("Dropped {id} — the caller cancelled"),
+        &serde_json::Value::Null,
+    );
+    HttpResponse::NoContent().finish()
+}
+
 /// Health check.
 async fn health() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
@@ -435,6 +574,8 @@ async fn main() -> std::io::Result<()> {
         request_count: Arc::new(AtomicU64::new(0)),
         seq: Arc::new(AtomicU64::new(0)),
         log: Arc::new(Mutex::new(VecDeque::with_capacity(LOG_CAPACITY))),
+        async_jobs: Arc::new(Mutex::new(VecDeque::with_capacity(ASYNC_CAPACITY))),
+        async_seq: Arc::new(AtomicU64::new(0)),
     };
 
     println!("\n  target service listening on :{port}");
@@ -448,6 +589,10 @@ async fn main() -> std::io::Result<()> {
             .route("/emails/welcome", web::post().to(send_welcome_email))
             .route("/billing/charge", web::post().to(charge))
             .route("/ops/heartbeat", web::post().to(heartbeat))
+            // Long-running destination: 202 + Location, then scripted check-ins
+            .route("/async/start", web::post().to(async_start))
+            .route("/async/status/{id}", web::get().to(async_status))
+            .route("/async/status/{id}", web::delete().to(async_cancel))
             .route("/_log", web::get().to(read_log))
             .route("/_log/clear", web::post().to(clear_log))
             // Fixture routes used by the test suite

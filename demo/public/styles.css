@@ -131,6 +131,102 @@ button.quiet:hover:not(:disabled) { background: var(--sunk); }
 }
 body.replaying .replay-flag { display: inline-flex; }
 
+/* ─── the journey strip ───────────────────────────────────────────────────── */
+
+/* Wraps rather than scrolls: a journey the room can only see half of is not a
+   journey. On a projector it is one row; on a laptop it becomes two, and every
+   step stays on screen either way. */
+.journey {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 2px;
+  gap: 0;
+  padding: 7px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  min-height: 58px;
+}
+
+/* One row per phase — registering a thing and running it are two chapters, and
+   the room should never have to work out where one ends. */
+.phase { display: flex; flex-wrap: wrap; align-items: center; gap: 0; flex: 1 0 100%; }
+.phase .phase-name {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 650;
+  padding-right: 9px;
+  min-width: 76px; /* both names reserve the same column, so the steps line up */
+  white-space: nowrap;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 12.5px;
+  transition: all 0.25s ease;
+}
+.step + .step { margin-left: 2px; }
+.step .dot {
+  width: 17px; height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rule);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  flex: 0 0 auto;
+}
+/* The width is reserved before the time lands in it, so a step that fires does
+   not shove the ones after it along. */
+.step .at {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  min-width: 5.4ch;
+  text-align: right;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.step.done { color: var(--ink-soft); }
+.step.done .dot { border-color: var(--green); background: var(--green-soft); color: var(--green); }
+.step.done .at { opacity: 1; }
+/* Deliberately no weight change: bold text is wider, and a step that widens
+   when it lights up shoves the rest of the journey sideways. The teal pill and
+   the filled dot carry the emphasis at a fixed width. */
+.step.now {
+  color: var(--ink);
+  background: var(--teal-soft);
+  box-shadow: 0 0 0 1px rgba(15, 123, 108, 0.18);
+}
+.step.now .dot { border-color: var(--teal); background: var(--teal); color: #fff; }
+.step.now .at { opacity: 1; color: var(--teal); }
+.step.bad .dot { border-color: var(--clay); background: var(--clay-soft); color: var(--clay); }
+.step.bad { color: var(--clay); }
+.step.skipped { opacity: 0.55; }
+.step.skipped .dot { border-style: dashed; }
+
+.pace { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+.pace button {
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 5px 11px;
+}
+.pace button + button { border-left: 1px solid var(--rule); }
+.pace button.on { background: var(--teal-soft); color: var(--teal); font-weight: 600; }
+
 /* ─── layout ──────────────────────────────────────────────────────────────── */
 
 main { flex: 1 1 auto; display: grid; grid-template-columns: 218px minmax(0, 1fr); min-height: 0; }
@@ -214,6 +310,8 @@ nav { border-right: 1px solid var(--rule); padding: 14px 10px; overflow-y: auto;
   background: var(--surface);
 }
 .sub-zone.ready { border-style: solid; border-color: #cfe1dd; background: var(--teal-soft); }
+.sub-zone.shelf { border-style: solid; border-color: #e0d8ca; background: var(--sunk); }
+.sub-zone.shelf .sub-label { color: var(--muted); }
 .sub-label {
   position: absolute;
   top: 7px;
@@ -299,7 +397,7 @@ nav { border-right: 1px solid var(--rule); padding: 14px 10px; overflow-y: auto;
 .token {
   position: absolute;
   left: 0; top: 0;
-  width: 128px;
+  width: 148px;
   height: 34px;
   border-radius: 9px;
   background: var(--surface);
@@ -331,6 +429,10 @@ nav { border-right: 1px solid var(--rule); padding: 14px 10px; overflow-y: auto;
 .token.bad .note { color: var(--clay); }
 .token.gone { opacity: 0; }
 .token.shrink { width: 96px; height: 26px; }
+.token.spec { border-left-color: var(--plum); background: #f7f4fe; }
+.token.spec .note { color: var(--plum); }
+.token.polling { border-left-color: var(--plum); background: #f3effc; }
+.token.polling .note { color: var(--plum); }
 
 /* ─── ticker ──────────────────────────────────────────────────────────────── */
 
@@ -383,7 +485,17 @@ nav { border-right: 1px solid var(--rule); padding: 14px 10px; overflow-y: auto;
   width: var(--w, 170px);
   color: var(--ink);
 }
-.field input:focus { outline: none; border-color: var(--teal); background: #fff; box-shadow: 0 0 0 3px rgba(15, 123, 108, 0.1); }
+.field select {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  width: var(--w, 170px);
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--teal); background: #fff; box-shadow: 0 0 0 3px rgba(15, 123, 108, 0.1); }
 .field input:disabled { background: var(--sunk); color: var(--muted); }
 
 .actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }

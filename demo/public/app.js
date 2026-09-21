@@ -1,14 +1,19 @@
 // Invokr live demo.
 //
-// The stage is the explanation. A job is a physical token: it is born in your
-// app, lands in the queue, waits there if it is not due, gets taken by exactly
-// one worker, reaches the other side, and either finishes or flies back to the
-// queue with a countdown on it. Nothing about that is narrated in prose,
-// because watching it happen is faster than reading about it.
+// The stage is the explanation. A job is a physical token: you describe an
+// endpoint, it becomes a row; you ask for a run, that becomes another row; it
+// waits until it is due, exactly one worker takes it, it reaches the other
+// side, and the try is recorded.
 //
-// One rule underneath: a scene's `run()` never touches the DOM. It only emits
-// events, and `apply(event)` draws them — which is what lets a recorded run
-// replay through the same renderer at the timings it really had.
+// Two rules hold it together:
+//
+//   1. A scene's `run()` never touches the DOM. It emits steps, and the
+//      renderer draws them — which is what lets a recorded run replay through
+//      the same code.
+//   2. Steps are drawn one at a time with a dwell between them, so the eye can
+//      follow. The dwell is a *floor*, never a substitute: a 15-second wait
+//      still takes fifteen seconds, and every step carries the real time it
+//      happened at.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -20,6 +25,7 @@ const state = {
   ran: new Set(),
   run: null,
   values: {},
+  registered: false, // whether this session has already run the register phase
 };
 
 const esc = (s) =>
@@ -28,6 +34,7 @@ const esc = (s) =>
 const ms = (n) => (n == null ? "—" : n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(1)}s`);
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const short = (id) => (id ? String(id).replace("worker_", "").slice(0, 6) : "—");
+const sleep = (t) => new Promise((r) => setTimeout(r, t));
 
 const maskSecrets = (text) =>
   String(text).replace(/(\\?"authorization\\?"\s*:\s*\\?")([^"\\]*)/gi, "$1Bearer ••••••••");
@@ -44,18 +51,17 @@ function highlightJson(value) {
 // ─── the board ───────────────────────────────────────────────────────────────
 
 const BOARD = { w: 1420, h: 620 };
-const TOKEN = { w: 128, h: 34, gap: 8 };
+const TOKEN = { w: 148, h: 34, gap: 8 };
 
-// One source of truth for where everything sits. The DOM gets these numbers at
-// boot; token layout reads the same rectangles.
 const ZONES = {
   app: { x: 14, y: 54, w: 190, h: 530, pad: 14, top: 32, cols: 1 },
   db: { x: 238, y: 54, w: 424, h: 530 },
-  waiting: { x: 260, y: 92, w: 380, h: 234, pad: 12, top: 28, cols: 2 },
-  ready: { x: 260, y: 352, w: 380, h: 214, pad: 12, top: 28, cols: 2 },
+  endpoints: { x: 260, y: 92, w: 380, h: 116, pad: 12, top: 28, cols: 2 },
+  waiting: { x: 260, y: 232, w: 380, h: 160, pad: 12, top: 28, cols: 2 },
+  ready: { x: 260, y: 412, w: 380, h: 154, pad: 12, top: 28, cols: 2 },
   workers: { x: 700, y: 54, w: 312, h: 530 },
   target: { x: 1048, y: 54, w: 250, h: 530, pad: 14, top: 32, cols: 1 },
-  done: { x: 1320, y: 54, w: 92, h: 530, pad: 6, top: 30, cols: 1 },
+  done: { x: 1306, y: 54, w: 110, h: 530, pad: 7, top: 30, cols: 1 },
 };
 
 const workerRect = (i) => ({ x: 718, y: 92 + i * 142, w: 276, h: 122, pad: 12, top: 30, cols: 1 });
@@ -70,6 +76,7 @@ function place(el, r) {
 function layoutBoard() {
   place($("#z-app"), ZONES.app);
   place($("#z-db"), ZONES.db);
+  place($("#z-endpoints"), ZONES.endpoints);
   place($("#z-waiting"), ZONES.waiting);
   place($("#z-ready"), ZONES.ready);
   place($("#z-workers"), ZONES.workers);
@@ -81,15 +88,10 @@ function layoutBoard() {
   arrow.style.top = `${ZONES.waiting.y + ZONES.waiting.h + 2}px`;
 }
 
-// Scale the fixed board into whatever space the window gives it.
 function fitBoard() {
   const stage = $(".stage");
   const board = $("#board");
-  const k = Math.min(
-    (stage.clientWidth - 28) / BOARD.w,
-    (stage.clientHeight - 16) / BOARD.h,
-    1.15,
-  );
+  const k = Math.min((stage.clientWidth - 28) / BOARD.w, (stage.clientHeight - 16) / BOARD.h, 1.15);
   board.style.transform = `scale(${Math.max(0.3, k)})`;
 }
 
@@ -107,10 +109,10 @@ function renderWorkers(list) {
       workerBoxes.delete(id);
     }
   }
-  host.parentElement.querySelector("#z-workers").classList.toggle("vacant", wanted.size === 0);
+  $("#z-workers").classList.toggle("vacant", wanted.size === 0);
 
   let i = 0;
-  for (const [id, w] of wanted) {
+  for (const [id] of wanted) {
     let el = workerBoxes.get(id);
     if (!el) {
       el = document.createElement("div");
@@ -127,7 +129,6 @@ function renderWorkers(list) {
   relayoutTokens();
 }
 
-// A claim can name a worker the page has not been told about yet.
 function ensureWorkerBox(workerId) {
   if (!workerId || workerBoxes.has(workerId)) return;
   const list = [...workerBoxes.keys()].map((id) => ({ workerId: id }));
@@ -145,7 +146,7 @@ function setWorkerState(workerId, cls, label) {
 
 // ─── tokens ──────────────────────────────────────────────────────────────────
 
-const tokens = new Map(); // id -> { el, zone, order }
+const tokens = new Map();
 let tokenSeq = 0;
 
 function tokenRect(zone) {
@@ -153,7 +154,6 @@ function tokenRect(zone) {
     const el = workerBoxes.get(zone.slice(7));
     return el ? workerRect(Number(el.dataset.index)) : ZONES.ready;
   }
-  // "some worker has it, we did not catch which": sits under the boxes.
   if (zone === "workers") {
     const below = workerRect(Math.max(workerBoxes.size, 1));
     return { ...ZONES.workers, y: below.y - 14, top: 0, pad: 18, cols: 1 };
@@ -167,16 +167,13 @@ function relayoutTokens() {
     if (!byZone.has(t.zone)) byZone.set(t.zone, []);
     byZone.get(t.zone).push([id, t]);
   }
-
   for (const [zone, list] of byZone) {
     const r = tokenRect(zone);
     const cols = r.cols ?? 1;
     list.sort((a, b) => a[1].order - b[1].order);
     list.forEach(([, t], i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = r.x + (r.pad ?? 12) + col * (TOKEN.w + TOKEN.gap);
-      const y = r.y + (r.top ?? 26) + row * (TOKEN.h + TOKEN.gap);
+      const x = r.x + (r.pad ?? 12) + (i % cols) * (TOKEN.w + TOKEN.gap);
+      const y = r.y + (r.top ?? 26) + Math.floor(i / cols) * (TOKEN.h + TOKEN.gap);
       t.el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     });
   }
@@ -191,20 +188,15 @@ function setToken({ id, zone, state: tokenState, label, note }) {
     $("#tokens").appendChild(el);
     t = { el, zone: zone ?? "app", order: tokenSeq++ };
     tokens.set(id, t);
-    // Put it in place before it is allowed to be seen, so the first move reads
-    // as a move and not as a flash.
     relayoutTokens();
     requestAnimationFrame(() => el.classList.remove("born"));
   }
-
   if (label !== undefined) t.el.querySelector(".who").textContent = label;
   if (note !== undefined) t.el.querySelector(".note").textContent = note;
-
   if (tokenState !== undefined) {
-    t.el.classList.remove("waiting", "ready", "running", "ok", "bad");
+    t.el.classList.remove("waiting", "ready", "running", "ok", "bad", "spec", "polling");
     if (tokenState) t.el.classList.add(tokenState);
   }
-
   if (zone && zone !== t.zone) {
     if (zone.startsWith("worker:")) ensureWorkerBox(zone.slice(7));
     t.zone = zone;
@@ -219,14 +211,99 @@ function clearTokens() {
   tokenSeq = 0;
 }
 
-function flashZone(zone, cls) {
-  const el = zone === "target" ? $("#z-target") : null;
-  if (!el) return;
+function flashZone(cls) {
+  const el = $("#z-target");
   el.classList.remove("hit", "refused");
   if (cls) {
     el.classList.add(cls);
-    setTimeout(() => el.classList.remove(cls), 900);
+    setTimeout(() => el.classList.remove(cls), 1200);
   }
+}
+
+// ─── the journey strip ───────────────────────────────────────────────────────
+
+const REGISTER_PHASE = {
+  phase: "register",
+  steps: [
+    { id: "describe", label: "you describe it" },
+    { id: "stored", label: "it becomes a row" },
+    { id: "secret", label: "the key stays in" },
+  ],
+};
+
+const INVOKE_STEPS = [
+  { id: "ask", label: "you ask for a run" },
+  { id: "written", label: "written down" },
+  { id: "due", label: "waits until due" },
+  { id: "claim", label: "one worker takes it" },
+  { id: "call", label: "calls the other side" },
+  { id: "answer", label: "the answer" },
+  { id: "record", label: "recorded" },
+];
+
+const DEFAULT_JOURNEY = [REGISTER_PHASE, { phase: "invoke", steps: INVOKE_STEPS }];
+
+function renderJourney(scene) {
+  const journey = scene.journey ?? DEFAULT_JOURNEY;
+  $("#journey").innerHTML = journey
+    .map(
+      (p) => `<div class="phase">
+        <span class="phase-name">${esc(p.phase)}</span>
+        ${p.steps
+          .map(
+            (s, i) =>
+              `<span class="step" data-step="${esc(s.id)}">
+                 <span class="dot">${i + 1}</span><span>${esc(s.label)}</span><span class="at"></span>
+               </span>`,
+          )
+          .join("")}
+      </div>`,
+    )
+    .join("");
+}
+
+/// Write a step's time, never earlier than the step before it.
+///
+/// Two clocks feed this strip: steps the page stamps as it walks, and steps
+/// retimed from a row's own timestamp on the database's clock. They agree to
+/// within a few milliseconds, which is enough — when a scene walks the journey
+/// twice — to render a claim a hair before the write that produced it. Nothing
+/// is invented: a step is only ever nudged up to the one it followed.
+function showStepTime(el, at) {
+  const prior = [...$("#journey").querySelectorAll(".step")];
+  const before = prior
+    .slice(0, prior.indexOf(el))
+    .reverse()
+    .find((s) => s.dataset.at !== undefined);
+  const shown = Math.max(at, before ? Number(before.dataset.at) : 0);
+  el.dataset.at = String(shown);
+  el.querySelector(".at").textContent = shown < 1000 ? `${Math.round(shown)}ms` : `${(shown / 1000).toFixed(1)}s`;
+}
+
+function markStep(id, cls, at) {
+  const strip = $("#journey");
+  strip.querySelectorAll(".step.now").forEach((n) => {
+    n.classList.remove("now");
+    n.classList.add("done");
+  });
+  const el = strip.querySelector(`[data-step="${id}"]`);
+  if (!el) return;
+  el.classList.remove("skipped", "bad");
+  el.classList.add(cls ?? "now");
+  if (at != null) showStepTime(el, at);
+  el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+}
+
+/// A finished run has no current step. Settle the trailing one so the strip
+/// stops pulsing at a journey that is over. A run that stopped early keeps its
+/// pulse — that is where it stopped.
+function settleJourney() {
+  $("#journey")
+    ?.querySelectorAll(".step.now")
+    .forEach((n) => {
+      n.classList.remove("now");
+      n.classList.add("done");
+    });
 }
 
 // ─── transport ───────────────────────────────────────────────────────────────
@@ -253,8 +330,6 @@ const control = async (path, method = "POST") => {
   return { ok: res.ok, body: await res.json().catch(() => null) };
 };
 
-const sleep = (t) => new Promise((r) => setTimeout(r, t));
-
 async function targetLogHead() {
   try {
     const res = await fetch("/control/mock/log?limit=1");
@@ -262,6 +337,50 @@ async function targetLogHead() {
   } catch {
     return 0;
   }
+}
+
+// ─── the pacer ───────────────────────────────────────────────────────────────
+//
+// Steps are drawn no closer together than `dwell`. Anything that took longer
+// than that in real life keeps its own timing — the floor only stretches the
+// bursts the eye would otherwise miss.
+
+const pacer = {
+  dwell: 1400,
+  queue: [],
+  running: false,
+  lastStep: 0,
+  waiters: [],
+};
+
+function enqueue(scene, ev) {
+  pacer.queue.push([scene, ev]);
+  if (!pacer.running) drainLoop();
+}
+
+async function drainLoop() {
+  pacer.running = true;
+  while (pacer.queue.length) {
+    const [scene, ev] = pacer.queue.shift();
+    if (ev.type === "step") {
+      const earliest = pacer.lastStep + pacer.dwell;
+      const now = performance.now();
+      if (now < earliest) await sleep(earliest - now);
+      pacer.lastStep = performance.now();
+    }
+    applyNow(scene, ev);
+  }
+  pacer.running = false;
+  pacer.waiters.splice(0).forEach((r) => r());
+}
+
+const drained = () =>
+  pacer.running || pacer.queue.length ? new Promise((r) => pacer.waiters.push(r)) : Promise.resolve();
+
+function resetPacer() {
+  pacer.queue.length = 0;
+  pacer.lastStep = 0;
+  pacer.waiters.splice(0).forEach((r) => r());
 }
 
 // ─── the event tape ──────────────────────────────────────────────────────────
@@ -279,10 +398,15 @@ class Run {
     if (this.cancelled) return;
     const ev = { t: Math.round(performance.now() - this.t0), type, ...payload };
     this.events.push(ev);
-    apply(this.scene, ev);
+    enqueue(this.scene, ev);
   }
 
-  /// One short line. The stage has already said most of it.
+  /// One step of the journey: what it is, when it really happened, and what
+  /// moves on the board because of it.
+  step(id, opts = {}) {
+    this.emit("step", { id, at: Math.round(performance.now() - this.t0), ...opts });
+  }
+
   tick(text, tone = "") {
     this.emit("tick", { text, tone });
   }
@@ -307,14 +431,31 @@ class Run {
 
 // ─── the one renderer ────────────────────────────────────────────────────────
 
-function apply(scene, ev) {
+function applyNow(scene, ev) {
   switch (ev.type) {
-    case "token":
-      setToken(ev);
+    case "step":
+      markStep(ev.id, ev.skip ? "skipped" : ev.bad ? "bad" : "now", ev.skip ? null : ev.at);
+      if (ev.token) setToken(ev.token);
+      if (ev.worker) setWorkerState(ev.worker.id, ev.worker.cls, ev.worker.label);
+      if (ev.others) {
+        for (const id of workerBoxes.keys()) {
+          if (id !== ev.worker?.id) setWorkerState(id, ev.others.cls, ev.others.label);
+        }
+      }
+      if (ev.flash) flashZone(ev.flash);
+      if (ev.cron !== undefined) $("#cron-badge").classList.toggle("tick", !!ev.cron);
+      if (ev.drop !== undefined) $("#drop-arrow").classList.toggle("on", !!ev.drop);
+      if (ev.text) showTick(ev.t, ev.text, ev.tone);
       break;
 
-    case "clear":
-      clearTokens();
+    case "retime": {
+      const el = $("#journey").querySelector(`[data-step="${ev.id}"]`);
+      if (el) showStepTime(el, ev.at);
+      break;
+    }
+
+    case "token":
+      setToken(ev);
       break;
 
     case "workers":
@@ -325,41 +466,13 @@ function apply(scene, ev) {
       setWorkerState(ev.workerId, ev.cls, ev.label);
       break;
 
-    case "flash":
-      flashZone(ev.zone, ev.cls);
-      break;
-
-    case "cron":
-      $("#cron-badge").classList.toggle("tick", !!ev.on);
-      break;
-
-    case "drop":
-      $("#drop-arrow").classList.toggle("on", !!ev.on);
-      break;
-
     case "target-is":
       $("#target-label").textContent = ev.who;
       break;
 
-    case "tick": {
-      // Two lines, not one: a claim and its answer can land 8ms apart, and a
-      // single line would swallow the first before anyone read it.
-      const el = $("#ticker");
-      const t = ev.t < 1000 ? `${ev.t}ms` : `${(ev.t / 1000).toFixed(1)}s`;
-      const prev = el.querySelector(".line.now");
-      if (prev) {
-        prev.classList.remove("now");
-        prev.classList.add("was");
-      }
-      el.querySelectorAll(".line.was").forEach((n, i, all) => {
-        if (i < all.length - 1) n.remove();
-      });
-      const line = document.createElement("span");
-      line.className = `line now ${ev.tone ?? ""}`;
-      line.innerHTML = `<span class="t">${t}</span><span>${ev.text}</span>`;
-      el.appendChild(line);
+    case "tick":
+      showTick(ev.t, ev.text, ev.tone);
       break;
-    }
 
     case "receipt":
       addReceipts(ev.entries);
@@ -376,11 +489,24 @@ function apply(scene, ev) {
     case "res":
       $("#p-response").innerHTML = `<pre>${highlightJson(ev.body ?? {})}</pre>`;
       break;
-
-    case "panel":
-      scene.panel?.(ev.key, ev.data);
-      break;
   }
+}
+
+function showTick(t, text, tone) {
+  const el = $("#ticker");
+  const stamp = t < 1000 ? `${t}ms` : `${(t / 1000).toFixed(1)}s`;
+  const prev = el.querySelector(".line.now");
+  if (prev) {
+    prev.classList.remove("now");
+    prev.classList.add("was");
+  }
+  el.querySelectorAll(".line.was").forEach((n, i, all) => {
+    if (i < all.length - 1) n.remove();
+  });
+  const line = document.createElement("span");
+  line.className = `line now ${tone ?? ""}`;
+  line.innerHTML = `<span class="t">${stamp}</span><span>${text}</span>`;
+  el.appendChild(line);
 }
 
 function addReceipts(entries) {
@@ -422,142 +548,6 @@ function triesTable(attempts) {
       .join("")}</tbody></table>`;
 }
 
-// ─── watching one real execution, as motion ──────────────────────────────────
-
-async function watchExecution(run, executionId, opts = {}) {
-  const { ws = "a", timeout = 90000, targetSince = 0, token, label } = opts;
-  const started = performance.now();
-  let seenAttempts = 0;
-  let claimedAttempt = 0;
-  let announcedRetry = 0;
-  let logSeq = targetSince;
-  let lastStatus = null;
-
-  const tailTarget = async () => {
-    try {
-      const res = await fetch(`/control/mock/log?since=${logSeq}&limit=20`);
-      const entries = ((await res.json())?.data ?? []).slice().reverse();
-      if (entries.length) {
-        logSeq = Math.max(logSeq, ...entries.map((e) => e.seq));
-        run.emit("receipt", { entries });
-      }
-    } catch {
-      /* the target's log is a nicety, never a dependency */
-    }
-  };
-
-  while (performance.now() - started < timeout && !run.cancelled) {
-    const exec = (await api("GET", `/v1/executions/${executionId}`, { ws })).body?.data;
-
-    if (exec) {
-      if (exec.status !== lastStatus) lastStatus = exec.status;
-
-      // Keyed on attempt_count, not on a status change: a try that takes 5ms is
-      // back to RETRYING before the next poll, so RUNNING is never observed.
-      let pendingRetry = null;
-      if (exec.status === "RETRYING" && exec.run_at && exec.attempt_count > announcedRetry) {
-        announcedRetry = exec.attempt_count;
-        pendingRetry = exec;
-      }
-
-      // The claim: the token moves into the box of the worker that took it, and
-      // every other worker briefly shows what it did instead — skip the locked
-      // row and move on.
-      const claim = (n) => {
-        if (n <= claimedAttempt) return;
-        claimedAttempt = n;
-        const wid = exec.worker_id;
-        if (wid) {
-          run.emit("worker", { workerId: wid, cls: "busy", label: "holding it" });
-          for (const other of workerBoxes.keys()) {
-            if (other !== wid) run.emit("worker", { workerId: other, cls: "skipped", label: "skipped — locked" });
-          }
-        }
-        run.emit("token", { id: token, zone: wid ? `worker:${wid}` : "workers", state: "running", note: "taken" });
-        run.tick(
-          wid
-            ? `worker <b>${esc(short(wid))}</b> took it — the others skipped the locked row`
-            : "<b>one worker</b> took it — the others skipped the locked row",
-          "act",
-        );
-      };
-      claim(exec.attempt_count);
-
-      const attempts = (await api("GET", `/v1/executions/${executionId}/attempts`, { ws })).body?.data ?? [];
-      if (attempts.length !== seenAttempts) {
-        const ordered = [...attempts].sort((a, b) => a.attempt_number - b.attempt_number);
-        for (let i = 1; i < ordered.length; i++) {
-          ordered[i].gap_ms = new Date(ordered[i].started_at) - new Date(ordered[i - 1].completed_at);
-        }
-        for (const a of ordered.slice(seenAttempts)) {
-          claim(a.attempt_number);
-          const ok = a.status === "SUCCESS";
-          run.emit("token", {
-            id: token,
-            zone: "target",
-            state: ok ? "ok" : "bad",
-            note: ok ? `${a.output?.status_code ?? 200} · ${ms(a.duration_ms)}` : `${a.error?.status_code ?? "no answer"}`,
-          });
-          run.emit("flash", { zone: "target", cls: ok ? "hit" : "refused" });
-          run.tick(
-            ok
-              ? `the other side answered <b>${a.output?.status_code ?? 200}</b> in ${ms(a.duration_ms)}`
-              : `try ${a.attempt_number} <b>failed</b> — ${esc(a.error?.status_code ? String(a.error.status_code) : (a.error?.type ?? "no answer").toLowerCase())}`,
-            ok ? "ok" : "bad",
-          );
-          if (exec.worker_id) run.emit("worker", { workerId: exec.worker_id, cls: null, label: "" });
-        }
-        seenAttempts = attempts.length;
-        run.emit("tries", { attempts: ordered });
-      }
-
-      await tailTarget();
-
-      // A failed try flies back to the queue with the wait written on it.
-      if (pendingRetry) {
-        const waitMs = Math.max(0, new Date(pendingRetry.run_at) - Date.now());
-        await sleep(450);
-        run.emit("token", { id: token, zone: "waiting", state: "waiting", note: `retry in ${ms(waitMs)}` });
-        run.tick(`back in the queue — next try in <b>${ms(waitMs)}</b>`, "warn");
-        countdownToken(run, token, new Date(pendingRetry.run_at).getTime(), "retry in");
-      }
-
-      if (["SUCCESS", "FAILED", "CANCELLED"].includes(exec.status)) {
-        await tailTarget();
-        await sleep(650);
-        run.emit("token", {
-          id: token,
-          zone: "done",
-          state: exec.status === "SUCCESS" ? "ok" : "bad",
-          label: label ?? "",
-          note: exec.status === "SUCCESS" ? "done" : exec.status.toLowerCase(),
-        });
-        return exec;
-      }
-    }
-    await sleep(160);
-  }
-  return null;
-}
-
-// Emits the countdown as events so replay reproduces it rather than recomputing.
-function countdownToken(run, token, deadline, prefix) {
-  const timer = setInterval(() => {
-    const left = deadline - Date.now();
-    if (run.cancelled) return clearInterval(timer);
-    if (left <= 0) {
-      clearInterval(timer);
-      // Its time has come: eligible now, whether or not a worker is alive.
-      run.emit("drop", { on: true });
-      run.emit("token", { id: token, zone: "ready", state: "ready", note: "due now" });
-      setTimeout(() => run.emit("drop", { on: false }), 700);
-      return;
-    }
-    run.emit("token", { id: token, note: `${prefix} ${(left / 1000).toFixed(1)}s` });
-  }, 500);
-  return timer;
-}
-
 // ─── status ──────────────────────────────────────────────────────────────────
 
 function setChip(id, cls, text) {
@@ -575,124 +565,385 @@ async function refreshStatus() {
     setChip("chip-api", s.api ? "up" : "down", s.api ? "Invokr" : "Invokr down");
     setChip("chip-target", s.mock ? "up" : "down", s.mock ? "target" : "target down");
     if (!state.run || state.run.cancelled) renderWorkers(s.workers);
-    $("#foot-note").textContent = `${s.workers.length} worker${s.workers.length === 1 ? "" : "s"}`;
+    $("#foot-note").textContent =
+      `${s.workers.length} worker${s.workers.length === 1 ? "" : "s"}` +
+      (s.longRunning ? " · long-running build" : "");
   } catch {
     setChip("chip-api", "down", "demo server down");
   }
 }
 
-// ─── firing a job, as motion ─────────────────────────────────────────────────
+// ─── watching one real execution, step by step ───────────────────────────────
+
+async function watchExecution(run, executionId, opts = {}) {
+  const { ws = "a", timeout = 90000, targetSince = 0, token, label } = opts;
+  const started = performance.now();
+  let seenAttempts = 0;
+  let claimedAttempt = 0;
+  let announcedRetry = 0;
+  let seenPolls = 0;
+  let sawWaiting = false;
+  let logSeq = targetSince;
+
+  const tailTarget = async () => {
+    try {
+      const res = await fetch(`/control/mock/log?since=${logSeq}&limit=20`);
+      const entries = ((await res.json())?.data ?? []).slice().reverse();
+      if (!entries.length) return;
+      logSeq = Math.max(logSeq, ...entries.map((e) => e.seq));
+      run.emit("receipt", { entries });
+
+      // A long-running destination reports each check-in. Invokr's own
+      // execution row does not expose a poll count over the API, so the
+      // receiving side is where the evidence is.
+      for (const e of entries) {
+        if (!e.path?.startsWith("/async/status") || e.status !== 202) continue;
+        seenPolls += 1;
+        run.emit("step", {
+          id: "poll",
+          at: Math.max(0, new Date(e.at) - run.wallT0),
+          token: { id: token, zone: "target", state: "polling", note: `check ${seenPolls}` },
+          text: `still working — Invokr has checked back <b>${seenPolls}×</b>, honouring Retry-After`,
+          tone: "act",
+        });
+      }
+    } catch {
+      /* the target's log is a nicety, never a dependency */
+    }
+  };
+
+  // Offsets for steps we learn about after the fact come from the row's own
+  // timestamps, so the strip shows when it happened, not when we noticed.
+  const offset = (iso) => Math.max(0, new Date(iso) - run.wallT0);
+
+  while (performance.now() - started < timeout && !run.cancelled) {
+    const exec = (await api("GET", `/v1/executions/${executionId}`, { ws })).body?.data;
+
+    if (exec) {
+      let pendingRetry = null;
+      if (exec.status === "RETRYING" && exec.run_at && exec.attempt_count > announcedRetry) {
+        announcedRetry = exec.attempt_count;
+        pendingRetry = exec;
+      }
+
+      if (exec.status === "WAITING" && !sawWaiting) {
+        sawWaiting = true;
+        run.step("accepted", {
+          token: { id: token, zone: "target", state: "polling", note: "202 · working" },
+          text: "the other side said <b>202</b> and kept working — Invokr parked the row",
+          tone: "act",
+        });
+      }
+
+      // `at` is the attempt's own start when we already have the row, so the
+      // strip never shows the pick-up as later than the call it produced.
+      const claim = (n, wid, at) => {
+        if (n <= claimedAttempt) return;
+        claimedAttempt = n;
+        run.emit("step", {
+          id: "claim",
+          at: at ?? Math.round(performance.now() - run.t0),
+          token: { id: token, zone: wid ? `worker:${wid}` : "workers", state: "running", note: "taken" },
+          worker: wid ? { id: wid, cls: "busy", label: "holding it" } : null,
+          others: wid ? { cls: "skipped", label: "skipped — locked" } : null,
+          text: wid
+            ? `worker <b>${esc(short(wid))}</b> took it — the others skipped the locked row`
+            : "<b>one worker</b> took it — the others skipped the locked row",
+          tone: "act",
+        });
+      };
+      claim(exec.attempt_count, exec.worker_id);
+
+      // Long-running: the destination said "working on it" and Invokr is now
+      // checking back rather than holding a connection open.
+      if (exec.poll_count != null && exec.poll_count > seenPolls) {
+        seenPolls = exec.poll_count;
+        run.step("poll", {
+          token: { id: token, zone: "target", state: "polling", note: `poll ${seenPolls}` },
+          text: `still working — Invokr has checked back <b>${seenPolls}×</b>`,
+          tone: "act",
+        });
+      }
+
+      const attempts = (await api("GET", `/v1/executions/${executionId}/attempts`, { ws })).body?.data ?? [];
+      if (attempts.length !== seenAttempts) {
+        const ordered = [...attempts].sort((a, b) => a.attempt_number - b.attempt_number);
+        for (let i = 1; i < ordered.length; i++) {
+          ordered[i].gap_ms = new Date(ordered[i].started_at) - new Date(ordered[i - 1].completed_at);
+        }
+        for (const a of ordered.slice(seenAttempts)) {
+          claim(a.attempt_number, exec.worker_id, offset(a.started_at));
+          // The claim and this attempt start in the same transaction, so the
+          // attempt's own timestamp is the truthful one for both.
+          run.emit("retime", { id: "claim", at: offset(a.started_at) });
+          // The attempt that parks a long-running job is recorded as WAITING:
+          // the destination took the work, it has not finished it.
+          if (a.status === "WAITING") {
+            sawWaiting = true;
+            run.emit("step", {
+              id: "call",
+              at: offset(a.started_at),
+              token: { id: token, zone: "target", state: "running", note: "calling" },
+              text: "the worker calls the other side",
+              tone: "act",
+            });
+            run.emit("step", {
+              id: "accepted",
+              at: offset(a.completed_at ?? a.started_at),
+              token: { id: token, zone: "target", state: "polling", note: "202 · working" },
+              text: "the other side said <b>202</b> and kept working — Invokr parked the row",
+              tone: "act",
+            });
+            continue;
+          }
+          const ok = a.status === "SUCCESS";
+
+          run.emit("step", {
+            id: "call",
+            at: offset(a.started_at),
+            token: { id: token, zone: "target", state: "running", note: "calling" },
+            text: "the worker calls the other side",
+            tone: "act",
+          });
+          run.emit("step", {
+            id: "answer",
+            at: offset(a.completed_at ?? a.started_at),
+            bad: !ok,
+            token: {
+              id: token,
+              state: ok ? "ok" : "bad",
+              note: ok ? `${a.output?.status_code ?? 200} · ${ms(a.duration_ms)}` : `${a.error?.status_code ?? "no answer"}`,
+            },
+            flash: ok ? "hit" : "refused",
+            worker: exec.worker_id ? { id: exec.worker_id, cls: null, label: "" } : null,
+            text: ok
+              ? `it answered <b>${a.output?.status_code ?? 200}</b> in ${ms(a.duration_ms)}`
+              : `try ${a.attempt_number} <b>failed</b> — ${esc(
+                  a.error?.status_code ? String(a.error.status_code) : (a.error?.type ?? "no answer").toLowerCase(),
+                )}`,
+            tone: ok ? "ok" : "bad",
+          });
+        }
+        seenAttempts = attempts.length;
+        run.emit("tries", { attempts: ordered });
+      }
+
+      await tailTarget();
+
+      if (pendingRetry) {
+        const waitMs = Math.max(0, new Date(pendingRetry.run_at) - Date.now());
+        run.step("due", {
+          token: { id: token, zone: "waiting", state: "waiting", note: `retry in ${ms(waitMs)}` },
+          text: `back in the queue — next try in <b>${ms(waitMs)}</b>`,
+          tone: "warn",
+        });
+        countdownToken(run, token, new Date(pendingRetry.run_at).getTime(), "retry in");
+      }
+
+      if (["SUCCESS", "FAILED", "CANCELLED"].includes(exec.status)) {
+        await tailTarget();
+        if (sawWaiting) {
+          run.step("answer", {
+            bad: exec.status !== "SUCCESS",
+            token: { id: token, state: exec.status === "SUCCESS" ? "ok" : "bad", note: "finished" },
+            flash: exec.status === "SUCCESS" ? "hit" : "refused",
+            text:
+              exec.status === "SUCCESS"
+                ? `it finished after <b>${seenPolls} check-in${seenPolls === 1 ? "" : "s"}</b> — still one attempt`
+                : "it never finished",
+            tone: exec.status === "SUCCESS" ? "ok" : "bad",
+          });
+        }
+        run.step("record", {
+          token: {
+            id: token,
+            zone: "done",
+            state: exec.status === "SUCCESS" ? "ok" : "bad",
+            label: label ?? "",
+            note: exec.status === "SUCCESS" ? "done" : exec.status.toLowerCase(),
+          },
+          bad: exec.status !== "SUCCESS",
+          text:
+            exec.status === "SUCCESS"
+              ? "recorded — duration, response and key, all queryable"
+              : `finished as <b>${exec.status.toLowerCase()}</b>, with every try on the record`,
+          tone: exec.status === "SUCCESS" ? "ok" : "bad",
+        });
+        return exec;
+      }
+    }
+    await sleep(160);
+  }
+  return null;
+}
+
+// Countdowns are emitted, not computed on screen, so a replay reproduces them.
+function countdownToken(run, token, deadline, prefix) {
+  const timer = setInterval(() => {
+    const left = deadline - Date.now();
+    if (run.cancelled) return clearInterval(timer);
+    if (left <= 0) {
+      clearInterval(timer);
+      run.emit("token", { id: token, zone: "ready", state: "ready", note: "due now" });
+      return;
+    }
+    run.emit("token", { id: token, note: `${prefix} ${(left / 1000).toFixed(1)}s` });
+  }, 500);
+  return timer;
+}
+
+// ─── the two phases ──────────────────────────────────────────────────────────
 
 const key = (p) => `${p}-${Date.now().toString(36)}`;
 
-async function fire(run, { endpoint, input, trigger, runAt, ws = "a", label, token, maxAttempts }) {
+const WELCOME_SPEC = {
+  name: "send-welcome-email",
+  type: "HTTP",
+  payload_spec: "order-input",
+  config: "email-service",
+  spec: {
+    url: "{{config.api_base_url}}/emails/welcome",
+    method: "POST",
+    headers: { Authorization: "Bearer {{secret.email_api_key}}", "Content-Type": "application/json" },
+    body_template: {
+      customer: "{{input.customer}}",
+      email: "{{input.email}}",
+      order_id: "{{input.order_id}}",
+      sent_by: "{{config.sender}}",
+    },
+    timeout_ms: 5000,
+    expected_status_codes: [200],
+  },
+  retry_policy: { max_attempts: 3, backoff: "exponential", initial_delay_ms: 1000, max_delay_ms: 30000 },
+};
+
+/// Phase one: the endpoint. Three steps, and at the end there is a row.
+async function registerPhase(run, { live = true } = {}) {
+  if (!live) {
+    for (const id of ["describe", "stored", "secret"]) run.step(id, { skip: true });
+    run.emit("token", { id: "ep", zone: "endpoints", state: "spec", label: "send-welcome-email", note: "registered" });
+    return true;
+  }
+
+  run.step("describe", {
+    token: { id: "ep", zone: "app", state: "spec", label: "send-welcome-email", note: "where · what · how hard" },
+    text: "one endpoint: where to send it, what to put in it, how hard to try",
+  });
+  run.emit("req", { body: WELCOME_SPEC });
+
+  const exists = (await api("GET", `/v1/endpoints/${WELCOME_SPEC.name}`)).ok;
+  const { name, ...rest } = WELCOME_SPEC;
+  const res = exists
+    ? await api("PUT", `/v1/endpoints/${WELCOME_SPEC.name}`, { body: rest })
+    : await api("POST", "/v1/endpoints", { body: WELCOME_SPEC });
+
+  run.step("stored", {
+    token: { id: "ep", zone: "endpoints", state: "spec", note: "one row" },
+    text: exists ? "already there, so it was updated in place — <b>still one row</b>" : "saved — <b>one row</b>, no deploy",
+    tone: "act",
+  });
+
+  const secret = await api("GET", "/v1/secrets/email_api_key");
+  run.emit("res", { body: secret.body });
+  const leaked = JSON.stringify(secret.body ?? {}).includes('"value"');
+  run.step("secret", {
+    bad: leaked,
+    text: leaked
+      ? "the API returned a secret value — check this"
+      : "asked Invokr for that API key: it returns the name and nothing else",
+    tone: leaked ? "bad" : "ok",
+  });
+  state.registered = true;
+  return res.ok;
+}
+
+/// Phase two: the run. Same three steps whatever the trigger is.
+async function invokePhase(run, { endpoint, input, trigger, runAt, cron, ws = "a", label, token, maxAttempts }) {
   const body = {
-    // A run_at without DELAYED is just an ignored field: the API fires it now.
     trigger: trigger ?? (runAt ? "DELAYED" : "IMMEDIATE"),
     endpoint,
     idempotency_key: key(`${input.order_id ?? "job"}-${token}`),
     input,
   };
   if (runAt) body.run_at = runAt.toISOString();
+  if (cron) {
+    body.cron = cron;
+    body.timezone = "Asia/Kolkata";
+  }
   if (maxAttempts) body.max_attempts = maxAttempts;
 
-  run.emit("token", { id: token, zone: "app", label, note: "new" });
+  run.step("ask", {
+    token: { id: token, zone: "app", label, note: "new" },
+    text: `you ask for a run — <b>${esc(body.trigger.toLowerCase())}</b>`,
+  });
   run.emit("req", { body });
-  await sleep(220);
 
+  const t0 = performance.now();
   const res = await api("POST", "/v1/jobs", { body, ws });
   run.emit("res", { body: res.body });
   if (!res.ok) {
-    run.tick(`Invokr refused it — <b>${res.status}</b>`, "bad");
-    run.emit("token", { id: token, state: "bad", note: `refused ${res.status}` });
+    run.step("written", { bad: true, text: `Invokr refused it — <b>${res.status}</b>`, tone: "bad" });
     return null;
   }
 
   const waiting = Boolean(runAt);
-  run.emit("token", {
-    id: token,
-    zone: waiting ? "waiting" : "ready",
-    state: waiting ? "waiting" : "ready",
-    note: waiting ? "not due yet" : "due now",
+  run.step("written", {
+    token: {
+      id: token,
+      zone: waiting ? "waiting" : "ready",
+      state: waiting ? "waiting" : "ready",
+      note: waiting ? "not due yet" : "due now",
+    },
+    text: `Invokr answered in ${ms(performance.now() - t0)} — and it was <b>already durable</b>`,
+    tone: "act",
   });
-  run.tick(
-    waiting ? `written down — due at <b>${clock(runAt)}</b>` : "written down, and safe before Invokr answered",
-    "act",
-  );
-  return res.body.data.execution.execution_id;
+
+  if (waiting) {
+    run.step("due", {
+      token: { id: token, note: `due at ${clock(runAt)}` },
+      text: `nothing is counting down — <b>the row is the timer</b>, due ${clock(runAt)}`,
+      tone: "warn",
+    });
+  } else {
+    run.step("due", { token: { id: token, note: "due now" }, text: "due immediately, so it is already eligible" });
+  }
+
+  return res.body.data;
 }
 
 // ─── scenes ──────────────────────────────────────────────────────────────────
 
+const INVOKE_PHASE = { phase: "invoke", steps: INVOKE_STEPS };
+
+const TRIGGER_FIELD = {
+  key: "trigger",
+  label: "when",
+  type: "select",
+  value: "IMMEDIATE",
+  width: 150,
+  options: [
+    { value: "IMMEDIATE", label: "now" },
+    { value: "DELAYED", label: "in a few seconds" },
+    { value: "CRON", label: "every minute" },
+  ],
+};
+
 const scenes = [
   {
-    id: "register",
+    id: "register-and-send",
     n: 1,
     group: "core",
-    title: "Tell it where to deliver",
-    lede: "An endpoint is a row: where to send, what to put in it, how hard to try.",
-    fields: [],
-    action: "Save the instructions",
-    async run(run) {
-      const spec = {
-        name: "send-welcome-email",
-        type: "HTTP",
-        payload_spec: "order-input",
-        config: "email-service",
-        spec: {
-          url: "{{config.api_base_url}}/emails/welcome",
-          method: "POST",
-          headers: { Authorization: "Bearer {{secret.email_api_key}}", "Content-Type": "application/json" },
-          body_template: {
-            customer: "{{input.customer}}",
-            email: "{{input.email}}",
-            order_id: "{{input.order_id}}",
-            sent_by: "{{config.sender}}",
-          },
-          timeout_ms: 5000,
-          expected_status_codes: [200],
-        },
-        retry_policy: { max_attempts: 3, backoff: "exponential", initial_delay_ms: 1000, max_delay_ms: 30000 },
-      };
-
-      run.emit("token", { id: "ep", zone: "app", label: "send-welcome-email", note: "instructions" });
-      run.emit("req", { body: spec });
-      await sleep(300);
-
-      const exists = (await api("GET", `/v1/endpoints/${spec.name}`)).ok;
-      const { name, ...rest } = spec;
-      const res = exists
-        ? await api("PUT", `/v1/endpoints/${spec.name}`, { body: rest })
-        : await api("POST", "/v1/endpoints", { body: spec });
-
-      run.emit("token", { id: "ep", zone: "ready", state: "ready", note: "one row" });
-      run.tick(exists ? "updated in place — <b>one row</b>, no deploy" : "saved — <b>one row</b>, no deploy", "act");
-
-      await sleep(900);
-      const secret = await api("GET", "/v1/secrets/email_api_key");
-      run.emit("res", { body: secret.body });
-      const leaked = JSON.stringify(secret.body ?? {}).includes('"value"');
-      run.tick(
-        leaked ? "the API returned a secret value — check this" : "asked for the API key: Invokr <b>will not hand it over</b>",
-        leaked ? "bad" : "ok",
-      );
-      run.emit("token", { id: "ep", zone: "done", state: "ok", note: "stored" });
-      return res.ok;
-    },
-  },
-
-  {
-    id: "fire-now",
-    n: 2,
-    group: "core",
-    title: "Send one now",
-    lede: "Type a real name. It really goes, and the other side really answers.",
+    title: "Register it, then send it",
+    lede: "The whole journey: an endpoint becomes a row, then a run becomes another row.",
+    journey: DEFAULT_JOURNEY,
     fields: [
-      { key: "customer", label: "for", value: "Priya Sharma", width: 170 },
-      { key: "email", label: "email", value: "priya@example.com", width: 195 },
-      { key: "order_id", label: "order", value: "order-1234", width: 140 },
+      { key: "customer", label: "for", value: "Priya Sharma", width: 165 },
+      { key: "email", label: "email", value: "priya@example.com", width: 190 },
+      { key: "order_id", label: "order", value: "order-1234", width: 135 },
+      TRIGGER_FIELD,
+      { key: "seconds", label: "delay (s)", value: "12", width: 80 },
     ],
-    action: "Send it",
+    action: "Run the journey",
     extras: [{ id: "addworker", label: "Add a worker" }],
     async onExtra(id, run) {
       if (id !== "addworker") return;
@@ -704,30 +955,57 @@ const scenes = [
     async run(run, v) {
       const since = await targetLogHead();
       run.emit("target-is", { who: "the email service" });
-      const execId = await fire(run, {
+
+      if (!(await registerPhase(run, { live: true }))) return false;
+
+      const seconds = Math.max(5, Math.min(120, Number(v.seconds) || 12));
+      const trigger = v.trigger ?? "IMMEDIATE";
+      const job = await invokePhase(run, {
         endpoint: "send-welcome-email",
         input: { order_id: v.order_id, customer: v.customer, email: v.email },
+        trigger,
+        runAt: trigger === "DELAYED" ? new Date(Date.now() + seconds * 1000) : null,
+        cron: trigger === "CRON" ? "* * * * *" : null,
         label: v.customer,
         token: "t1",
       });
-      if (!execId) return false;
-      const done = await watchExecution(run, execId, { targetSince: since, token: "t1", label: v.customer });
-      if (done?.status === "SUCCESS") run.tick("delivered — and the other side got the de-duplication key", "ok");
+      if (!job) return false;
+
+      if (trigger === "CRON") {
+        state.cronJob = job.job_id;
+        run.tick("pg_cron owns this one — waiting for the top of the minute", "warn");
+        const ok = await watchCronTick(run, job.job_id, { since, token: "t1", label: v.customer });
+        await api("POST", `/v1/jobs/${job.job_id}/cancel`);
+        state.cronJob = null;
+        run.tick("cancelled, so it does not keep firing all session", "act");
+        return ok;
+      }
+
+      if (trigger === "DELAYED") {
+        countdownToken(run, "t1", new Date(job.execution.created_at).getTime() + seconds * 1000, "due in");
+      }
+
+      const done = await watchExecution(run, job.execution.execution_id, {
+        targetSince: since,
+        token: "t1",
+        label: v.customer,
+        timeout: (seconds + 90) * 1000,
+      });
       return done?.status === "SUCCESS";
     },
   },
 
   {
     id: "fire-later",
-    n: 3,
+    n: 2,
     group: "core",
     title: "Send one later — then kill a worker",
-    lede: "It waits in the queue as a row. Kill the workers; it still goes out on time.",
+    lede: "It waits in the queue as a row. Kill every worker; it still goes out on time.",
+    journey: [REGISTER_PHASE, INVOKE_PHASE],
     fields: [
-      { key: "customer", label: "for", value: "Arjun Mehta", width: 170 },
-      { key: "email", label: "email", value: "arjun@example.com", width: 195 },
-      { key: "order_id", label: "order", value: "order-5567", width: 140 },
-      { key: "seconds", label: "in (s)", value: "15", width: 70 },
+      { key: "customer", label: "for", value: "Arjun Mehta", width: 165 },
+      { key: "order_id", label: "order", value: "order-5567", width: 135 },
+      { key: "seconds", label: "in (s)", value: "15", width: 75 },
     ],
     action: "Schedule it",
     extras: [
@@ -743,7 +1021,7 @@ const scenes = [
           setTimeout(async () => {
             await refreshStatus();
             run?.emit("workers", { list: state.status?.workers ?? [] });
-          }, 1400);
+          }, 1600);
         } else {
           run?.tick("no worker left to kill", "warn");
         }
@@ -758,72 +1036,73 @@ const scenes = [
     },
     async run(run, v) {
       const since = await targetLogHead();
+      run.emit("target-is", { who: "the email service" });
+      await registerPhase(run, { live: false });
+
       const seconds = Math.max(5, Math.min(120, Number(v.seconds) || 15));
       const runAt = new Date(Date.now() + seconds * 1000);
-      run.emit("target-is", { who: "the email service" });
-
-      const execId = await fire(run, {
+      const job = await invokePhase(run, {
         endpoint: "send-welcome-email",
-        input: { order_id: v.order_id, customer: v.customer, email: v.email },
+        input: { order_id: v.order_id, customer: v.customer, email: `${String(v.customer).split(" ")[0].toLowerCase()}@example.com` },
         runAt,
         label: v.customer,
         token: "t1",
       });
-      if (!execId) return false;
+      if (!job) return false;
 
-      run.tick("now kill a worker — nothing is holding this", "warn");
+      run.tick("now kill the workers — nothing is holding this", "warn");
       const timer = countdownToken(run, "t1", runAt.getTime(), "due in");
-
-      const done = await watchExecution(run, execId, {
+      const done = await watchExecution(run, job.execution.execution_id, {
         timeout: (seconds + 90) * 1000,
         targetSince: since,
         token: "t1",
         label: v.customer,
       });
       clearInterval(timer);
-      if (done?.status === "SUCCESS") run.tick("went out <b>on time</b>, by whichever worker was alive", "ok");
       return done?.status === "SUCCESS";
     },
   },
 
   {
     id: "it-fails",
-    n: 4,
+    n: 3,
     group: "core",
     title: "When the other side breaks",
     lede: "Two failures, then it works. Watch it fly back to the queue each time.",
+    journey: [REGISTER_PHASE, INVOKE_PHASE],
     fields: [
-      { key: "order_id", label: "order", value: "order-9931", width: 140 },
-      { key: "amount", label: "amount", value: "₹1,499", width: 110 },
+      { key: "order_id", label: "order", value: "order-9931", width: 135 },
+      { key: "amount", label: "amount", value: "₹1,499", width: 105 },
     ],
     action: "Take the payment",
-    extras: [{ id: "prearm", label: "Start scene 5's job now" }],
+    extras: [{ id: "prearm", label: "Start scene 4's job now" }],
     async onExtra(id, run) {
       if (id !== "prearm") return;
       const started = await startCron();
-      run?.tick(started ? "scene 5's every-minute job is running now" : "could not start it", started ? "ok" : "bad");
+      run?.tick(started ? "scene 4's every-minute job is running now" : "could not start it", started ? "ok" : "bad");
     },
     async run(run, v) {
       await control("/mock/reset");
       const since = await targetLogHead();
       run.emit("target-is", { who: "the payment processor" });
+      await registerPhase(run, { live: false });
 
-      const execId = await fire(run, {
+      const job = await invokePhase(run, {
         endpoint: "charge-webhook",
         input: { order_id: v.order_id, amount: v.amount },
         label: v.amount,
         token: "t1",
       });
-      if (!execId) return false;
+      if (!job) return false;
 
-      const done = await watchExecution(run, execId, {
+      const done = await watchExecution(run, job.execution.execution_id, {
         timeout: 120000,
         targetSince: since,
         token: "t1",
         label: v.amount,
       });
       if (done?.status === "SUCCESS") {
-        run.tick("third try worked — and all three carried <b>the same key</b>", "ok");
+        run.tick("all three tries carried <b>the same key</b> — that is what keeps a retry safe", "act");
       }
       return done?.status === "SUCCESS";
     },
@@ -831,10 +1110,25 @@ const scenes = [
 
   {
     id: "fire-repeatedly",
-    n: 5,
+    n: 4,
     group: "core",
     title: "Every minute, forever",
-    lede: "No scheduler process. PostgreSQL drops the job into the queue itself.",
+    lede: "No scheduler process. PostgreSQL writes the row itself, on schedule.",
+    journey: [
+      REGISTER_PHASE,
+      {
+        phase: "every minute",
+        steps: [
+          { id: "ask", label: "you ask for a schedule" },
+          { id: "written", label: "pg_cron takes over" },
+          { id: "tick", label: "the database writes a row" },
+          { id: "claim", label: "a worker takes it" },
+          { id: "call", label: "calls the other side" },
+          { id: "answer", label: "the answer" },
+          { id: "record", label: "…and again next minute" },
+        ],
+      },
+    ],
     fields: [],
     action: "Start the every-minute job",
     extras: [{ id: "cancel", label: "Cancel it", danger: true }],
@@ -849,51 +1143,154 @@ const scenes = [
     async run(run) {
       const since = await targetLogHead();
       run.emit("target-is", { who: "the health sweep" });
+      await registerPhase(run, { live: false });
 
       let jobId = state.cronJob;
       if (jobId) {
-        run.tick("using the job started back in scene 4", "act");
+        run.step("ask", { text: "using the schedule started back in scene 3", tone: "act" });
+        run.step("written", { text: "pg_cron already owns it", tone: "act" });
       } else {
+        run.step("ask", { text: "you ask for <b>every minute</b>" });
         jobId = await startCron();
-        if (!jobId) return false;
-        run.tick("pg_cron owns the schedule now — <b>inside the database</b>", "act");
-      }
-
-      const started = performance.now();
-      let seen = 0;
-      let logSeq = since;
-
-      while (performance.now() - started < 78000 && !run.cancelled) {
-        const execs = (await api("GET", `/v1/jobs/${jobId}/executions?limit=10`)).body?.data ?? [];
-        if (execs.length > seen) {
-          run.emit("cron", { on: true });
-          for (const e of execs.slice(0, execs.length - seen).reverse()) {
-            const id = `tick-${e.execution_id.slice(0, 6)}`;
-            run.emit("token", { id, zone: "ready", state: "ready", label: "tick", note: clock(e.created_at) });
-            await sleep(120);
-          }
-          run.tick("<b>nobody put that there</b> — PostgreSQL wrote the row itself", "act");
-          setTimeout(() => run.emit("cron", { on: false }), 1200);
-          seen = execs.length;
-
-          const newest = execs[0];
-          if (newest) {
-            await watchExecution(run, newest.execution_id, {
-              timeout: 20000,
-              targetSince: logSeq,
-              token: `tick-${newest.execution_id.slice(0, 6)}`,
-              label: "tick",
-            });
-            logSeq = await targetLogHead();
-          }
-          break;
+        if (!jobId) {
+          run.step("written", { bad: true, text: "could not create the schedule", tone: "bad" });
+          return false;
         }
-        await sleep(900);
+        run.step("written", {
+          cron: true,
+          text: "handed to <b>pg_cron</b>, inside the database — no scheduler process exists",
+          tone: "act",
+        });
       }
 
-      if (seen === 0) run.tick("no tick landed in the time we waited", "warn");
-      else run.tick("cancel it before moving on — it keeps going", "warn");
-      return seen > 0;
+      const ok = await watchCronTick(run, jobId, { since, token: "tick", label: "tick" });
+      if (ok) run.tick("cancel it before moving on — it keeps going", "warn");
+      return ok;
+    },
+  },
+
+  {
+    id: "long-running",
+    n: 5,
+    group: "core",
+    title: "When the work takes minutes",
+    lede: "The other side answers 202 and keeps working. Invokr waits, and checks back.",
+    journey: [
+      {
+        phase: "register",
+        steps: [
+          { id: "describe", label: "an async endpoint" },
+          { id: "stored", label: "202 = pending" },
+        ],
+      },
+      {
+        phase: "invoke",
+        steps: [
+          { id: "ask", label: "you ask for a run" },
+          { id: "written", label: "written down" },
+          { id: "claim", label: "a worker takes it" },
+          { id: "call", label: "calls the other side" },
+          { id: "accepted", label: "202 · working" },
+          { id: "poll", label: "checks back" },
+          { id: "answer", label: "finished" },
+          { id: "record", label: "recorded" },
+        ],
+      },
+    ],
+    fields: [
+      { key: "order_id", label: "job", value: "report-0042", width: 145 },
+      { key: "polls", label: "how many checks", value: "3", width: 130 },
+    ],
+    action: "Start the long job",
+    async run(run, v) {
+      if (!state.status?.longRunning) {
+        run.step("describe", {
+          bad: true,
+          text:
+            "this build has no long-running support — it lives on <b>feat/long-running-jobs</b>. " +
+            "Switch on replay to watch a recorded run.",
+          tone: "bad",
+        });
+        return false;
+      }
+
+      const since = await targetLogHead();
+      run.emit("target-is", { who: "the report builder" });
+
+      const pending = Math.max(1, Math.min(6, Number(v.polls) || 3));
+      const script = [
+        ...Array.from({ length: pending }, () => ({ status: 202, body: { state: "working" }, retry_after: 2 })),
+        { status: 200, body: { state: "done", rows: 128_000 } },
+      ];
+
+      const spec = {
+        name: "build-report",
+        type: "HTTP",
+        config: "email-service",
+        spec: {
+          url: "{{config.api_base_url}}/async/start",
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body_template: { job: "{{input.order_id}}", script },
+          timeout_ms: 5000,
+          expected_status_codes: [200],
+          async: {
+            status_codes: [202],
+            poll: {
+              success_statuses: [200],
+              pending_statuses: [202],
+              failure_statuses: [400, 404, 410],
+              initial_delay_ms: 1000,
+              max_delay_ms: 10000,
+              backoff: "exponential",
+            },
+            callback: false,
+            max_wait_ms: 120000,
+            max_polls: 20,
+          },
+        },
+        retry_policy: { max_attempts: 2, backoff: "exponential", initial_delay_ms: 2000, max_delay_ms: 10000 },
+      };
+
+      run.step("describe", {
+        token: { id: "ep2", zone: "app", state: "spec", label: "build-report", note: "async endpoint" },
+        text: "same shape as any endpoint, plus an <b>async</b> block",
+      });
+      run.emit("req", { body: spec });
+
+      const exists = (await api("GET", `/v1/endpoints/${spec.name}`)).ok;
+      const { name, ...rest } = spec;
+      const saved = exists
+        ? await api("PUT", `/v1/endpoints/${spec.name}`, { body: rest })
+        : await api("POST", "/v1/endpoints", { body: spec });
+      if (!saved.ok) {
+        run.step("stored", { bad: true, text: `Invokr refused the endpoint — <b>${saved.status}</b>`, tone: "bad" });
+        return false;
+      }
+      run.step("stored", {
+        token: { id: "ep2", zone: "endpoints", state: "spec", note: "202 = pending" },
+        text: "<b>202</b> is not success and not failure — it means “still working”",
+        tone: "act",
+      });
+
+      const job = await invokePhase(run, {
+        endpoint: "build-report",
+        input: { order_id: v.order_id },
+        label: v.order_id,
+        token: "t1",
+      });
+      if (!job) return false;
+
+      const done = await watchExecution(run, job.execution.execution_id, {
+        timeout: 120000,
+        targetSince: since,
+        token: "t1",
+        label: v.order_id,
+      });
+      if (done?.status === "SUCCESS") {
+        run.tick("one attempt, several checks — <b>polls are not retries</b>", "ok");
+      }
+      return done?.status === "SUCCESS";
     },
   },
 
@@ -903,10 +1300,12 @@ const scenes = [
     group: "overflow",
     title: "Not just HTTP",
     lede: "Same job, same retries. A Kafka topic or a Redis Stream instead of a URL.",
-    fields: [{ key: "order_id", label: "order", value: "order-4410", width: 140 }],
+    journey: [REGISTER_PHASE, INVOKE_PHASE],
+    fields: [{ key: "order_id", label: "order", value: "order-4410", width: 135 }],
     action: "Send it three ways",
     async run(run, v) {
       const probes = state.status?.transports ?? {};
+      await registerPhase(run, { live: false });
       const targets = [
         { type: "HTTP", endpoint: "send-welcome-email", up: true },
         { type: "Kafka", endpoint: "order-events-kafka", up: !!probes.kafka },
@@ -918,24 +1317,25 @@ const scenes = [
       for (const t of targets) {
         i++;
         if (!t.up) {
-          run.emit("token", { id: `t${i}`, zone: "app", state: "waiting", label: t.type, note: "not running here" });
-          run.tick(`<b>${t.type}</b> is not running here — same job, nowhere to put it`, "warn");
-          await sleep(700);
+          // Deliberately not a journey step: nothing travelled, and marking one
+          // would stamp a later time on a step the HTTP pass already walked.
+          run.emit("token", { id: `t${i}`, zone: "app", state: "waiting", label: t.type, note: "broker not running" });
+          run.tick(`<b>${esc(t.type)}</b> is not running here — same job, nowhere to put it`, "warn");
           continue;
         }
         run.emit("target-is", { who: `the ${t.type.toLowerCase()} side` });
-        const execId = await fire(run, {
+        const job = await invokePhase(run, {
           endpoint: t.endpoint,
           input: { order_id: v.order_id, customer: "Priya Sharma", email: "priya@example.com" },
           label: t.type,
           token: `t${i}`,
           maxAttempts: 1,
         });
-        if (!execId) {
+        if (!job) {
           ok = false;
           continue;
         }
-        const done = await watchExecution(run, execId, { timeout: 30000, token: `t${i}`, label: t.type });
+        const done = await watchExecution(run, job.execution.execution_id, { timeout: 30000, token: `t${i}`, label: t.type });
         ok = ok && done?.status === "SUCCESS";
       }
       return ok;
@@ -948,34 +1348,36 @@ const scenes = [
     group: "overflow",
     title: "Two teams, one name",
     lede: "Both teams have an endpoint called send-welcome-email. They cannot see each other.",
+    journey: [REGISTER_PHASE, INVOKE_PHASE],
     fields: [
-      { key: "customer", label: "for", value: "Neha Rao", width: 170 },
-      { key: "order_id", label: "order", value: "order-7782", width: 140 },
+      { key: "customer", label: "for", value: "Neha Rao", width: 165 },
+      { key: "order_id", label: "order", value: "order-7782", width: 135 },
     ],
     action: "Send from both teams",
     async run(run, v) {
       const teams = state.status?.provisioned?.workspaces ?? {};
       const email = `${String(v.customer).split(" ")[0].toLowerCase()}@example.com`;
       run.emit("target-is", { who: "the email service" });
+      await registerPhase(run, { live: false });
+
       let ok = true;
       let i = 0;
-
       for (const wsKey of ["a", "b"]) {
         i++;
         const team = teams[wsKey];
         const since = await targetLogHead();
-        const execId = await fire(run, {
+        const job = await invokePhase(run, {
           endpoint: "send-welcome-email",
           input: { order_id: v.order_id, customer: v.customer, email },
           ws: wsKey,
           label: team?.name ?? wsKey,
           token: `t${i}`,
         });
-        if (!execId) {
+        if (!job) {
           ok = false;
           continue;
         }
-        const done = await watchExecution(run, execId, {
+        const done = await watchExecution(run, job.execution.execution_id, {
           ws: wsKey,
           timeout: 30000,
           targetSince: since,
@@ -995,6 +1397,7 @@ const scenes = [
     group: "overflow",
     title: "Hand over",
     lede: "All of that was read back out of ordinary rows. This is the tool people on call use.",
+    journey: [],
     fields: [],
     html: () => {
       const url = state.status?.dashboardUrl || "";
@@ -1018,6 +1421,35 @@ const scenes = [
   },
 ];
 
+/// Waits for pg_cron to materialise a tick, then follows it like any other job.
+async function watchCronTick(run, jobId, { since, token, label }) {
+  const started = performance.now();
+  let seen = (await api("GET", `/v1/jobs/${jobId}/executions?limit=10`)).body?.data?.length ?? 0;
+
+  while (performance.now() - started < 78000 && !run.cancelled) {
+    const execs = (await api("GET", `/v1/jobs/${jobId}/executions?limit=10`)).body?.data ?? [];
+    if (execs.length > seen) {
+      const newest = execs[0];
+      run.step("tick", {
+        cron: true,
+        token: { id: token, zone: "ready", state: "ready", label, note: clock(newest.created_at) },
+        text: "<b>nobody put that there</b> — PostgreSQL wrote the row itself",
+        tone: "act",
+      });
+      // We poll for the row, so we notice it up to a second after it appears.
+      // The row's own timestamp is the truthful one, and it has to be, or the
+      // claim that follows reads as having happened before it.
+      run.emit("retime", { id: "tick", at: Math.max(0, new Date(newest.created_at) - run.wallT0) });
+      setTimeout(() => run.emit("step", { id: "tick-off", cron: false }), 1500);
+      await watchExecution(run, newest.execution_id, { timeout: 30000, targetSince: since, token, label });
+      return true;
+    }
+    await sleep(900);
+  }
+  run.tick("no tick landed in the time we waited", "warn");
+  return false;
+}
+
 async function findActiveCron() {
   const jobs = (await api("GET", "/v1/jobs?limit=50")).body?.data ?? [];
   return (
@@ -1025,8 +1457,6 @@ async function findActiveCron() {
   );
 }
 
-// Cancels any schedule already running for the heartbeat endpoint, then starts
-// one. Without the sweep, a rehearsal leaves an every-minute job firing forever.
 async function startCron() {
   for (let existing = await findActiveCron(); existing; existing = await findActiveCron()) {
     await api("POST", `/v1/jobs/${existing}/cancel`);
@@ -1068,8 +1498,8 @@ function valuesFor(scene) {
 function readFields(scene) {
   const v = valuesFor(scene);
   for (const f of scene.fields ?? []) {
-    const input = document.getElementById(`f-${f.key}`);
-    if (input) v[f.key] = input.value.trim() || f.value;
+    const el = document.getElementById(`f-${f.key}`);
+    if (el) v[f.key] = (el.value ?? "").trim() || f.value;
   }
   return v;
 }
@@ -1077,10 +1507,12 @@ function readFields(scene) {
 function resetStage() {
   clearTokens();
   clearReceipts();
+  resetPacer();
   $("#ticker").innerHTML = "";
   $("#p-tries").innerHTML = `<span class="empty">nothing yet</span>`;
   $("#z-target").classList.remove("hit", "refused");
   $("#cron-badge").classList.remove("tick");
+  $("#drop-arrow").classList.remove("on");
   for (const id of workerBoxes.keys()) setWorkerState(id, null, "");
   renderWorkers(state.status?.workers ?? []);
 }
@@ -1093,23 +1525,30 @@ function mountScene(i) {
   const v = valuesFor(scene);
 
   resetStage();
+  renderJourney(scene);
   $("#target-label").textContent = "the other side";
   $("#scene-title").textContent = scene.title;
   $("#scene-lede").textContent = scene.lede;
 
-  const fields = (scene.fields ?? [])
-    .map(
-      (f) => `<div class="field">
-        <label for="f-${f.key}">${esc(f.label)}</label>
-        <input id="f-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 170}px"
-               ${state.replay ? "disabled" : ""} />
-      </div>`,
-    )
-    .join("");
+  const field = (f) => {
+    const disabled = state.replay ? "disabled" : "";
+    const input =
+      f.type === "select"
+        ? `<select id="f-${f.key}" style="--w:${f.width ?? 170}px" ${disabled}>
+             ${f.options
+               .map(
+                 (o) =>
+                   `<option value="${esc(o.value)}" ${String(v[f.key]) === o.value ? "selected" : ""}>${esc(o.label)}</option>`,
+               )
+               .join("")}
+           </select>`
+        : `<input id="f-${f.key}" value="${esc(v[f.key] ?? f.value)}" style="--w:${f.width ?? 170}px" ${disabled} />`;
+    return `<div class="field"><label for="f-${f.key}">${esc(f.label)}</label>${input}</div>`;
+  };
 
   $("#scene-controls").innerHTML = `
     ${scene.html ? scene.html() : ""}
-    ${fields ? `<div class="fields">${fields}</div>` : ""}
+    ${scene.fields?.length ? `<div class="fields">${scene.fields.map(field).join("")}</div>` : ""}
     <div class="actions">
       ${scene.action ? `<button class="primary" id="act-run">${state.replay ? "Play the recording" : esc(scene.action)}</button>` : ""}
       ${(scene.extras ?? [])
@@ -1144,11 +1583,10 @@ function mountScene(i) {
   fitBoard();
 }
 
-// Controls can fire outside a run — killing a worker before anything is
-// scheduled, say. Those events still need somewhere to go.
 function ensureRun(scene) {
   if (state.run && !state.run.cancelled) return state.run;
   const run = new Run(scene, { replay: state.replay });
+  run.wallT0 = Date.now();
   state.run = run;
   return run;
 }
@@ -1162,10 +1600,11 @@ async function runScene() {
   btn.disabled = true;
   btn.textContent = "running…";
   resetStage();
+  renderJourney(scene);
 
   const run = new Run(scene);
+  run.wallT0 = Date.now();
   state.run = run;
-  // Recorded first, so a replay rebuilds the same worker boxes.
   run.emit("workers", { list: state.status?.workers ?? [] });
 
   let ok = false;
@@ -1174,6 +1613,8 @@ async function runScene() {
   } catch (err) {
     run.tick(`something broke here: <b>${esc(String(err.message ?? err))}</b>`, "bad");
   }
+  await drained(); // the stage is still walking through the steps
+  if (ok) settleJourney();
 
   if (ok) state.ran.add(scene.id);
   await run.save(ok);
@@ -1197,24 +1638,28 @@ async function replayScene() {
     if (!res.ok) throw new Error("no recording of this scene yet");
     tape = await res.json();
   } catch (err) {
-    $("#ticker").innerHTML =
-      `<span class="line now bad"><span>${esc(String(err.message ?? err))} — run it live once and it is kept</span></span>`;
+    showTick(0, `${esc(String(err.message ?? err))} — run it live once and it is kept`, "bad");
     btn.disabled = false;
     btn.textContent = "Play the recording";
     return;
   }
 
   resetStage();
+  renderJourney(scene);
   const run = new Run(scene, { replay: true });
   state.run = run;
 
+  // Recorded offsets decide when an event becomes available; the pacer still
+  // holds each step long enough to read.
   const startedAt = performance.now();
   for (const ev of tape.events ?? []) {
     if (run.cancelled) return;
     const due = startedAt + ev.t - performance.now();
     if (due > 0) await sleep(due);
-    apply(scene, ev);
+    enqueue(scene, ev);
   }
+  await drained();
+  settleJourney();
 
   btn.disabled = false;
   btn.textContent = "Play the recording";
@@ -1233,11 +1678,17 @@ function setReplay(on) {
 
 $("#replay-toggle").addEventListener("click", () => setReplay(!state.replay));
 $("#toggle-details").addEventListener("click", () => $("#drawer").classList.toggle("open"));
+$("#pace").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  pacer.dwell = Number(b.dataset.pace);
+  $("#pace").querySelectorAll("button").forEach((n) => n.classList.toggle("on", n === b));
+});
 addEventListener("resize", fitBoard);
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) return;
-  const typing = e.target.tagName === "INPUT";
+  const typing = e.target.tagName === "INPUT" || e.target.tagName === "SELECT";
   const k = e.key.toLowerCase();
 
   if (e.key === "Enter") {
@@ -1245,7 +1696,7 @@ document.addEventListener("keydown", (e) => {
     return (state.replay ? replayScene : runScene)();
   }
   if (e.key === "Escape") return $("#drawer").classList.remove("open");
-  if (typing) return; // arrows belong to the field being edited
+  if (typing) return;
   if (e.key === "ArrowRight") mountScene(state.current + 1);
   else if (e.key === "ArrowLeft") mountScene(state.current - 1);
   else if (k === "r") setReplay(!state.replay);

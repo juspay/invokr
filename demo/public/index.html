@@ -18,17 +18,25 @@
     <span class="replay-flag">Replay</span>
     <span class="chip" id="chip-api"><i></i>Invokr</span>
     <span class="chip" id="chip-target"><i></i>target</span>
+    <div class="pace" id="pace" title="How long each step is held on screen. Real waits are never shortened.">
+      <button data-pace="1400" class="on">slow</button>
+      <button data-pace="900">normal</button>
+      <button data-pace="450">quick</button>
+    </div>
     <button class="toggle" id="replay-toggle" title="Play a recorded run instead of firing live jobs">
       <span class="track"></span><span>replay</span>
     </button>
   </div>
 </header>
 
+<!-- The journey, spelled out. Every scene walks some of these steps, one at a
+     time, and each one keeps the real time it happened at. -->
+<div class="journey" id="journey"></div>
+
 <main>
   <nav id="rail"></nav>
 
   <div class="right">
-    <!-- The stage. Everything that happens to a job happens here, by moving. -->
     <div class="stage" id="stage">
       <!-- Every box is a direct child of the board, so one set of coordinates
            describes the whole stage and tokens can move between any of them. -->
@@ -40,9 +48,10 @@
         <div class="zone zone-db" id="z-db">
           <div class="zone-label">PostgreSQL <span class="cron" id="cron-badge">pg_cron</span></div>
         </div>
-        <div class="sub-zone" id="z-waiting"><div class="sub-label">not due yet</div></div>
+        <div class="sub-zone shelf" id="z-endpoints"><div class="sub-label">endpoints you registered</div></div>
+        <div class="sub-zone" id="z-waiting"><div class="sub-label">jobs · not due yet</div></div>
         <div class="drop" id="drop-arrow">↓</div>
-        <div class="sub-zone ready" id="z-ready"><div class="sub-label">due now</div></div>
+        <div class="sub-zone ready" id="z-ready"><div class="sub-label">jobs · due now</div></div>
 
         <div class="zone zone-workers" id="z-workers">
           <div class="zone-label">workers</div>
@@ -57,7 +66,6 @@
           <div class="zone-label">done</div>
         </div>
 
-        <!-- every job in flight is one of these, moved by changing its zone -->
         <div class="tokens" id="tokens"></div>
       </div>
     </div>

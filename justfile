@@ -146,7 +146,7 @@ dev:
 # ─── Demo (leadership session) ────────────────────────────────
 
 # Serve the demo site + deck at http://localhost:4173 against a local Invokr.
-# Scenes fire real jobs. The demo server owns the worker process so scene 3 can
+# Scenes fire real jobs. The demo server owns the worker process so scene 2 can
 # SIGKILL it on cue — do not run `just dev` at the same time, or a second worker
 # will quietly pick up the jobs you just orphaned.
 demo:

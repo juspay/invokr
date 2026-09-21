@@ -178,6 +178,35 @@ export class InvokrAdmin {
   }
 }
 
+/// Does this build know about long-running jobs?
+///
+/// Behavioural, because nothing advertises it: a build with the feature
+/// validates the endpoint's `async` block and rejects one that enables neither
+/// polling nor callbacks. A build without it stores the block as opaque JSON
+/// and happily says 201 — so a 201 here means "no support", and the throwaway
+/// endpoint is deleted again.
+async function probeLongRunning(api) {
+  const name = "_demo_async_probe";
+  const body = {
+    name,
+    type: "HTTP",
+    spec: {
+      url: "http://127.0.0.1:1/never",
+      method: "POST",
+      expected_status_codes: [200],
+      async: { status_codes: [202] }, // neither poll nor callback: invalid there, ignored here
+    },
+  };
+
+  await api.call("DELETE", `/v1/endpoints/${name}`, api.scope); // in case a probe leaked
+  const res = await api.call("POST", "/v1/endpoints", { ...api.scope, body });
+  if (res.ok) {
+    await api.call("DELETE", `/v1/endpoints/${name}`, api.scope);
+    return false;
+  }
+  return res.status === 400 || res.status === 422;
+}
+
 export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
   const api = new InvokrAdmin({ baseUrl, apiKey });
 
@@ -191,7 +220,7 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
     org = created.body.data;
   }
 
-  const result = { org_id: org.org_id, workspaces: {}, endpoints: [] };
+  const result = { org_id: org.org_id, workspaces: {}, endpoints: [], longRunning: false };
 
   const existingWs = await api.call("GET", `/v1/orgs/${org.org_id}/workspaces`);
   for (const ws of WORKSPACES) {
@@ -237,6 +266,12 @@ export async function bootstrap({ baseUrl, apiKey, mockUrl }) {
       await api.upsert(`endpoint ${name} in ${ws.slug}`, "endpoints", name, ep, rest);
       if (ws.key === "a") result.endpoints.push({ name, type: ep.type });
     }
+  }
+
+  try {
+    result.longRunning = await probeLongRunning(api);
+  } catch {
+    result.longRunning = false;
   }
 
   return result;

@@ -6,7 +6,7 @@
 //   1. Serve the demo page and the deck.
 //   2. Proxy the Invokr API same-origin, injecting the API key and tenant
 //      headers, so no credential is ever in the page.
-//   3. Own the worker process, so scene 3 can actually kill it (SIGKILL, not a
+//   3. Own the worker process, so scene 2 can actually kill it (SIGKILL, not a
 //      graceful stop — the point is that an aborted transaction rolls back and
 //      the job still fires) and bring it back.
 //
@@ -82,7 +82,7 @@ function startWorker() {
     env: {
       // A worker's pool defaults to 50 connections. Three of those plus the API
       // is more than a stock PostgreSQL (max_connections = 100) will give out,
-      // and the first thing to fail is pg_cron — which is scene 5. The demo
+      // and the first thing to fail is pg_cron — which is scene 4. The demo
       // needs a handful of connections, so ask for a handful.
       INVOKR_DB_POOL_SIZE: "8",
       INVOKR_WORKER_MAX_CONCURRENT: "4",
@@ -119,7 +119,7 @@ function startWorker() {
 
 // SIGKILL, deliberately. A graceful stop drains in-flight work and proves
 // nothing; SIGKILL aborts the transaction holding the claim, which is the
-// behaviour scene 3 is about. With no pid it kills the newest worker.
+// behaviour scene 2 is about. With no pid it kills the newest worker.
 function killWorker(pid) {
   const entry = pid ? workers.find((w) => String(w.pid) === String(pid)) : workers[workers.length - 1];
   if (!entry) return { ok: false, error: "no such worker is running" };
@@ -242,6 +242,7 @@ async function handleControl(req, res, url) {
       lastExit,
       transports: { kafka, redis, features: WORKER_FEATURES },
       provisioned,
+      longRunning: Boolean(provisioned?.longRunning),
       dashboardUrl: DASHBOARD_URL,
       apiUrl: API_URL,
       mockUrl: MOCK_URL,
