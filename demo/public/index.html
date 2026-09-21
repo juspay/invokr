@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invokr — live demo</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%232fd4b6' stroke-width='3'/%3E%3Cpath d='M16 8v9l6 4' fill='none' stroke='%232fd4b6' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    Invokr
+    <small>setTimeout and setInterval, as a service</small>
+  </div>
+
+  <div class="chips">
+    <span class="replay-flag">REPLAY — captured run, real timings</span>
+    <span class="chip" id="chip-api"><i></i>api</span>
+    <span class="chip" id="chip-worker"><i></i>worker</span>
+    <span class="chip" id="chip-target"><i></i>target</span>
+    <span class="chip" id="chip-transports"><i></i>kafka · redis</span>
+    <button class="toggle" id="replay-toggle" title="Play captured runs instead of firing live jobs">
+      <span class="track"></span><span>replay</span>
+    </button>
+  </div>
+</header>
+
+<!-- The wire stays on screen for the whole demo; each scene lights the stages
+     it actually reaches. -->
+<div class="wire">
+  <svg viewBox="0 0 1200 132" preserveAspectRatio="xMidYMid meet" aria-label="Invokr architecture">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2b3a" />
+      </marker>
+    </defs>
+
+    <path class="link" id="l-1" d="M 196 56 L 244 56" marker-end="url(#arrow)" />
+    <path class="link" id="l-2" d="M 456 56 L 504 56" marker-end="url(#arrow)" />
+    <path class="link" id="l-3" d="M 746 56 L 794 56" marker-end="url(#arrow)" />
+    <path class="link" id="l-4" d="M 986 56 L 1034 56" marker-end="url(#arrow)" />
+
+    <g class="node" id="n-client">
+      <rect class="node-box" x="10" y="22" width="186" height="68" />
+      <text class="node-title" x="26" y="48">Caller</text>
+      <text class="node-sub" x="26" y="66">this page / your service</text>
+      <text class="node-state" id="s-client" x="26" y="82"></text>
+    </g>
+
+    <g class="node" id="n-api">
+      <rect class="node-box" x="250" y="22" width="206" height="68" />
+      <text class="node-title" x="266" y="48">API</text>
+      <text class="node-sub" x="266" y="66">actix-web :8080</text>
+      <text class="node-state" id="s-api" x="266" y="82"></text>
+    </g>
+
+    <g class="node" id="n-db">
+      <rect class="node-box" x="510" y="22" width="236" height="68" />
+      <text class="node-title" x="526" y="48">PostgreSQL + pg_cron</text>
+      <text class="node-sub" x="526" y="66">source of truth · the scheduler</text>
+      <text class="node-state" id="s-db" x="526" y="82"></text>
+    </g>
+
+    <g class="node" id="n-worker">
+      <rect class="node-box" x="800" y="22" width="186" height="68" />
+      <text class="node-title" x="816" y="48">Worker</text>
+      <text class="node-sub" x="816" y="66">SKIP LOCKED pickup</text>
+      <text class="node-state" id="s-worker" x="816" y="82"></text>
+    </g>
+
+    <g class="node" id="n-target">
+      <rect class="node-box" x="1040" y="22" width="150" height="68" />
+      <text class="node-title" x="1056" y="48">Target</text>
+      <text class="node-sub" id="s-target-type" x="1056" y="66">HTTP</text>
+      <text class="node-state" id="s-target" x="1056" y="82"></text>
+    </g>
+
+    <circle class="packet" id="packet" r="5" cx="0" cy="56" opacity="0" />
+  </svg>
+</div>
+
+<main>
+  <nav id="rail"></nav>
+  <section class="stage" id="stage"></section>
+</main>
+
+<footer class="hintbar">
+  <span><kbd>→</kbd> next scene</span>
+  <span><kbd>←</kbd> previous</span>
+  <span><kbd>Enter</kbd> run this scene</span>
+  <span><kbd>R</kbd> replay toggle</span>
+  <span id="foot-note"></span>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

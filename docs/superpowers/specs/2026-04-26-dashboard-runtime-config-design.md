@@ -1,5 +1,11 @@
 # Runtime-configurable dashboard prefix and API base URL
 
+> **Historical document — predates the rename.** It was written while the
+> service was called `kronos` and the environment variables were prefixed
+> `TE_`. Both are gone: the service is **Invokr** and the variables are
+> `INVOKR_*` (see `.env.example`). Read this for the reasoning, not for the
+> names.
+
 **Date:** 2026-04-26
 **Branch:** `dashboard-docker`
 **Status:** Approved, pending implementation plan

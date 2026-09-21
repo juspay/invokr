@@ -143,6 +143,59 @@ dev:
     echo "All services starting. Press Ctrl+C to stop all."
     wait
 
+# ─── Demo (leadership session) ────────────────────────────────
+
+# Serve the demo site + deck at http://localhost:4173 against a local Invokr.
+# Scenes fire real jobs. The demo server owns the worker process so scene 3 can
+# SIGKILL it on cue — do not run `just dev` at the same time, or a second worker
+# will quietly pick up the jobs you just orphaned.
+demo:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT
+
+    if ! psql "$INVOKR_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1; then
+        echo "Cannot reach $INVOKR_DATABASE_URL" >&2
+        echo "Run 'just db-up && just db-migrate' first." >&2
+        exit 1
+    fi
+
+    echo "Building (first run takes a minute)..."
+    # Kafka/Redis dispatchers are feature-gated; scene 6 needs them compiled in.
+    # Only split the build when they're asked for — two cargo invocations over
+    # different package sets can re-unify features and rebuild half the tree.
+    if [ -n "${INVOKR_DEMO_WORKER_FEATURES:-}" ]; then
+        cargo build -p invokr-api -p invokr-mock-server
+        cargo build -p invokr-worker --features "$INVOKR_DEMO_WORKER_FEATURES"
+    else
+        cargo build -p invokr-api -p invokr-mock-server -p invokr-worker
+    fi
+
+    ./target/debug/invokr-mock-server &
+    ./target/debug/invokr-api &
+
+    echo "Waiting for API and target..."
+    for i in $(seq 1 30); do
+        if curl -sf http://localhost:8080/health >/dev/null 2>&1 \
+           && curl -sf http://localhost:9999/health >/dev/null 2>&1; then
+            break
+        fi
+        if [ "$i" -eq 30 ]; then echo "services did not come up" >&2; exit 1; fi
+        sleep 1
+    done
+
+    # Owns the worker; provisions the demo org, both workspaces and the endpoints.
+    node demo/server.mjs
+
+# Open the deck on its own — no database, no services, nothing to start
+deck:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DECK="$(pwd)/demo/public/deck.html"
+    echo "$DECK"
+    (xdg-open "$DECK" >/dev/null 2>&1 || open "$DECK" >/dev/null 2>&1) || \
+        echo "Open that path in a browser."
+
 # ─── Test ─────────────────────────────────────────────────────
 
 # Run HTTP dispatcher tests (requires mock-server running)

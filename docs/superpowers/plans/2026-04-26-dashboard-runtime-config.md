@@ -1,5 +1,11 @@
 # Dashboard Runtime-Configurable Prefix Implementation Plan
 
+> **Historical document — predates the rename.** It was written while the
+> service was called `kronos` and the environment variables were prefixed
+> `TE_`. Both are gone: the service is **Invokr** and the variables are
+> `INVOKR_*` (see `.env.example`). Read this for the reasoning, not for the
+> names.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `TE_DASHBOARD_PATH_PREFIX` and `TE_API_BASE_URL` configurable at container start so one `kronos-dashboard` image works under any URL prefix or against any API URL without rebuild.
