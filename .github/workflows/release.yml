@@ -28,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0
           # If main gets branch protection, add a PAT secret and uncomment:
-          # token: ${{ secrets.KRONOS_RELEASE_TOKEN }}
+          # token: ${{ secrets.INVOKR_RELEASE_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
 

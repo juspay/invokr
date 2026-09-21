@@ -1,11 +1,22 @@
 ---
 id: exactly-once
-title: Exactly-Once Guarantees
+title: Delivery Guarantees
 ---
 
-# Exactly-Once Guarantees
+# Delivery Guarantees
 
-Invokr provides exactly-once execution semantics through a combination of durability, idempotency keys, database unique constraints, and transaction-based claiming. This means every job fires exactly once — no duplicates, no missed executions, even under crashes and concurrent access.
+Invokr gives you **exactly-once scheduling** and **at-least-once delivery**.
+
+Jobs are de-duplicated on the way in, each execution is claimed by one worker at a time, and nothing is silently dropped when a worker dies. What Invokr does *not* promise is that a target is called exactly once: the dispatch happens before the claim commits, so a worker lost mid-flight redelivers. Receivers are expected to be idempotent, and every HTTP dispatch carries the `x-invokr-idempotency-key` header so they can be.
+
+| Stage | Guarantee | Mechanism |
+|-------|-----------|-----------|
+| Job creation | Exactly once per `(endpoint, idempotency_key)` | `idx_jobs_idempotency` unique partial index; a duplicate create returns the original job with `200 OK` |
+| CRON tick | Exactly one execution per tick | `idx_executions_cron_dedup` unique partial index + `ON CONFLICT DO NOTHING` |
+| Claiming | At most one worker at a time | `SELECT FOR UPDATE SKIP LOCKED` inside the scoped transaction |
+| Delivery | **At least once** | The target is called inside the claiming transaction, before it commits |
+| Outcome recording | Atomic | Attempt row, execution status and logs commit with the claim |
+| Crash recovery | No lost executions | An uncommitted claim rolls back and is re-claimed by the next poll |
 
 ## Durability
 
@@ -25,13 +36,13 @@ COMMIT;
 
 If the transaction commits, the job is durable. If the process crashes before the response is sent, the client can retry with the same idempotency key and get the original result. If the transaction rolls back, no partial state exists.
 
-## Exactly-Once Execution
+## Exactly-once scheduling
 
-Exactly-once is achieved through three layers:
+Scheduling is de-duplicated in three layers.
 
-### 1. Idempotency Keys + Unique Constraints
+### 1. Idempotency keys + unique constraints
 
-Every job creation requires (or generates) an idempotency key. The `idx_jobs_idempotency` unique partial index prevents duplicate job creation:
+Every job creation carries an idempotency key — supplied by the client, or generated for you. The `idx_jobs_idempotency` unique partial index prevents duplicate job creation:
 
 ```sql
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency
@@ -41,13 +52,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency
 
 | Trigger Type | Key Provided By | Example |
 |-------------|-----------------|---------|
-| `IMMEDIATE` | Client | `order-1234-welcome-email` |
-| `DELAYED` | Client | `order-1234-reminder` |
-| `CRON` | System | `cron_{job_id}_{epoch_ms}` |
+| `IMMEDIATE` | Client, or a generated UUID when omitted | `order-1234-welcome-email` |
+| `DELAYED` | Client (required) | `order-1234-reminder` |
+| `CRON` | System, per tick | `cron_{job_id}_{epoch_ms}` |
 
 For CRON ticks, the system generates the key as `cron_{job_id}_{epoch_ms}`, where `epoch_ms` is the current Unix timestamp in milliseconds. This ensures each tick produces a unique key, while the unique index prevents duplicate ticks within the same millisecond.
 
-### 2. Execution-Level Deduplication
+### 2. Execution-level deduplication
 
 The `idx_executions_cron_dedup` unique partial index prevents duplicate executions for the same job + idempotency key combination:
 
@@ -65,13 +76,49 @@ VALUES (...)
 ON CONFLICT (job_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING;
 ```
 
-### 3. SKIP LOCKED for Claiming
+### 3. SKIP LOCKED for claiming
 
-The worker claims executions using `SELECT FOR UPDATE SKIP LOCKED` within a transaction. This ensures that once a worker claims an execution, no other worker can claim it:
+The worker claims executions using `SELECT FOR UPDATE SKIP LOCKED` within a transaction. Once a worker claims an execution, no other worker can claim it while that transaction is open:
 
-- The row lock is held until the transaction commits
+- The row lock is held until the transaction commits or rolls back
 - Other workers skip the locked row and try the next one
 - The execution transitions from `QUEUED`/`PENDING`/`RETRYING` → `RUNNING` atomically within the claim
+
+This gives you *at most one in-flight attempt per execution* — which is not the same thing as at most one delivery. See below.
+
+## At-least-once delivery
+
+The claim, the dispatch and the outcome all live in one scoped transaction, and the dispatch is a network call in the middle of it:
+
+```
+BEGIN (scoped to workspace schema)
+  → Claim execution (SKIP LOCKED)         — status: QUEUED → RUNNING   (uncommitted)
+  → Load endpoint
+  → Load config (cached)
+  → Load secrets (cached, decrypt)
+  → Resolve templates
+  → Dispatch to endpoint                  ← the target observes the job HERE
+  → Record attempt
+  → Finalize execution                    — status: RUNNING → SUCCESS / RETRYING / FAILED
+COMMIT                                    ← the outcome becomes visible HERE
+```
+
+Between the dispatch and the commit there is a window. If the worker is killed — or loses its database connection — inside that window, the transaction rolls back: the execution returns to `QUEUED`/`PENDING`/`RETRYING` with its previous `attempt_count`, and the next worker to poll claims it and dispatches again. The target has then seen the same job twice, and Invokr has no record of the first delivery.
+
+That ordering is what makes crash recovery free. There is no stuck-execution reaper and no lease expiry to wait out: a lost worker's claims are released by PostgreSQL itself, and the work is picked up on the next poll. The cost is that duplicate delivery is possible, so:
+
+- **Make receivers idempotent.** Every HTTP dispatch sends the execution's idempotency key as the `x-invokr-idempotency-key` header (set a header of that name yourself to override it). De-duplicate on it.
+- **Kafka and Redis Stream dispatches do not propagate the key automatically.** Template it into the message yourself with `{{execution.idempotency_key}}` — see [Templates](../core-concepts/templates).
+
+:::info
+The same window applies to a worker that is shut down gracefully, but only briefly: `SIGINT`/`SIGTERM` stops the poller and then waits up to `INVOKR_WORKER_SHUTDOWN_TIMEOUT_SEC` for in-flight transactions to commit, so a graceful stop normally drains rather than redelivers.
+:::
+
+## What Invokr does not guarantee
+
+- **Exactly-once delivery at the target.** See above — design for at-least-once.
+- **Ordering.** Executions are claimed oldest-`run_at`-first, but workers run up to `INVOKR_WORKER_MAX_CONCURRENT` of them in parallel across pods. Two jobs queued in order can complete out of order. If you need sequencing, sequence it in your own domain.
+- **Fire-at-exact-time.** `run_at` is a floor, not a deadline: delayed executions are claimed on the next poll after `run_at` (default 200ms), and CRON ticks land at `pg_cron`'s one-minute granularity.
 
 ## Immutability
 
@@ -115,42 +162,15 @@ This allows clients to safely retry on network failures without fear of creating
 
 ## Transaction Boundaries
 
-All execution state changes are atomic. The worker pipeline operates within a single scoped transaction per execution:
-
-```
-BEGIN (scoped to workspace schema)
-  → Claim execution (SKIP LOCKED)         — status: QUEUED → RUNNING
-  → Load endpoint
-  → Load config (cached)
-  → Load secrets (cached, decrypt)
-  → Resolve templates
-  → Dispatch to endpoint
-  → Record attempt
-  → Finalize execution                    — status: RUNNING → SUCCESS / RETRYING / FAILED
-COMMIT
-```
-
-If any step fails, the entire transaction can roll back — the execution stays in its previous state and can be retried. If the transaction commits, all state changes (claim, attempt record, execution finalization, execution logs) are applied atomically.
+All execution state changes are atomic. If any step fails, the entire transaction rolls back — the execution stays in its previous state and is retried. If the transaction commits, all state changes (claim, attempt record, execution finalization, execution logs) are applied together.
 
 :::info
 The reaper also operates within this transaction boundary. When the reaper retires expired CRON jobs and unschedules their pg_cron entries, those changes commit atomically with the reaper execution's outcome. See [Reaper](./reaper) for details.
 :::
-
-## Guarantee Summary
-
-| Guarantee | Mechanism |
-|-----------|----------|
-| **Durability** | Every job + execution persisted to PostgreSQL before API acknowledgment |
-| **Exactly-once creation** | `idx_jobs_idempotency` unique partial index on `(endpoint, idempotency_key)` |
-| **Exactly-once CRON tick** | `idx_executions_cron_dedup` unique partial index on `(job_id, idempotency_key)` + `ON CONFLICT DO NOTHING` |
-| **Exactly-once execution** | `SELECT FOR UPDATE SKIP LOCKED` within a transaction |
-| **Atomic state transitions** | All execution state changes within a single transaction |
-| **Immutability** | CRON jobs updated via new versions, old versions retired |
-| **Safe retries** | Duplicate requests return existing entity with `200 OK` |
-| **Crash recovery** | Uncommitted transactions roll back; committed jobs survive |
 
 ## Related Pages
 
 - [Database-Driven Scheduling](./db-driven-scheduling) — How pg_cron and SKIP LOCKED enable scheduling without a separate process
 - [Worker Pipeline](./worker-pipeline) — The execution pipeline that processes claimed executions
 - [Database Schema](./database-schema) — Full schema layout including all unique indexes
+- [Idempotency](../core-concepts/idempotency) — Choosing and using idempotency keys

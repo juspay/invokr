@@ -126,13 +126,20 @@ The reaper is Invokr's own CRON sweep that retires expired CRON jobs and unsched
 
 ## Scheduler
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `INVOKR_CRON_TICK_INTERVAL_SEC` | `1` | Interval (in seconds) for the scheduler's CRON materializer tick. |
-| `INVOKR_CRON_BATCH_SIZE` | `100` | Maximum number of CRON jobs to process per scheduler tick. |
-| `INVOKR_PROMOTE_INTERVAL_MS` | `500` | Interval (in milliseconds) for promoting PENDING (delayed) executions to QUEUED. |
-| `INVOKR_RECLAIM_INTERVAL_SEC` | `30` | Interval (in seconds) for reclaiming stuck executions (executions in RUNNING status beyond the timeout). |
-| `INVOKR_STUCK_EXECUTION_TIMEOUT_SEC` | `300` | Timeout (in seconds) after which a RUNNING execution is considered stuck and eligible for reclaiming. |
+There is no scheduler process, and nothing here to tune. CRON ticks are materialized by
+`pg_cron` inside PostgreSQL, and delayed executions are claimed directly by the worker's
+pickup query once `run_at <= now()` — so the worker's own
+[`INVOKR_WORKER_POLL_INTERVAL_MS`](#worker) is the only interval that applies. See
+[Database-Driven Scheduling](../architecture/db-driven-scheduling).
+
+:::note
+`INVOKR_CRON_TICK_INTERVAL_SEC`, `INVOKR_CRON_BATCH_SIZE`, `INVOKR_PROMOTE_INTERVAL_MS`,
+`INVOKR_RECLAIM_INTERVAL_SEC` and `INVOKR_STUCK_EXECUTION_TIMEOUT_SEC` configured the
+standalone scheduler loop that `pg_cron` replaced. They are read by no code and have been
+removed from `.env.example`; setting them does nothing. Stuck executions in particular need
+no reclaim interval — a lost worker's claim is rolled back by PostgreSQL and re-claimed on
+the next poll (see [Delivery Guarantees](../architecture/exactly-once)).
+:::
 
 ## KMS
 
@@ -237,13 +244,6 @@ INVOKR_WORKER_SHUTDOWN_TIMEOUT_SEC=30
 
 # Reaper
 # INVOKR_REAPER_CRON_EXPRESSION=*/15 * * * *
-
-# Scheduler
-INVOKR_CRON_TICK_INTERVAL_SEC=1
-INVOKR_CRON_BATCH_SIZE=100
-INVOKR_PROMOTE_INTERVAL_MS=500
-INVOKR_RECLAIM_INTERVAL_SEC=30
-INVOKR_STUCK_EXECUTION_TIMEOUT_SEC=300
 
 # Encryption
 INVOKR_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000

@@ -181,6 +181,6 @@ The `FOR UPDATE SKIP LOCKED` pattern is the gold standard for work-queue pattern
 ## Related Pages
 
 - [Worker Pipeline](./worker-pipeline) — How the poller claims and processes executions
-- [Exactly-Once Guarantees](./exactly-once) — How idempotency keys and unique constraints prevent duplicates
+- [Delivery Guarantees](./exactly-once) — How idempotency keys and unique constraints prevent duplicate scheduling
 - [Database Schema](./database-schema) — Full schema layout including the pickup index
 - [Reaper](./reaper) — How expired CRON jobs are retired and unscheduled

@@ -280,7 +280,7 @@ db::executions::complete_failed(db, execution_id).await;
 // Execution status → FAILED
 ```
 
-All of this happens within the scoped transaction — the execution state change, attempt record, and execution logs commit atomically. See [Exactly-Once Guarantees](./exactly-once) for details.
+All of this happens within the scoped transaction — the execution state change, attempt record, and execution logs commit atomically. Note that the dispatch itself happens *inside* that transaction, before the commit: see [Delivery Guarantees](./exactly-once) for what that means when a worker dies mid-flight.
 
 ## Execution Logs
 

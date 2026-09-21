@@ -185,16 +185,31 @@ When all attempts are exhausted:
 
 ---
 
-## Stuck execution recovery
+## Crashed worker recovery
 
-If a worker crashes while an execution is `RUNNING`, the stuck execution reclaimer (running every 30 seconds by default) will:
+There is no reclaimer, and nothing to wait out. The claim that sets an execution to `RUNNING`
+is part of the same transaction that dispatches it, and that transaction only commits once the
+attempt has been recorded. If the worker dies first, PostgreSQL rolls the whole thing back:
 
-1. Find executions where `status = 'RUNNING'` and `started_at < now() - interval '5 minutes'`
-2. Set them to `RETRYING` (if retries remain) or `FAILED` (if retries are exhausted)
-3. Reset `worker_id = NULL` and `run_at = now()` so they can be re-claimed
+1. The execution reverts to the status it had before the claim — `QUEUED`, `PENDING` or `RETRYING` —
+   with its previous `attempt_count` and no `worker_id`
+2. The row is eligible for pickup immediately, so the next worker to poll (default: every 200ms)
+   claims it
+3. No attempt row is written for the lost try, because that write rolled back too
+
+So a crashed worker costs you one poll interval, not a timeout. An execution can only be observed
+as `RUNNING` while some worker's transaction is actually holding it.
+
+:::warning
+The flip side: if the worker died *after* the target received the request, that delivery happened
+and Invokr has no record of it — the retry will deliver it again. This is why delivery is
+at-least-once and why receivers should de-duplicate on `x-invokr-idempotency-key`. See
+[Delivery Guarantees](../architecture/exactly-once).
+:::
 
 :::info
-The stuck execution timeout is configurable via `INVOKR_STUCK_EXECUTION_TIMEOUT_SEC` (default: 300 seconds / 5 minutes). The reclaim interval is configurable via `INVOKR_RECLAIM_INTERVAL_SEC` (default: 30 seconds).
+Graceful shutdown (`SIGINT`/`SIGTERM`) does not roll anything back: the worker stops polling and
+waits up to `INVOKR_WORKER_SHUTDOWN_TIMEOUT_SEC` (default 30s) for in-flight executions to commit.
 :::
 
 ---

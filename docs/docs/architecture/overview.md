@@ -5,7 +5,7 @@ title: Architecture Overview
 
 # Architecture Overview
 
-Invokr is a distributed job scheduling and execution engine built in Rust. It provides durable, exactly-once, retriable delivery of jobs to HTTP endpoints, Kafka topics, and Redis Streams — with type-safety guarantees.
+Invokr is a distributed job scheduling and execution engine built in Rust. It provides durable, de-duplicated, retriable delivery of jobs to HTTP endpoints, Kafka topics, and Redis Streams — with type-safety guarantees. Scheduling is exactly-once; delivery is at-least-once (see [Delivery Guarantees](./exactly-once)).
 
 ## System Architecture
 

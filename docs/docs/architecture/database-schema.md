@@ -418,6 +418,6 @@ Schema names are validated by `validate_schema_name()` which ensures only alphan
 ## Related Pages
 
 - [Architecture Overview](./overview) — How the schema fits into the overall system
-- [Exactly-Once Guarantees](./exactly-once) — How the unique indexes ensure deduplication
+- [Delivery Guarantees](./exactly-once) — How the unique indexes ensure deduplication
 - [Database-Driven Scheduling](./db-driven-scheduling) — How the pickup index enables transaction-based scheduling
 - [Dual Deployment Modes](./dual-deployment) — How the table prefix system supports embedding

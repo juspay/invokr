@@ -7,7 +7,7 @@
 
 ## Overview
 
-Invokr is a distributed job scheduling and execution engine. It provides durable, exactly-once, retriable execution of HTTP callbacks — with support for immediate, delayed, and recurring triggers.
+Invokr is a distributed job scheduling and execution engine. It provides durable, de-duplicated, retriable execution of HTTP callbacks — with support for immediate, delayed, and recurring triggers. Scheduling is exactly-once; delivery is at-least-once, so callbacks should be idempotent.
 
 **Base URL:** `https://api.invokr.io/v1`
 
@@ -28,7 +28,7 @@ Invokr is a distributed job scheduling and execution engine. It provides durable
 | `setInterval(fn, interval)` | `POST /jobs { trigger: CRON }` | Fire repeatedly |
 | `clearTimeout` / `clearInterval` | `POST /jobs/{id}/cancel` | Stop |
 
-**What the platform adds:** durability, distributed execution, retry with backoff, exactly-once guarantees, and full observability.
+**What the platform adds:** durability, distributed execution, retry with backoff, exactly-once scheduling (at-least-once delivery), and full observability.
 
 ---
 

@@ -5,7 +5,7 @@ title: Idempotency
 
 # Idempotency
 
-Idempotency is the mechanism that ensures Invokr never fires the same job twice. Every job has an idempotency key, and the database enforces uniqueness constraints that prevent duplicate executions.
+Idempotency keys are how Invokr avoids *scheduling* the same job twice: every job carries one, and the database enforces uniqueness on it. They are also how your receivers avoid *processing* the same delivery twice — Invokr's delivery is at-least-once, and it hands the key to the target so it can de-duplicate. See [Delivery Guarantees](../architecture/exactly-once) for the distinction.
 
 ---
 
@@ -19,7 +19,7 @@ An idempotency key is a client-provided (or system-generated) string that unique
 | `CRON` | System | `cron_{job_id}_{epoch_ms}` |
 
 :::info
-Idempotency keys are **required** for `IMMEDIATE` and `DELAYED` jobs. They are optional for `CRON` jobs (the system generates them automatically for each tick).
+Idempotency keys are **required** for `DELAYED` jobs. They are optional for `IMMEDIATE` jobs — Invokr generates a UUID when you omit one, which means an omitted key gives you no de-duplication at all. For `CRON` jobs the system generates one per tick.
 :::
 
 ---
@@ -187,9 +187,9 @@ Idempotency keys are **not** a retry mechanism for updating jobs. If you need to
 
 ---
 
-## Exactly-once delivery
+## What idempotency keys do and don't guarantee
 
-The combination of idempotency keys, DB unique constraints, and `SELECT FOR UPDATE SKIP LOCKED` provides exactly-once delivery guarantees:
+Idempotency keys, the unique indexes, and `SELECT FOR UPDATE SKIP LOCKED` together guarantee that a job is **scheduled** once and claimed by one worker at a time:
 
 | Mechanism | Purpose |
 |-----------|---------|
@@ -203,6 +203,15 @@ The combination of idempotency keys, DB unique constraints, and `SELECT FOR UPDA
 :::info
 The `SELECT FOR UPDATE SKIP LOCKED` pattern ensures that when multiple workers poll for executions simultaneously, each execution is claimed by exactly one worker. Locked rows are skipped, so there's no contention or double-claiming.
 :::
+
+They do **not** guarantee that a target is called exactly once. The worker dispatches inside the transaction that holds the claim and commits afterwards, so a worker killed between the two redelivers on the next poll. Design receivers to tolerate that:
+
+| Transport | How the key reaches the receiver |
+|-----------|----------------------------------|
+| `HTTP` | Automatic — sent as the `x-invokr-idempotency-key` header. Supply a header of that name in the endpoint spec to override it |
+| `KAFKA` | **Not automatic.** Add it yourself: `"headers": { "idempotency-key": "{{execution.idempotency_key}}" }` |
+| `REDIS_STREAM` | **Not automatic.** Add it yourself in `fields_template`: `{ "idempotency_key": "{{execution.idempotency_key}}" }` |
+
 
 ---
 

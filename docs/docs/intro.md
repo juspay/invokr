@@ -22,7 +22,7 @@ If you've written JavaScript, you already know the API.
 | Fire repeatedly | `setInterval(fn, 60000)` | `POST /v1/jobs { trigger: CRON, cron: "* * * * *" }` |
 | Cancel | `clearTimeout(id)` | `POST /v1/jobs/{id}/cancel` |
 
-Except: it survives crashes, retries on failure, never fires twice, and every execution is observable.
+Except: it survives crashes, retries with backoff, de-duplicates on your idempotency key, and records every attempt it makes.
 
 ---
 
@@ -30,7 +30,8 @@ Except: it survives crashes, retries on failure, never fires twice, and every ex
 
 | Guarantee | How it's achieved |
 |-----------|-------------------|
-| **Exactly-once** | Idempotency keys + DB unique constraints + `SELECT FOR UPDATE SKIP LOCKED` |
+| **Exactly-once scheduling** | Idempotency keys + unique partial indexes on `(endpoint, idempotency_key)` and `(job_id, idempotency_key)`. A duplicate create returns the original job; a duplicate CRON tick is a no-op |
+| **At-least-once delivery** | One worker claims an execution at a time (`SELECT FOR UPDATE SKIP LOCKED`), but the target is called *before* the claim commits — a worker lost in that window redelivers. Every HTTP dispatch carries `x-invokr-idempotency-key` so receivers can de-duplicate |
 | **Durable** | Every job persisted to PostgreSQL before acknowledgment |
 | **Retry with backoff** | Configurable per endpoint: fixed, linear, or exponential with jitter |
 | **Sub-second** | Immediate: ~300ms. Delayed: within ~200ms of `run_at` (worker poll interval) |

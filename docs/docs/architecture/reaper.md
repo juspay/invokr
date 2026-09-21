@@ -147,4 +147,4 @@ Each reaper execution also emits the standard execution metrics (`invokr_executi
 
 - [Database-Driven Scheduling](./db-driven-scheduling) — How pg_cron drives CRON job materialization
 - [Worker Pipeline](./worker-pipeline) — The pipeline through which reaper executions flow
-- [Exactly-Once Guarantees](./exactly-once) — How SKIP LOCKED ensures only one pod runs each sweep
+- [Delivery Guarantees](./exactly-once) — How SKIP LOCKED ensures only one pod runs each sweep

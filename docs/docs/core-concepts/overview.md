@@ -114,5 +114,5 @@ Templates are resolved by the worker at execution time. If any variable is unres
 - [Secrets](./secrets) — encryption and write-only access
 - [Templates](./templates) — the template resolution engine
 - [Retry Policy](./retry-policy) — backoff strategies and jitter
-- [Idempotency](./idempotency) — exactly-once delivery guarantees
+- [Idempotency](./idempotency) — de-duplication keys and what they do (and don't) guarantee
 - [Multi-Tenancy](./multi-tenancy) — schema-per-workspace isolation

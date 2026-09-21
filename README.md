@@ -17,7 +17,7 @@ If you've written JavaScript, you already know the API.
 | Fire repeatedly | `setInterval(fn, 60000)` | `POST /v1/jobs { trigger: CRON, cron: "* * * * *" }` |
 | Cancel | `clearTimeout(id)` | `POST /v1/jobs/{id}/cancel` |
 
-Except: it survives crashes, retries on failure, never fires twice, and every execution is observable.
+Except: it survives crashes, retries with backoff, de-duplicates on your idempotency key, and records every attempt it makes.
 
 ---
 
@@ -375,15 +375,22 @@ console.log(response.data.job_id);
 
 ## Template resolution
 
-Endpoint specs support three template namespaces, resolved at execution time:
+Endpoint specs support four template namespaces, resolved at execution time:
 
 | Namespace | Source | Example |
 |---|---|---|
 | `{{input.*}}` | Per-job payload | `{{input.user_id}}` → `"u_abc"` |
 | `{{config.*}}` | Centrally managed config | `{{config.api_base_url}}` → `"https://api.myapp.com"` |
 | `{{secret.*}}` | Encrypted secret store | `{{secret.email_api_key}}` → resolved at runtime, never exposed |
+| `{{execution.*}}` | Per-execution metadata | `{{execution.idempotency_key}}`, `{{execution.execution_id}}`, `{{execution.job_id}}`, `{{execution.attempt_count}}` |
 
 Configs are cached (60s TTL). Secrets are encrypted at rest, decrypted in memory (300s TTL). Template resolution failures reject the execution immediately — no wasted retries.
+
+HTTP dispatches carry the execution's idempotency key automatically, as the `x-invokr-idempotency-key` header (set your own header of that name to override it). Kafka and Redis Stream dispatches do **not** — to give those consumers a de-duplication key, template it in yourself with `{{execution.idempotency_key}}`:
+
+```json
+{ "headers": { "idempotency-key": "{{execution.idempotency_key}}" } }
+```
 
 ---
 
@@ -434,7 +441,8 @@ curl http://localhost:8080/v1/jobs/{job_id}/versions $HEADERS
 
 | Guarantee | How |
 |-----------|-----|
-| **Exactly-once** | Idempotency keys + DB unique constraints + `SELECT FOR UPDATE SKIP LOCKED` |
+| **Exactly-once scheduling** | Idempotency keys + unique partial indexes on `(endpoint, idempotency_key)` and `(job_id, idempotency_key)`. A duplicate create returns the original job; a duplicate CRON tick is a no-op |
+| **At-least-once delivery** | One worker claims an execution at a time (`SELECT FOR UPDATE SKIP LOCKED`), but the target is called *before* the claim commits — a worker lost in that window redelivers. Every HTTP dispatch carries `x-invokr-idempotency-key` so receivers can de-duplicate |
 | **Durable** | Every job persisted to PostgreSQL before acknowledgment |
 | **Retry with backoff** | Configurable per endpoint: fixed, linear, or exponential with jitter |
 | **Sub-second** | Immediate: ~300ms. Delayed: within ~200ms of `run_at` (worker poll interval) |
