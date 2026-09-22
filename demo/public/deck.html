@@ -454,7 +454,7 @@
                 <!-- 1 ─────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide title-slide"
-                    data-notes="~30s. Say the subtitle out loud and stop. The analogy does the work; do not explain it yet. | Act 1 of 6 · running total 0:30"
+                    data-notes="~30s. Say the subtitle out loud and stop. The analogy does the work; do not explain it yet. | Act 1 of 5 · running total 0:30"
                 >
                     <div class="mark"></div>
                     <h1>Invokr</h1>
@@ -523,7 +523,7 @@
                 <!-- 6 ─────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide"
-                    data-notes="~60s. The entire API surface. Three verbs. If someone asks about auth/tenancy, say 'two headers' and move on — detail is in the appendix. | Act 3 · running total 8:00"
+                    data-notes="~60s. The entire API surface. Three verbs. If someone asks about auth/tenancy, say 'two headers' and move on — detail is in the appendix. | Act 2 · running total 3:00"
                 >
                     <div class="eyebrow">what invokr is</div>
                     <h2>Three steps. That is the whole surface.</h2>
@@ -591,21 +591,226 @@ GET …/attempts</pre>
                     </div>
                 </section>
 
-                <!-- 7 ─────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide wide"
-                    data-notes="~2min. Walk left to right, then hit space for the punchline and PAUSE. This is the one genuinely interesting architectural decision, and it explains the low moving-part count: pg_cron materialises ticks, delayed jobs are claimed by the worker's own pickup query. Nothing is holding a timer. | running total 10:00"
+                    data-notes="~2min. This is the one genuinely interesting architectural decision and it explains everything that follows — every guarantee on the next five slides is an index, a lock or a transaction, because there is nowhere else for them to live. Read the left column out loud; the absence is the point. Then walk the three bands. Then hit space and PAUSE on the punchline. If someone asks 'what about DELAYED jobs' the answer is that nothing fires at all — the pickup query already asks for run_at &lt;= now(). If someone asks what keeps CRON jobs tidy: the cleanup is itself an ordinary Invokr job — pg_cron materializes it, a worker claims it with the same query, and it earns attempts and metrics like anything else. | running total 5:00"
                 >
                     <div class="eyebrow">what invokr is</div>
-                    <h2>Architecture</h2>
+                    <h2>There is no scheduler</h2>
+                    <p class="sub">
+                        Scheduling, claiming and running a task are all one
+                        database's job.
+                    </p>
 
                     <svg
-                        viewBox="0 0 1120 150"
-                        style="width: 100%; height: auto; margin: 18px 0 6px"
+                        viewBox="0 0 1120 330"
+                        style="width: 100%; height: auto; margin-top: 4px"
+                    >
+                        <g font-family="Inter, sans-serif">
+                            <text
+                                x="30"
+                                y="46"
+                                fill="#64748b"
+                                font-size="12"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.14em"
+                            >
+                                WHAT WE DID NOT BUILD
+                            </text>
+
+                            <g
+                                fill="#4a5768"
+                                font-size="18"
+                                text-decoration="line-through"
+                            >
+                                <text x="30" y="92">a scheduler service</text>
+                                <text x="30" y="136">a job queue</text>
+                                <text x="30" y="180">
+                                    a lease table and heartbeats
+                                </text>
+                                <text x="30" y="224">a stuck-claim reaper</text>
+                                <text x="30" y="268">
+                                    a timer in process memory
+                                </text>
+                            </g>
+
+                            <rect
+                                x="430"
+                                y="6"
+                                width="690"
+                                height="318"
+                                rx="14"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="458"
+                                y="44"
+                                fill="#2fd4b6"
+                                font-size="19"
+                                font-weight="600"
+                            >
+                                PostgreSQL + pg_cron
+                            </text>
+                            <text x="458" y="66" fill="#7fb8ae" font-size="13">
+                                the only thing in the system that knows what
+                                time it is
+                            </text>
+
+                            <g>
+                                <rect
+                                    x="454"
+                                    y="86"
+                                    width="642"
+                                    height="68"
+                                    rx="10"
+                                    fill="#0a1518"
+                                    stroke="#1c3b3a"
+                                    stroke-width="1.5"
+                                />
+                                <text
+                                    x="474"
+                                    y="119"
+                                    fill="#2fd4b6"
+                                    font-size="12"
+                                    font-family="ui-monospace, Menlo, monospace"
+                                    letter-spacing="0.12em"
+                                >
+                                    SCHEDULE
+                                </text>
+                                <text
+                                    x="590"
+                                    y="113"
+                                    fill="#cbd6e4"
+                                    font-size="15"
+                                >
+                                    pg_cron fires each CRON tick inside the
+                                    database
+                                </text>
+                                <text
+                                    x="590"
+                                    y="137"
+                                    fill="#64748b"
+                                    font-size="13"
+                                    font-family="ui-monospace, Menlo, monospace"
+                                >
+                                    INSERT … ON CONFLICT (job_id,
+                                    idempotency_key) DO NOTHING
+                                </text>
+
+                                <rect
+                                    x="454"
+                                    y="166"
+                                    width="642"
+                                    height="68"
+                                    rx="10"
+                                    fill="#0a1518"
+                                    stroke="#1c3b3a"
+                                    stroke-width="1.5"
+                                />
+                                <text
+                                    x="474"
+                                    y="199"
+                                    fill="#2fd4b6"
+                                    font-size="12"
+                                    font-family="ui-monospace, Menlo, monospace"
+                                    letter-spacing="0.12em"
+                                >
+                                    CLAIM
+                                </text>
+                                <text
+                                    x="590"
+                                    y="193"
+                                    fill="#cbd6e4"
+                                    font-size="15"
+                                >
+                                    One worker wins the row. The others are
+                                    handed nothing.
+                                </text>
+                                <text
+                                    x="590"
+                                    y="217"
+                                    fill="#64748b"
+                                    font-size="13"
+                                    font-family="ui-monospace, Menlo, monospace"
+                                >
+                                    SELECT … FOR UPDATE SKIP LOCKED
+                                </text>
+
+                                <rect
+                                    x="454"
+                                    y="246"
+                                    width="642"
+                                    height="68"
+                                    rx="10"
+                                    fill="#0a1518"
+                                    stroke="#1c3b3a"
+                                    stroke-width="1.5"
+                                />
+                                <text
+                                    x="474"
+                                    y="279"
+                                    fill="#2fd4b6"
+                                    font-size="12"
+                                    font-family="ui-monospace, Menlo, monospace"
+                                    letter-spacing="0.12em"
+                                >
+                                    RUN
+                                </text>
+                                <text
+                                    x="590"
+                                    y="273"
+                                    fill="#cbd6e4"
+                                    font-size="15"
+                                >
+                                    The delivery happens inside that same
+                                    transaction
+                                </text>
+                                <text
+                                    x="590"
+                                    y="297"
+                                    fill="#64748b"
+                                    font-size="13"
+                                    font-family="ui-monospace, Menlo, monospace"
+                                >
+                                    kill the worker and the claim rolls back
+                                    with it
+                                </text>
+                            </g>
+                        </g>
+                    </svg>
+
+                    <div class="punch reveal" style="margin-top: 20px">
+                        There is no scheduler process.
+                        <em>The database is the scheduler.</em>
+                    </div>
+                    <div class="kicker-note reveal">
+                        DELAYED jobs need no tick at all — the pickup query
+                        already asks for <code>run_at &lt;= now()</code>. Two
+                        processes, an API and a worker, and neither of them
+                        holds a timer.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. First of five guarantee slides — each one is a claim paired with the thing that makes it true, because engineers discount adjectives and audit mechanisms. Point at the two rows: the same protection exists on the create path and on the tick path, but they are different indexes on different tables, so say both. The last line is the setup for the at-least-once slide — do not skip it. | Act 3 · running total 6:00"
+                >
+                    <div class="eyebrow">guarantees</div>
+                    <h2>No duplicate scheduling</h2>
+                    <p class="sub">
+                        Ask twice, get one job. The database refuses the second
+                        one.
+                    </p>
+
+                    <svg
+                        viewBox="0 0 1120 300"
+                        style="width: 100%; height: auto; margin-top: 2px"
                     >
                         <defs>
                             <marker
-                                id="a"
+                                id="ga"
                                 viewBox="0 0 10 10"
                                 refX="9"
                                 refY="5"
@@ -619,260 +824,1040 @@ GET …/attempts</pre>
                                 />
                             </marker>
                         </defs>
-                        <g font-family="ui-monospace, Menlo, monospace">
-                            <path
-                                d="M 188 60 L 228 60"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#a)"
-                            />
-                            <path
-                                d="M 428 60 L 468 60"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#a)"
-                            />
-                            <path
-                                d="M 700 60 L 740 60"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#a)"
-                            />
-                            <path
-                                d="M 920 60 L 960 60"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#a)"
-                            />
-
-                            <rect
-                                x="8"
-                                y="26"
-                                width="180"
-                                height="68"
-                                rx="10"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
+                        <g font-family="Inter, sans-serif">
                             <text
-                                x="26"
-                                y="56"
-                                fill="#e9eff7"
-                                font-size="16"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
-                            >
-                                Your service
-                            </text>
-                            <text x="26" y="78" fill="#64748b" font-size="13">
-                                SDK or curl
-                            </text>
-
-                            <rect
-                                x="232"
-                                y="26"
-                                width="196"
-                                height="68"
-                                rx="10"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="250"
-                                y="56"
-                                fill="#e9eff7"
-                                font-size="16"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
-                            >
-                                API
-                            </text>
-                            <text x="250" y="78" fill="#64748b" font-size="13">
-                                actix-web · /metrics
-                            </text>
-
-                            <rect
-                                x="472"
+                                x="2"
                                 y="18"
-                                width="228"
-                                height="84"
+                                fill="#64748b"
+                                font-size="12"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.14em"
+                            >
+                                THE SAME CREATE, TWICE
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="32"
+                                width="268"
+                                height="44"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="18"
+                                y="50"
+                                fill="#e9eff7"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/jobs
+                            </text>
+                            <text
+                                x="18"
+                                y="68"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                idempotency_key: M-77
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="88"
+                                width="268"
+                                height="44"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="18"
+                                y="106"
+                                fill="#e9eff7"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/jobs
+                            </text>
+                            <text
+                                x="18"
+                                y="124"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                idempotency_key: M-77
+                            </text>
+
+                            <path
+                                d="M 272 54 L 326 54"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+                            <path
+                                d="M 272 110 L 326 110"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+
+                            <rect
+                                x="330"
+                                y="28"
+                                width="342"
+                                height="108"
                                 rx="10"
-                                fill="#0f2226"
+                                fill="#0d1a1d"
                                 stroke="#2fd4b6"
                                 stroke-width="2"
                             />
                             <text
-                                x="490"
-                                y="48"
+                                x="350"
+                                y="54"
                                 fill="#2fd4b6"
-                                font-size="16"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
+                                font-size="12"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.12em"
                             >
-                                PostgreSQL + pg_cron
+                                UNIQUE INDEX ON jobs
                             </text>
-                            <text x="490" y="70" fill="#7fb8ae" font-size="13">
-                                source of truth
+                            <text
+                                x="350"
+                                y="82"
+                                fill="#cbd6e4"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                (endpoint, idempotency_key)
                             </text>
-                            <text x="490" y="88" fill="#7fb8ae" font-size="13">
-                                and the scheduler
+                            <text
+                                x="350"
+                                y="106"
+                                fill="#64748b"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                WHERE idempotency_key
+                            </text>
+                            <text
+                                x="350"
+                                y="124"
+                                fill="#64748b"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                IS NOT NULL
                             </text>
 
+                            <path
+                                d="M 676 54 L 730 54"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+                            <path
+                                d="M 676 110 L 730 110"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+
                             <rect
-                                x="744"
-                                y="26"
-                                width="176"
-                                height="68"
-                                rx="10"
-                                fill="#111823"
-                                stroke="#243144"
+                                x="734"
+                                y="32"
+                                width="300"
+                                height="44"
+                                rx="9"
+                                fill="#0f1f16"
+                                stroke="#2f6a47"
                                 stroke-width="1.5"
                             />
                             <text
-                                x="762"
-                                y="56"
-                                fill="#e9eff7"
-                                font-size="16"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
+                                x="752"
+                                y="60"
+                                fill="#4ad07e"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
                             >
-                                Worker
-                            </text>
-                            <text x="762" y="78" fill="#64748b" font-size="13">
-                                SKIP LOCKED pickup
+                                201 job_a1f3 created
                             </text>
 
                             <rect
-                                x="964"
-                                y="18"
-                                width="148"
-                                height="84"
-                                rx="10"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="982"
-                                y="44"
-                                fill="#e9eff7"
-                                font-size="15"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
-                            >
-                                HTTP
-                            </text>
-                            <text
-                                x="982"
-                                y="66"
-                                fill="#e9eff7"
-                                font-size="15"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
-                            >
-                                Kafka
-                            </text>
-                            <text
-                                x="982"
+                                x="734"
                                 y="88"
-                                fill="#e9eff7"
-                                font-size="15"
-                                font-family="Inter, sans-serif"
-                                font-weight="600"
+                                width="300"
+                                height="44"
+                                rx="9"
+                                fill="#221a10"
+                                stroke="#6d5526"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="752"
+                                y="116"
+                                fill="#f5b544"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
                             >
-                                Redis Stream
+                                409 already exists
+                            </text>
+
+                            <text
+                                x="2"
+                                y="178"
+                                fill="#64748b"
+                                font-size="12"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.14em"
+                            >
+                                THE SAME TICK, TWICE
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="192"
+                                width="268"
+                                height="44"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="18"
+                                y="210"
+                                fill="#e9eff7"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                pg_cron tick
+                            </text>
+                            <text
+                                x="18"
+                                y="228"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                cron_job_a1f3_...12:05:00
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="248"
+                                width="268"
+                                height="44"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="18"
+                                y="266"
+                                fill="#e9eff7"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                pg_cron tick
+                            </text>
+                            <text
+                                x="18"
+                                y="284"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                cron_job_a1f3_...12:05:00
+                            </text>
+
+                            <path
+                                d="M 272 214 L 326 214"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+                            <path
+                                d="M 272 270 L 326 270"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+
+                            <rect
+                                x="330"
+                                y="188"
+                                width="342"
+                                height="108"
+                                rx="10"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="350"
+                                y="214"
+                                fill="#2fd4b6"
+                                font-size="12"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.12em"
+                            >
+                                UNIQUE INDEX ON executions
+                            </text>
+                            <text
+                                x="350"
+                                y="242"
+                                fill="#cbd6e4"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                (job_id, idempotency_key)
+                            </text>
+                            <text
+                                x="350"
+                                y="266"
+                                fill="#64748b"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                ON CONFLICT DO NOTHING
+                            </text>
+
+                            <path
+                                d="M 676 214 L 730 214"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+                            <path
+                                d="M 676 270 L 730 270"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ga)"
+                            />
+
+                            <rect
+                                x="734"
+                                y="192"
+                                width="300"
+                                height="44"
+                                rx="9"
+                                fill="#0f1f16"
+                                stroke="#2f6a47"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="752"
+                                y="220"
+                                fill="#4ad07e"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                1 execution QUEUED
+                            </text>
+
+                            <rect
+                                x="734"
+                                y="248"
+                                width="300"
+                                height="44"
+                                rx="9"
+                                fill="#151b24"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="752"
+                                y="276"
+                                fill="#64748b"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                0 rows — a no-op
                             </text>
                         </g>
                     </svg>
 
-                    <div class="punch reveal" style="margin-top: 14px">
-                        There is no scheduler process.
-                        <em>The database is the scheduler.</em>
-                    </div>
-                    <div class="kicker-note reveal">
-                        pg_cron materializes CRON ticks inside PostgreSQL.
-                        Delayed jobs are claimed straight off the worker's
-                        pickup query when <code>run_at &lt;= now()</code>. Two
-                        processes, one database, nothing holding a timer in
-                        memory.
+                    <div
+                        class="punch reveal"
+                        style="margin-top: 18px; font-size: 24px"
+                    >
+                        This de-duplicates <em>scheduling</em>. Delivery is a
+                        different promise, and we make a weaker one on purpose.
                     </div>
                 </section>
 
-                <!-- 8 ─────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide wide"
-                    data-notes="~2min. Engineers discount adjectives and audit mechanisms, so every claim here is paired with the thing that makes it true. Land the at-least-once row deliberately — do not let it slide past. If you claim exactly-once delivery to an arbitrary HTTP endpoint, the room's best engineer stops believing the rest of the deck. | running total 12:00"
+                    data-notes="~60s. Three workers, one row, no coordination between them. The whole slide is the one highlighted line. Worth saying: they are not talking to each other, there is no broker in the middle, and this is the same query the reaper and every DELAYED job goes through. If someone asks about throughput, say the index is partial on (status, run_at) and move on — detail is in the appendix. | running total 7:00"
                 >
-                    <div class="eyebrow">what invokr is</div>
-                    <h2>Guarantees, and what makes them true</h2>
+                    <div class="eyebrow">guarantees</div>
+                    <h2>One claimer at a time</h2>
+                    <p class="sub">
+                        Three workers reach for the same row. Postgres hands it
+                        to exactly one.
+                    </p>
 
-                    <table style="font-size: 18px">
+                    <svg
+                        viewBox="0 0 1120 300"
+                        style="width: 100%; height: auto; margin-top: 2px"
+                    >
+                        <defs>
+                            <marker
+                                id="ca"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="20"
+                                width="200"
+                                height="52"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="52"
+                                fill="#e9eff7"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                worker_a1f3
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="94"
+                                width="200"
+                                height="52"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="126"
+                                fill="#e9eff7"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                worker_b2e7
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="168"
+                                width="200"
+                                height="52"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="200"
+                                fill="#e9eff7"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                worker_c9d4
+                            </text>
+
+                            <path
+                                d="M 204 46 L 258 46"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca)"
+                            />
+                            <path
+                                d="M 204 120 L 258 120"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca)"
+                            />
+                            <path
+                                d="M 204 194 L 258 194"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca)"
+                            />
+
+                            <rect
+                                x="262"
+                                y="12"
+                                width="446"
+                                height="216"
+                                rx="11"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <g
+                                font-family="ui-monospace, Menlo, monospace"
+                                font-size="14.5"
+                                fill="#cbd6e4"
+                            >
+                                <text x="286" y="44">SELECT execution_id</text>
+                                <text x="286" y="70">FROM executions</text>
+                                <text x="286" y="96">
+                                    WHERE status IN ('QUEUED','RETRYING')
+                                </text>
+                                <text x="286" y="122">
+                                    AND run_at &lt;= now()
+                                </text>
+                                <text x="286" y="148">ORDER BY run_at</text>
+                                <text x="286" y="174">LIMIT 1</text>
+                                <text
+                                    x="286"
+                                    y="204"
+                                    fill="#2fd4b6"
+                                    font-size="16"
+                                    font-weight="600"
+                                >
+                                    FOR UPDATE SKIP LOCKED
+                                </text>
+                            </g>
+
+                            <path
+                                d="M 712 46 L 766 46"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca)"
+                            />
+                            <path
+                                d="M 712 120 L 766 120"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca)"
+                            />
+                            <path
+                                d="M 712 194 L 766 194"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca)"
+                            />
+
+                            <rect
+                                x="770"
+                                y="20"
+                                width="350"
+                                height="52"
+                                rx="9"
+                                fill="#0f1f16"
+                                stroke="#2f6a47"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="790"
+                                y="44"
+                                fill="#4ad07e"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                gets exec_4f2c
+                            </text>
+                            <text
+                                x="790"
+                                y="62"
+                                fill="#5d8f72"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                status → RUNNING
+                            </text>
+
+                            <rect
+                                x="770"
+                                y="94"
+                                width="350"
+                                height="52"
+                                rx="9"
+                                fill="#151b24"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="790"
+                                y="125"
+                                fill="#64748b"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                skipped — the row is locked
+                            </text>
+
+                            <rect
+                                x="770"
+                                y="168"
+                                width="350"
+                                height="52"
+                                rx="9"
+                                fill="#151b24"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="790"
+                                y="199"
+                                fill="#64748b"
+                                font-size="14"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                skipped — the row is locked
+                            </text>
+
+                            <text x="0" y="266" fill="#64748b" font-size="14.5">
+                                One row. Three askers. Nothing coordinating
+                                them, and no second ask for the two that lost.
+                            </text>
+                        </g>
+                    </svg>
+
+                    <div
+                        class="punch reveal"
+                        style="margin-top: 8px; font-size: 24px"
+                    >
+                        No lease. No heartbeat. No "is that worker still alive?"
+                        <em>The lock is the transaction.</em>
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~90s. THE credibility slide — land it deliberately and do not let it slide past. Walk the four boxes left to right, then put your hand on the red window and say what it is: the call has already landed at Aarokya, and the commit has not happened yet. Kill the worker there and it goes out again. Then the punchline. If you claim exactly-once delivery to an arbitrary HTTP endpoint, the room's best engineer stops believing the rest of the deck — so claim the weaker thing and show why it is the honest one. | running total 8:30"
+                >
+                    <div class="eyebrow">guarantees</div>
+                    <h2>At-least-once delivery</h2>
+                    <p class="sub">
+                        The delivery happens <b>inside</b> the claiming
+                        transaction. That is deliberate, and it has a cost we
+                        name.
+                    </p>
+
+                    <svg
+                        viewBox="0 0 1120 300"
+                        style="width: 100%; height: auto; margin-top: 2px"
+                    >
+                        <defs>
+                            <marker
+                                id="ta"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="20"
+                                y="34"
+                                width="940"
+                                height="122"
+                                rx="12"
+                                fill="none"
+                                stroke="#2fd4b6"
+                                stroke-width="1.5"
+                                stroke-dasharray="7 5"
+                                opacity="0.75"
+                            />
+                            <text
+                                x="38"
+                                y="26"
+                                fill="#2fd4b6"
+                                font-size="12"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.14em"
+                            >
+                                ONE TRANSACTION
+                            </text>
+
+                            <rect
+                                x="38"
+                                y="60"
+                                width="208"
+                                height="70"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text x="58" y="90" fill="#e9eff7" font-size="14.5">
+                                claim the row
+                            </text>
+                            <text
+                                x="58"
+                                y="112"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                status → RUNNING
+                            </text>
+
+                            <path
+                                d="M 250 95 L 274 95"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta)"
+                            />
+
+                            <rect
+                                x="278"
+                                y="60"
+                                width="208"
+                                height="70"
+                                rx="9"
+                                fill="#1b1410"
+                                stroke="#8a6a2f"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="298"
+                                y="90"
+                                fill="#f5b544"
+                                font-size="14.5"
+                            >
+                                POST to Aarokya
+                            </text>
+                            <text
+                                x="298"
+                                y="112"
+                                fill="#a8863f"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                200 OK — it landed
+                            </text>
+
+                            <path
+                                d="M 490 95 L 514 95"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta)"
+                            />
+
+                            <rect
+                                x="518"
+                                y="60"
+                                width="208"
+                                height="70"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="538"
+                                y="90"
+                                fill="#e9eff7"
+                                font-size="14.5"
+                            >
+                                write the attempt
+                            </text>
+                            <text
+                                x="538"
+                                y="112"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                #1 SUCCESS 204ms
+                            </text>
+
+                            <path
+                                d="M 730 95 L 754 95"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta)"
+                            />
+
+                            <rect
+                                x="758"
+                                y="60"
+                                width="184"
+                                height="70"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="778"
+                                y="90"
+                                fill="#e9eff7"
+                                font-size="14.5"
+                            >
+                                mark the execution
+                            </text>
+                            <text
+                                x="778"
+                                y="112"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                status → SUCCESS
+                            </text>
+
+                            <path
+                                d="M 964 95 L 988 95"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta)"
+                            />
+
+                            <rect
+                                x="992"
+                                y="60"
+                                width="126"
+                                height="70"
+                                rx="9"
+                                fill="#0f1f16"
+                                stroke="#4ad07e"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="1018"
+                                y="102"
+                                fill="#4ad07e"
+                                font-size="15"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                COMMIT
+                            </text>
+
+                            <path
+                                d="M 278 178 L 278 192 L 1054 192 L 1054 178"
+                                fill="none"
+                                stroke="#f2545b"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="278"
+                                y="222"
+                                fill="#f2545b"
+                                font-size="16"
+                                font-weight="600"
+                            >
+                                SIGKILL the worker anywhere in this window
+                            </text>
+                            <text
+                                x="278"
+                                y="248"
+                                fill="#97a6ba"
+                                font-size="14.5"
+                            >
+                                the transaction never commits → the row is
+                                QUEUED again → Aarokya is called twice
+                            </text>
+                            <text
+                                x="278"
+                                y="278"
+                                fill="#64748b"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                both calls carry the same
+                                x-invokr-idempotency-key
+                            </text>
+                        </g>
+                    </svg>
+
+                    <div
+                        class="punch reveal"
+                        style="margin-top: 6px; font-size: 24px"
+                    >
+                        We say <em>at-least-once</em> on purpose. Nobody can
+                        honestly promise exactly-once delivery to an arbitrary
+                        endpoint.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. Read the four rows as a story, then the punchline. The thing to land: nothing noticed the crash, because there was nothing to notice. This is the payoff of putting the delivery inside the transaction — the cost was the previous slide, and this is what you bought with it. If asked about the reaper: there is one, but it retires expired CRON jobs, not stuck claims, and it is itself an ordinary Invokr job. | running total 9:30"
+                >
+                    <div class="eyebrow">guarantees</div>
+                    <h2>Crash recovery, free</h2>
+                    <p class="sub">
+                        One execution, one worker killed mid-flight, and nothing
+                        written to handle it.
+                    </p>
+
+                    <table style="font-size: 18px; margin-top: 8px">
                         <thead>
                             <tr>
-                                <th style="width: 30%">Claim</th>
-                                <th>Mechanism</th>
+                                <th style="width: 13%">Time</th>
+                                <th style="width: 48%">What happens</th>
+                                <th>The row, in the database</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td>No duplicate scheduling</td>
+                                <td class="m">t+0ms</td>
                                 <td>
-                                    Unique partial index on
-                                    <code>(endpoint, idempotency_key)</code>;
-                                    CRON ticks de-dup on
-                                    <code>(job_id, idempotency_key)</code> with
-                                    <code>ON CONFLICT DO NOTHING</code>
+                                    <code>worker_b2e7</code> claims
+                                    <code>exec_4f2c</code> and starts delivering
+                                </td>
+                                <td class="m" style="color: #4ad07e">
+                                    RUNNING · worker_b2e7
                                 </td>
                             </tr>
                             <tr>
-                                <td>One claimer at a time</td>
+                                <td class="m">t+340ms</td>
                                 <td>
-                                    <code>SELECT FOR UPDATE SKIP LOCKED</code>
-                                    inside the claiming transaction
+                                    <code>worker_b2e7</code> is SIGKILLed
+                                    mid-delivery
+                                </td>
+                                <td class="m" style="color: #f5b544">
+                                    the transaction never commits
                                 </td>
                             </tr>
                             <tr>
-                                <td>At-least-once delivery</td>
+                                <td class="m">t+340ms</td>
                                 <td>
-                                    The dispatch happens <b>before</b> that
-                                    transaction commits, so a worker killed in
-                                    the window redelivers. Every HTTP call
-                                    carries
-                                    <code>x-invokr-idempotency-key</code> so you
-                                    can de-dup
+                                    PostgreSQL rolls the whole claim back with
+                                    it
+                                </td>
+                                <td class="m" style="color: #97a6ba">
+                                    QUEUED · worker_id NULL
                                 </td>
                             </tr>
                             <tr>
-                                <td>Crash recovery, free</td>
+                                <td class="m">t+520ms</td>
                                 <td>
-                                    An aborted transaction rolls the claim back;
-                                    the next poll picks it up in ~200ms. No
-                                    lease to expire, no reaper to tune
+                                    the next poll from
+                                    <code>worker_c9d4</code> picks it straight
+                                    up
                                 </td>
-                            </tr>
-                            <tr>
-                                <td>Observable</td>
-                                <td>
-                                    Every attempt: duration, status, response
-                                    body, error — queryable, not just logged
+                                <td class="m" style="color: #4ad07e">
+                                    RUNNING · worker_c9d4
                                 </td>
                             </tr>
                         </tbody>
                     </table>
 
-                    <!--<div class="punch reveal" style="font-size: 23px">
-                        We say <em>at-least-once</em> on purpose. Nobody can
-                        honestly promise exactly-once delivery to an arbitrary
-                        endpoint.
-                    </div>-->
+                    <div class="punch reveal" style="font-size: 24px">
+                        Nothing detected the failure.
+                        <em>There was nothing to detect</em> — the claim only
+                        ever existed inside a transaction that did not commit.
+                    </div>
+                    <div class="kicker-note reveal">
+                        No lease to expire, no heartbeat table, no stuck-claim
+                        reaper to tune. The 180ms is just the next poll coming
+                        round — <code>INVOKR_WORKER_POLL_INTERVAL_MS</code>,
+                        default 200.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~45s. Short slide, one idea: this is a table you can query, not a log you have to grep. Say the question out loud — 'did it actually go out?' — and then point at the rows that answer it. Every column here is a real column; the response body is stored, not summarised. Then move to the demo. | running total 10:15"
+                >
+                    <div class="eyebrow">guarantees</div>
+                    <h2>Observable</h2>
+                    <p class="sub">
+                        "Did it actually go out?" is a query, not an archaeology
+                        project.
+                    </p>
+
+                    <div
+                        class="kicker-note"
+                        style="
+                            margin: 0 0 10px;
+                            color: var(--faint);
+                            font-family: var(--mono);
+                            font-size: 13px;
+                        "
+                    >
+                        GET /v1/executions/exec_4f2c/attempts
+                    </div>
+
+                    <table style="font-size: 17px">
+                        <thead>
+                            <tr>
+                                <th style="width: 6%">#</th>
+                                <th style="width: 14%">Status</th>
+                                <th style="width: 18%">Started</th>
+                                <th style="width: 13%">Duration</th>
+                                <th>Response, as received</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="m">1</td>
+                                <td class="m" style="color: #f2545b">FAILED</td>
+                                <td class="m">12:04:31.204</td>
+                                <td class="m">412ms</td>
+                                <td class="m">503 {"error":"upstream busy"}</td>
+                            </tr>
+                            <tr>
+                                <td class="m">2</td>
+                                <td class="m" style="color: #f2545b">FAILED</td>
+                                <td class="m">12:04:32.488</td>
+                                <td class="m">388ms</td>
+                                <td class="m">503 {"error":"upstream busy"}</td>
+                            </tr>
+                            <tr>
+                                <td class="m">3</td>
+                                <td class="m" style="color: #4ad07e">
+                                    SUCCESS
+                                </td>
+                                <td class="m">12:04:34.901</td>
+                                <td class="m">204ms</td>
+                                <td class="m">200 {"ok":true,"synced":17}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="punch reveal" style="font-size: 24px">
+                        Three tries, one idempotency key,
+                        <em>every one of them on the record</em> — queryable,
+                        not just logged.
+                    </div>
+                    <div class="kicker-note reveal">
+                        Per-attempt duration, status, response body and error,
+                        plus <code>execution_logs</code> for anything the
+                        attempt printed. Prometheus on both the API and the
+                        worker; the Grafana dashboard ships in
+                        <code>monitoring/</code>.
+                    </div>
                 </section>
 
                 <!-- 9 ─────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide"
-                    data-notes="~7min. Switch to the demo tab. The whole machine is on screen and the work moves through it — point at the four regions once, left to right, and at the one edge that goes back the way it came. Then you drive: nothing advances until you press → (or hand it to auto). Do not read the JSON out; say the idea and let the chip travel. Start by typing a mandate id the room gives you and let them watch the request change before anything is sent. Page 1, set it up: four POSTs, each landing as a row in its store and lighting the placeholder it feeds; stop on the secret step — what you send, then what you can read back, and there is no value field. Page 2, one short task: set when = in a few seconds, then kill both workers on the run_at step and start a fresh one; the chip does not move and the job still goes out. Run it again with failures = 2 and watch it go round the loop twice — three tries, one key. Page 3: same board, same loop, once per check; Aarokya says 202 still working and the back edge says Retry-After. The line that lands is the last step: polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. Press P for presentation view if the room is large — the board fills the screen and the only text is the step's name. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00"
+                    data-notes="~7min. Switch to the demo tab. The whole machine is on screen and the work moves through it — point at the four regions once, left to right, and at the one edge that goes back the way it came. Then you drive: nothing advances until you press → (or hand it to auto). Do not read the JSON out; say the idea and let the chip travel. Start by typing a mandate id the room gives you and let them watch the request change before anything is sent. Page 1, set it up: four POSTs, each landing as a row in its store and lighting the placeholder it feeds; stop on the secret step — what you send, then what you can read back, and there is no value field. Page 2, one short task: set when = in a few seconds, then kill both workers on the run_at step and start a fresh one; the chip does not move and the job still goes out. Run it again with failures = 2 and watch it go round the loop twice — three tries, one key. Page 3: same board, same loop, once per check; Aarokya says 202 still working and the back edge says Retry-After. The line that lands is the last step: polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. Press P for presentation view if the room is large — the board fills the screen and the only text is the step's name. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 17:15"
                 >
                     <div class="holding">
                         <div>
@@ -1011,7 +1996,7 @@ GET …/attempts</pre>
                 <!-- 12 ────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide wide"
-                    data-notes="~90s. This slide is what converts a nod into a pilot, so do not rush it. The ask is small on purpose: no new service, no new infra, no new on-call. The InvokrClient trait means call sites do not change when they later graduate to service mode — migration is a constructor swap. | Act 6 · running total 24:00"
+                    data-notes="~90s. This slide is what converts a nod into a pilot, so do not rush it. The ask is small on purpose: no new service, no new infra, no new on-call. The InvokrClient trait means call sites do not change when they later graduate to service mode — migration is a constructor swap. | Act 5 · running total 18:45"
                 >
                     <div class="eyebrow">the on-ramp</div>
                     <h2>You do not have to run anything</h2>
@@ -1070,7 +2055,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
                 <!-- 13 -->
                 <section
                     class="slide wide"
-                    data-notes="~90s. This slide is what converts a nod into a pilot, so do not rush it. The ask is small on purpose: no new service, no new infra, no new on-call. The InvokrClient trait means call sites do not change when they later graduate to service mode — migration is a constructor swap. | Act 6 · running total 24:00"
+                    data-notes="~90s. This slide is what converts a nod into a pilot, so do not rush it. The ask is small on purpose: no new service, no new infra, no new on-call. The InvokrClient trait means call sites do not change when they later graduate to service mode — Open floor. The good question to put back to the room is a real incident of their own, and an honest answer about whether Invokr would have prevented it. | running total 18:45 · Q&amp;A to 30:00"
                 >
                     <h2>Any Questions and Feedback</h2>
                 </section>
@@ -1350,6 +2335,214 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
                         </div>
                     </div>
                 </section>
+
+                <section
+                    class="slide wide appendix"
+                    data-notes='Appendix — the box diagram, for anyone who wants the process view rather than the database view. The live deck makes this argument on the "There is no scheduler" slide instead.'
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Architecture</h2>
+
+                    <svg
+                        viewBox="0 0 1120 150"
+                        style="width: 100%; height: auto; margin: 18px 0 6px"
+                    >
+                        <defs>
+                            <marker
+                                id="a"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="ui-monospace, Menlo, monospace">
+                            <path
+                                d="M 188 60 L 228 60"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#a)"
+                            />
+                            <path
+                                d="M 428 60 L 468 60"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#a)"
+                            />
+                            <path
+                                d="M 700 60 L 740 60"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#a)"
+                            />
+                            <path
+                                d="M 920 60 L 960 60"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#a)"
+                            />
+
+                            <rect
+                                x="8"
+                                y="26"
+                                width="180"
+                                height="68"
+                                rx="10"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="26"
+                                y="56"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                Your service
+                            </text>
+                            <text x="26" y="78" fill="#64748b" font-size="13">
+                                SDK or curl
+                            </text>
+
+                            <rect
+                                x="232"
+                                y="26"
+                                width="196"
+                                height="68"
+                                rx="10"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="250"
+                                y="56"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                API
+                            </text>
+                            <text x="250" y="78" fill="#64748b" font-size="13">
+                                actix-web · /metrics
+                            </text>
+
+                            <rect
+                                x="472"
+                                y="18"
+                                width="228"
+                                height="84"
+                                rx="10"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="490"
+                                y="48"
+                                fill="#2fd4b6"
+                                font-size="16"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                PostgreSQL + pg_cron
+                            </text>
+                            <text x="490" y="70" fill="#7fb8ae" font-size="13">
+                                source of truth
+                            </text>
+                            <text x="490" y="88" fill="#7fb8ae" font-size="13">
+                                and the scheduler
+                            </text>
+
+                            <rect
+                                x="744"
+                                y="26"
+                                width="176"
+                                height="68"
+                                rx="10"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="762"
+                                y="56"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                Worker
+                            </text>
+                            <text x="762" y="78" fill="#64748b" font-size="13">
+                                SKIP LOCKED pickup
+                            </text>
+
+                            <rect
+                                x="964"
+                                y="18"
+                                width="148"
+                                height="84"
+                                rx="10"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="982"
+                                y="44"
+                                fill="#e9eff7"
+                                font-size="15"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                HTTP
+                            </text>
+                            <text
+                                x="982"
+                                y="66"
+                                fill="#e9eff7"
+                                font-size="15"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                Kafka
+                            </text>
+                            <text
+                                x="982"
+                                y="88"
+                                fill="#e9eff7"
+                                font-size="15"
+                                font-family="Inter, sans-serif"
+                                font-weight="600"
+                            >
+                                Redis Stream
+                            </text>
+                        </g>
+                    </svg>
+
+                    <div class="punch reveal" style="margin-top: 14px">
+                        There is no scheduler process.
+                        <em>The database is the scheduler.</em>
+                    </div>
+                    <div class="kicker-note reveal">
+                        pg_cron materializes CRON ticks inside PostgreSQL.
+                        Delayed jobs are claimed straight off the worker's
+                        pickup query when <code>run_at &lt;= now()</code>. Two
+                        processes, one database, nothing holding a timer in
+                        memory.
+                    </div>
+                </section>
             </div>
         </div>
 
@@ -1362,7 +2555,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
         <footer>
             <span id="slide-label">Invokr</span>
             <span class="bar"><i id="progress"></i></span>
-            <span id="slide-num">1 / 14</span>
+            <span id="slide-num">1 / 12</span>
         </footer>
 
         <script>
