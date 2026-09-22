@@ -718,7 +718,7 @@
                     data-notes="~60s. Four words, and everything after this slide uses them. Read them top to bottom — each one lives inside the one above it, and those are real foreign keys, not a diagram. The line that saves the most confusion is the last: a retry does not make a new execution, it adds an attempt to the one that is already there, so attempt_count on the execution and the rows in attempts always agree. Two extras if asked: a job is versioned — a PUT makes a new version rather than editing the old one — and payload spec and config are foreign keys on the endpoint, while secrets are pulled in by template. | running total 3:45"
                 >
                     <div class="eyebrow">what invokr is</div>
-                    <h2>Four words</h2>
+                    <h2>Concepts</h2>
 
                     <svg
                         viewBox="0 0 1120 306"
@@ -763,7 +763,7 @@
                             </text>
                             <text x="24" y="56" fill="#97a6ba" font-size="13.5">
                                 where to deliver and how — url or topic, the
-                                body, the retry policy
+                                body spec, the retry policy
                             </text>
                             <text
                                 x="876"
@@ -809,17 +809,7 @@
                                 fill="#97a6ba"
                                 font-size="13.5"
                             >
-                                the standing instruction — which endpoint, what
-                                input, and when
-                            </text>
-                            <text
-                                x="876"
-                                y="118"
-                                fill="#2fd4b6"
-                                font-size="13"
-                                text-anchor="end"
-                            >
-                                one row, many executions
+                                the standing instruction — which endpoint, what input body, and when
                             </text>
 
                             <path
@@ -858,15 +848,6 @@
                             >
                                 one run of that job — cron produces one per tick
                             </text>
-                            <text
-                                x="876"
-                                y="190"
-                                fill="#2fd4b6"
-                                font-size="13"
-                                text-anchor="end"
-                            >
-                                one row, many attempts
-                            </text>
 
                             <path
                                 d="M 140 214 L 140 255 L 162 255"
@@ -903,7 +884,7 @@
                                 font-size="13.5"
                             >
                                 one delivery try — status, duration, and what
-                                came back
+                                was the response
                             </text>
                             <text
                                 x="876"
@@ -1589,10 +1570,6 @@
                 >
                     <div class="eyebrow">guarantees</div>
                     <h2>No duplicate scheduling</h2>
-                    <p class="sub">
-                        Ask twice, get one job. The database refuses the second
-                        one.
-                    </p>
 
                     <svg
                         viewBox="0 0 1120 300"
