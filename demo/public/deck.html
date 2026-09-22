@@ -809,7 +809,8 @@
                                 fill="#97a6ba"
                                 font-size="13.5"
                             >
-                                the standing instruction — which endpoint, what input body, and when
+                                the standing instruction — which endpoint, what
+                                input body, and when
                             </text>
 
                             <path
@@ -2751,6 +2752,432 @@
 
                 <section
                     class="slide wide"
+                    data-notes='~60s. The case the model did not cover: the destination answers straight away and keeps working. Point at the return arrow. A 202 is neither success nor failure — the endpoint declares which codes mean "work pending" in async.status_codes, disjoint from expected_status_codes, and a response in that set parks the execution instead of finishing it. The Location header is required; without one the execution fails with MISSING_POLL_URL and is not retried. The attempt that got the 202 is written as WAITING. Note: this is on feat/long-running-jobs, not yet on main. | Act 3 · long-running'
+                >
+                    <div class="eyebrow">long-running</div>
+                    <h2>When the answer is 202</h2>
+
+                    <svg
+                        viewBox="0 0 1120 286"
+                        style="width: 100%; height: auto; margin-top: 26px"
+                    >
+                        <defs>
+                            <marker
+                                id="qa"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                            <marker
+                                id="qb"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#f5b544"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="16"
+                                width="200"
+                                height="80"
+                                rx="9"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="24"
+                                y="62"
+                                fill="#2fd4b6"
+                                font-size="16"
+                                font-weight="600"
+                            >
+                                Invokr
+                            </text>
+
+                            <path
+                                d="M 204 44 L 410 44"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#qa)"
+                            />
+                            <text
+                                x="308"
+                                y="34"
+                                fill="#97a6ba"
+                                font-size="13"
+                                text-anchor="middle"
+                            >
+                                POST
+                            </text>
+
+                            <path
+                                d="M 414 76 L 208 76"
+                                stroke="#f5b544"
+                                stroke-width="2"
+                                marker-end="url(#qb)"
+                            />
+                            <text
+                                x="308"
+                                y="98"
+                                fill="#f5b544"
+                                font-size="13"
+                                text-anchor="middle"
+                            >
+                                202 Accepted · Location: …
+                            </text>
+
+                            <rect
+                                x="418"
+                                y="16"
+                                width="340"
+                                height="80"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="442"
+                                y="50"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-weight="600"
+                            >
+                                your service
+                            </text>
+                            <text x="442" y="74" fill="#64748b" font-size="13">
+                                keeps working in the background
+                            </text>
+
+                            <text
+                                x="800"
+                                y="48"
+                                fill="#64748b"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                async.status_codes
+                            </text>
+                            <text
+                                x="800"
+                                y="70"
+                                fill="#f5b544"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                [202]
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="146"
+                                width="1120"
+                                height="126"
+                                rx="10"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="30"
+                                y="180"
+                                fill="#2fd4b6"
+                                font-size="16"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                executions
+                            </text>
+                            <text
+                                x="30"
+                                y="212"
+                                fill="#cbd6e4"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                status RUNNING → WAITING
+                            </text>
+                            <text
+                                x="30"
+                                y="240"
+                                fill="#cbd6e4"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                poll_url the Location header
+                            </text>
+                            <text
+                                x="600"
+                                y="212"
+                                fill="#cbd6e4"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                polling_deadline now + max_wait_ms
+                            </text>
+                            <text
+                                x="600"
+                                y="240"
+                                fill="#cbd6e4"
+                                font-size="14.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                the attempt is recorded WAITING
+                            </text>
+                        </g>
+                    </svg>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. Two mechanisms, and you can have either or both. Polling: Invokr GETs the Location url on a schedule, honouring Retry-After when the destination sends one and falling back to the endpoint's backoff when it does not; each check classifies by status code against three disjoint sets. Callback: Invokr puts a per-execution url into the request body as {{execution.callback_url}}, and your service POSTs it when it is done — there is also callback_url_success and callback_url_failure. Land the last line: every terminal update filters on status IN (WAITING, POLLING), so a poll, a callback and a cancel can race and exactly one wins. | long-running"
+                >
+                    <div class="eyebrow">long-running</div>
+                    <h2>Two ways to find out</h2>
+
+                    <svg
+                        viewBox="0 0 1120 262"
+                        style="width: 100%; height: auto; margin-top: 26px"
+                    >
+                        <defs>
+                            <marker
+                                id="wa"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="94"
+                                width="210"
+                                height="74"
+                                rx="9"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="26"
+                                y="139"
+                                fill="#2fd4b6"
+                                font-size="16"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                WAITING
+                            </text>
+
+                            <g fill="none" stroke="#2c3d52" stroke-width="2">
+                                <path d="M 214 131 C 248 131, 252 46, 286 46" />
+                                <path
+                                    d="M 214 131 C 248 131, 252 216, 286 216"
+                                />
+                            </g>
+                            <path
+                                d="M 286 46 L 302 46"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#wa)"
+                            />
+                            <path
+                                d="M 286 216 L 302 216"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#wa)"
+                            />
+
+                            <rect
+                                x="306"
+                                y="10"
+                                width="470"
+                                height="74"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="330"
+                                y="40"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                Invokr asks
+                            </text>
+                            <text
+                                x="330"
+                                y="64"
+                                fill="#64748b"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                GET poll_url · honours Retry-After
+                            </text>
+
+                            <rect
+                                x="306"
+                                y="180"
+                                width="470"
+                                height="74"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="330"
+                                y="210"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                your service tells
+                            </text>
+                            <text
+                                x="330"
+                                y="234"
+                                fill="#64748b"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST {{execution.callback_url}}
+                            </text>
+
+                            <g fill="none" stroke="#2c3d52" stroke-width="2">
+                                <path d="M 780 46 C 814 46, 818 131, 852 131" />
+                                <path
+                                    d="M 780 216 C 814 216, 818 131, 852 131"
+                                />
+                            </g>
+                            <path
+                                d="M 852 131 L 868 131"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#wa)"
+                            />
+
+                            <rect
+                                x="872"
+                                y="94"
+                                width="248"
+                                height="74"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="898"
+                                y="127"
+                                fill="#4ad07e"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                SUCCESS
+                            </text>
+                            <text
+                                x="898"
+                                y="151"
+                                fill="#f2545b"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                FAILED
+                            </text>
+                        </g>
+                    </svg>
+
+                    <div
+                        class="kicker-note"
+                        style="margin-top: 26px; max-width: none"
+                    >
+                        Enable either, or both. Whichever finalises first wins —
+                        the losing one sees zero rows updated.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. The semantic that keeps the retry model honest. A poll is a question, not a delivery — it goes in its own table with its own counter, so a job that was polled four hundred times still shows one attempt. The consequence is the third row: a transient poll error just keeps polling, but a failure the destination actually signals drops back into the ordinary retry policy and re-sends from the start, which is a new attempt. Bounds: max_wait_ms and max_polls, defaulting to an hour and a thousand; either one trips and the execution is FAILED with TIMEOUT. | long-running"
+                >
+                    <div class="eyebrow">long-running</div>
+                    <h2>Polls are not attempts</h2>
+
+                    <table style="font-size: 17px; margin-top: 28px">
+                        <thead>
+                            <tr>
+                                <th style="width: 15%"></th>
+                                <th style="width: 24%">one row per</th>
+                                <th style="width: 22%">counted in</th>
+                                <th>when it goes wrong</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="m">attempts</td>
+                                <td>delivery</td>
+                                <td class="m">attempt_count</td>
+                                <td>the retry policy re-sends</td>
+                            </tr>
+                            <tr>
+                                <td class="m">polls</td>
+                                <td>check</td>
+                                <td class="m">poll_count</td>
+                                <td>transient — keep polling</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div
+                        class="kicker-note"
+                        style="margin-top: 30px; max-width: none"
+                    >
+                        A failure the destination
+                        <em style="color: var(--ink); font-style: normal"
+                            >signals</em
+                        >
+                        is not transient — it drops back into the retry policy
+                        and re-sends, which is a new attempt. Bounds are
+                        <code>max_wait_ms</code> and <code>max_polls</code>,
+                        defaulting to an hour and a thousand; either one trips
+                        and the execution is <code>FAILED</code> with
+                        <code>TIMEOUT</code>.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
                     data-notes="~60s. You do not learn a new client, and you do not learn ours either — every one of these is generated from the same Smithy model as the OpenAPI spec the curl users read. Point at the box once, then read the four. The examples, if anyone asks where: TypeScript cli/src/test-immediate.ts and four more in cli/src/, Rust examples/sdk-mode/, Haskell haskell-example/, and for raw HTTP the postman/ collection plus the curls in the README. crates/client/ is committed, so a Rust consumer takes a Cargo git dep with no JVM in the way. | running total 18:15"
                 >
                     <div class="eyebrow">the on-ramp</div>
@@ -3372,7 +3799,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
         <footer>
             <span id="slide-label">Invokr</span>
             <span class="bar"><i id="progress"></i></span>
-            <span id="slide-num">1 / 18</span>
+            <span id="slide-num">1 / 21</span>
         </footer>
 
         <script>
