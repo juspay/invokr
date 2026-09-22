@@ -542,18 +542,217 @@
 
                 <section
                     class="slide wide"
-                    data-notes="~90s. Walk it left to right. The left column is the setup you do once per integration: the shape of the input, the non-secret values, the credentials. The endpoint is the description of the call itself and it references the other three. Then a job says when, and the executions say what happened. Two details worth having ready: the payload spec and the config are named ON the endpoint, while secrets are pulled in by template inside the spec — and the secret's value is write-only, you can list the names but never read a value back. If someone counts: four POSTs to set up, one to fire, one GET to answer for it. | running total 3:30"
+                    data-notes="~60s. The setup you do once per integration, before there is anything to invoke. Read the three on the left in order — the shape of the input, the non-secret values, the credentials — then the endpoint that uses them. Two details for questions: the payload spec and the config are named ON the endpoint, while secrets are pulled in by template inside the spec, and a secret's value is write-only — you can list the names, you can never read a value back. | running total 3:30"
                 >
                     <div class="eyebrow">what invokr is</div>
-                    <h2>Register once, then invoke</h2>
+                    <h2>Register once</h2>
+                    <p class="sub">
+                        Three things you store, and one description of the call
+                        that uses them.
+                    </p>
 
                     <svg
-                        viewBox="0 0 1120 296"
+                        viewBox="0 0 1120 292"
                         style="width: 100%; height: auto; margin-top: 2px"
                     >
                         <defs>
                             <marker
-                                id="fa"
+                                id="ra"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="20"
+                                width="320"
+                                height="76"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="46"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                payload spec
+                            </text>
+                            <text x="20" y="66" fill="#97a6ba" font-size="13">
+                                the shape of the input
+                            </text>
+                            <text
+                                x="20"
+                                y="86"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/payload-specs
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="106"
+                                width="320"
+                                height="76"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="132"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                config
+                            </text>
+                            <text x="20" y="152" fill="#97a6ba" font-size="13">
+                                the values that are not secret
+                            </text>
+                            <text
+                                x="20"
+                                y="172"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/configs
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="192"
+                                width="320"
+                                height="76"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="218"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                secret
+                            </text>
+                            <text x="20" y="238" fill="#97a6ba" font-size="13">
+                                the credentials, write-only
+                            </text>
+                            <text
+                                x="20"
+                                y="258"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/secrets
+                            </text>
+
+                            <g fill="none" stroke="#2c3d52" stroke-width="2">
+                                <path d="M 324 58 C 356 58, 360 144, 392 144" />
+                                <path d="M 324 144 L 392 144" />
+                                <path
+                                    d="M 324 230 C 356 230, 360 144, 392 144"
+                                />
+                            </g>
+                            <path
+                                d="M 392 144 L 414 144"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ra)"
+                            />
+
+                            <rect
+                                x="418"
+                                y="106"
+                                width="340"
+                                height="76"
+                                rx="9"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="440"
+                                y="132"
+                                fill="#2fd4b6"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                endpoint
+                            </text>
+                            <text x="440" y="152" fill="#7fb8ae" font-size="13">
+                                the call itself
+                            </text>
+                            <text
+                                x="440"
+                                y="172"
+                                fill="#7fb8ae"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/endpoints
+                            </text>
+
+                            <g fill="#97a6ba" font-size="14.5">
+                                <text x="800" y="124">where to deliver</text>
+                                <text x="800" y="150">what to send</text>
+                                <text x="800" y="176">how to retry</text>
+                            </g>
+
+                            <text
+                                x="0"
+                                y="288"
+                                fill="#64748b"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                the endpoint pulls them in as {{input.*}} ·
+                                {{config.*}} · {{secret.*}}, resolved at
+                                execution time
+                            </text>
+                        </g>
+                    </svg>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. One POST, and the trigger field decides what gets written. Walk the three rows. The one that matters is the last: a CRON create writes the job row and nothing else — no run exists yet — which is what the next slide is about. If someone asks about the statuses: an immediate run is written QUEUED and a delayed one PENDING, both of which the pickup query takes, so the difference is cosmetic. | running total 4:30"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Then invoke</h2>
+                    <p class="sub">
+                        <code>POST /v1/jobs</code> — and the
+                        <code>trigger</code> field decides what gets written.
+                    </p>
+
+                    <svg
+                        viewBox="0 0 1120 252"
+                        style="width: 100%; height: auto; margin-top: 2px"
+                    >
+                        <defs>
+                            <marker
+                                id="ia"
                                 viewBox="0 0 10 10"
                                 refX="9"
                                 refY="5"
@@ -570,293 +769,158 @@
                         <g font-family="Inter, sans-serif">
                             <text
                                 x="0"
-                                y="12"
+                                y="14"
                                 fill="#64748b"
                                 font-size="11.5"
                                 font-family="ui-monospace, Menlo, monospace"
                                 letter-spacing="0.13em"
                             >
-                                REGISTER ONCE
+                                TRIGGER
                             </text>
                             <text
-                                x="596"
-                                y="12"
-                                fill="#2fd4b6"
+                                x="440"
+                                y="14"
+                                fill="#64748b"
                                 font-size="11.5"
                                 font-family="ui-monospace, Menlo, monospace"
                                 letter-spacing="0.13em"
                             >
-                                THEN INVOKE
+                                WHAT THE POST WRITES
                             </text>
 
+                            <rect
+                                x="0"
+                                y="28"
+                                width="300"
+                                height="58"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="22"
+                                y="63"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                IMMEDIATE
+                            </text>
                             <path
-                                d="M 572 24 L 572 268"
-                                stroke="#1f2b3a"
-                                stroke-width="1.5"
-                                stroke-dasharray="5 5"
-                            />
-
-                            <rect
-                                x="0"
-                                y="26"
-                                width="236"
-                                height="60"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="20"
-                                y="50"
-                                fill="#e9eff7"
-                                font-size="15.5"
-                                font-weight="600"
-                            >
-                                payload spec
-                            </text>
-                            <text
-                                x="20"
-                                y="72"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                POST /v1/payload-specs
-                            </text>
-
-                            <rect
-                                x="0"
-                                y="102"
-                                width="236"
-                                height="60"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="20"
-                                y="126"
-                                fill="#e9eff7"
-                                font-size="15.5"
-                                font-weight="600"
-                            >
-                                config
-                            </text>
-                            <text
-                                x="20"
-                                y="148"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                POST /v1/configs
-                            </text>
-
-                            <rect
-                                x="0"
-                                y="178"
-                                width="236"
-                                height="60"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="20"
-                                y="202"
-                                fill="#e9eff7"
-                                font-size="15.5"
-                                font-weight="600"
-                            >
-                                secret
-                            </text>
-                            <text
-                                x="20"
-                                y="224"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                POST /v1/secrets
-                            </text>
-
-                            <g fill="none" stroke="#2c3d52" stroke-width="2">
-                                <path d="M 240 56 C 268 56, 272 132, 298 132" />
-                                <path d="M 240 132 L 298 132" />
-                                <path
-                                    d="M 240 208 C 268 208, 272 132, 298 132"
-                                />
-                            </g>
-                            <path
-                                d="M 298 132 L 316 132"
+                                d="M 304 57 L 420 57"
                                 stroke="#2c3d52"
                                 stroke-width="2"
-                                marker-end="url(#fa)"
+                                marker-end="url(#ia)"
                             />
+                            <text
+                                x="440"
+                                y="52"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                            >
+                                the job, and the run
+                            </text>
+                            <text
+                                x="440"
+                                y="74"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                queued and due now
+                            </text>
 
                             <rect
-                                x="320"
-                                y="102"
-                                width="236"
-                                height="60"
+                                x="0"
+                                y="98"
+                                width="300"
+                                height="58"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="22"
+                                y="133"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                DELAYED
+                            </text>
+                            <path
+                                d="M 304 127 L 420 127"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ia)"
+                            />
+                            <text
+                                x="440"
+                                y="122"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                            >
+                                the job, and the run
+                            </text>
+                            <text
+                                x="440"
+                                y="144"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                queued, due at the run_at you gave
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="168"
+                                width="300"
+                                height="58"
                                 rx="9"
                                 fill="#0d1a1d"
                                 stroke="#2fd4b6"
                                 stroke-width="2"
                             />
                             <text
-                                x="340"
-                                y="126"
+                                x="22"
+                                y="203"
+                                fill="#2fd4b6"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                CRON
+                            </text>
+                            <path
+                                d="M 304 197 L 420 197"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                                marker-end="url(#ia)"
+                            />
+                            <text
+                                x="440"
+                                y="192"
                                 fill="#2fd4b6"
                                 font-size="15.5"
                                 font-weight="600"
                             >
-                                endpoint
+                                the job, and nothing else
                             </text>
                             <text
-                                x="340"
-                                y="148"
-                                fill="#7fb8ae"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                POST /v1/endpoints
-                            </text>
-
-                            <path
-                                d="M 588 132 L 626 132"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#fa)"
-                            />
-
-                            <rect
-                                x="630"
-                                y="102"
-                                width="200"
-                                height="60"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="650"
-                                y="126"
-                                fill="#e9eff7"
-                                font-size="15.5"
-                                font-weight="600"
-                            >
-                                job
-                            </text>
-                            <text
-                                x="650"
-                                y="148"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                POST /v1/jobs
-                            </text>
-
-                            <path
-                                d="M 834 132 L 872 132"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#fa)"
-                            />
-
-                            <rect
-                                x="876"
-                                y="102"
-                                width="244"
-                                height="60"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="896"
-                                y="126"
-                                fill="#e9eff7"
-                                font-size="15.5"
-                                font-weight="600"
-                            >
-                                executions
-                            </text>
-                            <text
-                                x="896"
-                                y="148"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                GET /v1/executions/{id}
-                            </text>
-
-                            <text
-                                x="320"
-                                y="182"
+                                x="440"
+                                y="214"
                                 fill="#97a6ba"
                                 font-size="13.5"
                             >
-                                where to deliver, what to send,
-                            </text>
-                            <text
-                                x="320"
-                                y="200"
-                                fill="#97a6ba"
-                                font-size="13.5"
-                            >
-                                how to retry
-                            </text>
-                            <text
-                                x="630"
-                                y="182"
-                                fill="#97a6ba"
-                                font-size="13.5"
-                            >
-                                when — now, later,
-                            </text>
-                            <text
-                                x="630"
-                                y="200"
-                                fill="#97a6ba"
-                                font-size="13.5"
-                            >
-                                or on a schedule
-                            </text>
-                            <text
-                                x="876"
-                                y="182"
-                                fill="#97a6ba"
-                                font-size="13.5"
-                            >
-                                every attempt, every
-                            </text>
-                            <text
-                                x="876"
-                                y="200"
-                                fill="#97a6ba"
-                                font-size="13.5"
-                            >
-                                error body, as received
+                                no run exists yet — they arrive one per tick
                             </text>
 
-                            <text
-                                x="0"
-                                y="278"
-                                fill="#64748b"
-                                font-size="13.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                the endpoint pulls the other three in as
-                                {{input.*}} · {{config.*}} · {{secret.*}},
-                                resolved at execution time
+                            <text x="0" y="248" fill="#64748b" font-size="13.5">
+                                Two of the three are finished at this point. The
+                                third is the interesting one.
                             </text>
                         </g>
                     </svg>
@@ -864,19 +928,35 @@
 
                 <section
                     class="slide wide"
-                    data-notes="~2min. This is the one genuinely interesting architectural decision and it explains everything that follows — every guarantee on the next five slides is an index, a lock or a transaction, because there is nowhere else for them to live. Read the left column out loud; the absence is the point. Then walk the three bands. Then hit space and PAUSE on the punchline. If someone asks 'what about DELAYED jobs' the answer is that nothing fires at all — the pickup query already asks for run_at &lt;= now(). If someone asks what keeps CRON jobs tidy: the cleanup is itself an ordinary Invokr job — pg_cron materializes it, a worker claims it with the same query, and it earns attempts and metrics like anything else. | running total 5:00"
+                    data-notes="~2min. The one genuinely interesting architectural decision. Read the left column out loud — the absence is the point. Then the right: one POST writes two rows in one transaction, the jobs row and a row in pg_cron's own table, and from then on the ticking happens inside the database with nothing outside holding a timer. Then hit space and PAUSE on the punchline. Worth having ready: the tick is an INSERT … SELECT guarded on the job still being ACTIVE and inside its start/end window, so a cancelled or expired job ticks into a no-op, and it ends with ON CONFLICT DO NOTHING so two ticks in the same millisecond collapse. DELAYED needs no tick at all — the pickup query already asks for run_at &lt;= now(). If someone asks what keeps CRON jobs tidy: the cleanup is itself an ordinary Invokr job. | running total 6:30"
                 >
                     <div class="eyebrow">what invokr is</div>
                     <h2>There is no scheduler</h2>
                     <p class="sub">
-                        Scheduling, claiming and running a task are all one
-                        database's job.
+                        A CRON job is two rows and a tick. Nothing outside the
+                        database is holding a timer.
                     </p>
 
                     <svg
                         viewBox="0 0 1120 330"
                         style="width: 100%; height: auto; margin-top: 4px"
                     >
+                        <defs>
+                            <marker
+                                id="na"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2fd4b6"
+                                />
+                            </marker>
+                        </defs>
                         <g font-family="Inter, sans-serif">
                             <text
                                 x="30"
@@ -917,151 +997,492 @@
                             />
                             <text
                                 x="458"
-                                y="44"
+                                y="40"
                                 fill="#2fd4b6"
                                 font-size="19"
                                 font-weight="600"
                             >
                                 PostgreSQL + pg_cron
                             </text>
-                            <text x="458" y="66" fill="#7fb8ae" font-size="13">
-                                the only thing in the system that knows what
-                                time it is
+                            <text x="458" y="62" fill="#7fb8ae" font-size="13">
+                                one POST writes two rows, in one transaction
                             </text>
 
-                            <g>
-                                <rect
-                                    x="454"
-                                    y="86"
-                                    width="642"
-                                    height="68"
-                                    rx="10"
-                                    fill="#0a1518"
-                                    stroke="#1c3b3a"
-                                    stroke-width="1.5"
-                                />
-                                <text
-                                    x="474"
-                                    y="119"
-                                    fill="#2fd4b6"
-                                    font-size="12"
-                                    font-family="ui-monospace, Menlo, monospace"
-                                    letter-spacing="0.12em"
-                                >
-                                    SCHEDULE
-                                </text>
-                                <text
-                                    x="590"
-                                    y="113"
-                                    fill="#cbd6e4"
-                                    font-size="15"
-                                >
-                                    pg_cron fires each CRON tick inside the
-                                    database
-                                </text>
-                                <text
-                                    x="590"
-                                    y="137"
-                                    fill="#64748b"
-                                    font-size="13"
-                                    font-family="ui-monospace, Menlo, monospace"
-                                >
-                                    INSERT … ON CONFLICT (job_id,
-                                    idempotency_key) DO NOTHING
-                                </text>
+                            <rect
+                                x="458"
+                                y="80"
+                                width="634"
+                                height="62"
+                                rx="10"
+                                fill="#0a1518"
+                                stroke="#1c3b3a"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="480"
+                                y="106"
+                                fill="#cbd6e4"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                jobs
+                            </text>
+                            <text x="480" y="128" fill="#64748b" font-size="13">
+                                the cron expression, the timezone, the active
+                                window
+                            </text>
 
-                                <rect
-                                    x="454"
-                                    y="166"
-                                    width="642"
-                                    height="68"
-                                    rx="10"
-                                    fill="#0a1518"
-                                    stroke="#1c3b3a"
-                                    stroke-width="1.5"
-                                />
-                                <text
-                                    x="474"
-                                    y="199"
-                                    fill="#2fd4b6"
-                                    font-size="12"
-                                    font-family="ui-monospace, Menlo, monospace"
-                                    letter-spacing="0.12em"
-                                >
-                                    CLAIM
-                                </text>
-                                <text
-                                    x="590"
-                                    y="193"
-                                    fill="#cbd6e4"
-                                    font-size="15"
-                                >
-                                    One worker wins the row. The others are
-                                    handed nothing.
-                                </text>
-                                <text
-                                    x="590"
-                                    y="217"
-                                    fill="#64748b"
-                                    font-size="13"
-                                    font-family="ui-monospace, Menlo, monospace"
-                                >
-                                    SELECT … FOR UPDATE SKIP LOCKED
-                                </text>
+                            <rect
+                                x="458"
+                                y="154"
+                                width="634"
+                                height="62"
+                                rx="10"
+                                fill="#0a1518"
+                                stroke="#1c3b3a"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="480"
+                                y="180"
+                                fill="#cbd6e4"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                cron.job
+                            </text>
+                            <text x="480" y="202" fill="#64748b" font-size="13">
+                                pg_cron's own table — one row, holding the
+                                insert
+                            </text>
 
-                                <rect
-                                    x="454"
-                                    y="246"
-                                    width="642"
-                                    height="68"
-                                    rx="10"
-                                    fill="#0a1518"
-                                    stroke="#1c3b3a"
-                                    stroke-width="1.5"
-                                />
-                                <text
-                                    x="474"
-                                    y="279"
-                                    fill="#2fd4b6"
-                                    font-size="12"
-                                    font-family="ui-monospace, Menlo, monospace"
-                                    letter-spacing="0.12em"
-                                >
-                                    RUN
-                                </text>
-                                <text
-                                    x="590"
-                                    y="273"
-                                    fill="#cbd6e4"
-                                    font-size="15"
-                                >
-                                    The delivery happens inside that same
-                                    transaction
-                                </text>
-                                <text
-                                    x="590"
-                                    y="297"
-                                    fill="#64748b"
-                                    font-size="13"
-                                    font-family="ui-monospace, Menlo, monospace"
-                                >
-                                    kill the worker and the claim rolls back
-                                    with it
-                                </text>
-                            </g>
+                            <path
+                                d="M 700 218 L 700 246"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                                marker-end="url(#na)"
+                            />
+                            <text
+                                x="718"
+                                y="238"
+                                fill="#2fd4b6"
+                                font-size="13"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                every tick, inside the database
+                            </text>
+
+                            <rect
+                                x="458"
+                                y="250"
+                                width="634"
+                                height="62"
+                                rx="10"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="480"
+                                y="276"
+                                fill="#2fd4b6"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                executions
+                            </text>
+                            <text x="480" y="298" fill="#7fb8ae" font-size="13">
+                                one row per tick — queued, and due now
+                            </text>
                         </g>
                     </svg>
 
-                    <div class="punch reveal" style="margin-top: 20px">
+                    <div class="punch reveal" style="margin-top: 16px">
                         There is no scheduler process.
                         <em>The database is the scheduler.</em>
                     </div>
-                    <div class="kicker-note reveal">
-                        DELAYED jobs need no tick at all — the pickup query
-                        already asks for <code>run_at &lt;= now()</code>. Two
-                        processes, an API and a worker, and neither of them
-                        holds a timer.
-                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. The payoff of the last three slides. Whoever wrote the row — the API in your create call, or pg_cron a minute later — the worker cannot tell and does not ask. One table, one query, and every guarantee that follows is a property of that query rather than of a trigger type. Say the last line plainly: adding a fourth way to schedule something would not change anything downstream of this table. | running total 7:30"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Three ways in, one table</h2>
+                    <p class="sub">
+                        Whoever wrote the row, the worker cannot tell the
+                        difference — and never asks.
+                    </p>
+
+                    <svg
+                        viewBox="0 0 1120 268"
+                        style="width: 100%; height: auto; margin-top: 2px"
+                    >
+                        <defs>
+                            <marker
+                                id="ca2"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="18"
+                                width="330"
+                                height="62"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="22"
+                                y="44"
+                                fill="#e9eff7"
+                                font-size="15"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                IMMEDIATE
+                            </text>
+                            <text x="22" y="66" fill="#64748b" font-size="13">
+                                the API writes the row, due now
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="94"
+                                width="330"
+                                height="62"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="22"
+                                y="120"
+                                fill="#e9eff7"
+                                font-size="15"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                DELAYED
+                            </text>
+                            <text x="22" y="142" fill="#64748b" font-size="13">
+                                the API writes the row, due later
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="170"
+                                width="330"
+                                height="62"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="22"
+                                y="196"
+                                fill="#e9eff7"
+                                font-size="15"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                CRON
+                            </text>
+                            <text x="22" y="218" fill="#64748b" font-size="13">
+                                pg_cron writes it, one per tick
+                            </text>
+
+                            <g fill="none" stroke="#2c3d52" stroke-width="2">
+                                <path d="M 334 49 C 364 49, 368 125, 398 125" />
+                                <path d="M 334 125 L 398 125" />
+                                <path
+                                    d="M 334 201 C 364 201, 368 125, 398 125"
+                                />
+                            </g>
+                            <path
+                                d="M 398 125 L 420 125"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca2)"
+                            />
+
+                            <rect
+                                x="424"
+                                y="94"
+                                width="250"
+                                height="62"
+                                rx="9"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="446"
+                                y="120"
+                                fill="#2fd4b6"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                executions
+                            </text>
+                            <text x="446" y="142" fill="#7fb8ae" font-size="13">
+                                queued, and due
+                            </text>
+
+                            <path
+                                d="M 678 125 L 716 125"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ca2)"
+                            />
+
+                            <rect
+                                x="720"
+                                y="62"
+                                width="400"
+                                height="126"
+                                rx="10"
+                                fill="#0c131c"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <g
+                                font-family="ui-monospace, Menlo, monospace"
+                                font-size="14"
+                                fill="#cbd6e4"
+                            >
+                                <text x="744" y="92">
+                                    SELECT execution_id FROM executions
+                                </text>
+                                <text x="744" y="116">
+                                    WHERE status IN
+                                    ('QUEUED','RETRYING','PENDING')
+                                </text>
+                                <text x="744" y="140">
+                                    AND run_at &lt;= now()
+                                </text>
+                                <text
+                                    x="744"
+                                    y="168"
+                                    fill="#2fd4b6"
+                                    font-weight="600"
+                                >
+                                    FOR UPDATE SKIP LOCKED
+                                </text>
+                            </g>
+
+                            <text x="0" y="262" fill="#64748b" font-size="14">
+                                Every guarantee after this point is a property
+                                of that query, not of a trigger type.
+                            </text>
+                        </g>
+                    </svg>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~45s. The endpoint's type picks the last hop, and that is the only thing that changes — same job, same retry policy, same attempt rows, same idempotency key on the way out. Be straight about the build: HTTP is always there, Kafka and Redis are compile-time features, so a worker that was not built with them will refuse that endpoint type rather than silently drop it. There is a fourth type, INTERNAL, which is Invokr's own dogfooded cleanup — the public API refuses to create one. | running total 8:15"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Wherever it has to land</h2>
+                    <p class="sub">
+                        The endpoint's type picks the last hop. Everything
+                        before it is identical.
+                    </p>
+
+                    <svg
+                        viewBox="0 0 1120 262"
+                        style="width: 100%; height: auto; margin-top: 2px"
+                    >
+                        <defs>
+                            <marker
+                                id="ta2"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="90"
+                                width="230"
+                                height="66"
+                                rx="10"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="24"
+                                y="120"
+                                fill="#2fd4b6"
+                                font-size="16"
+                                font-weight="600"
+                            >
+                                worker
+                            </text>
+                            <text x="24" y="142" fill="#7fb8ae" font-size="13">
+                                holds the claim
+                            </text>
+
+                            <g fill="none" stroke="#2c3d52" stroke-width="2">
+                                <path d="M 234 123 C 266 123, 270 46, 302 46" />
+                                <path d="M 234 123 L 302 123" />
+                                <path
+                                    d="M 234 123 C 266 123, 270 200, 302 200"
+                                />
+                            </g>
+
+                            <rect
+                                x="306"
+                                y="16"
+                                width="500"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="328"
+                                y="42"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                HTTP
+                            </text>
+                            <text
+                                x="328"
+                                y="62"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                method · url · headers · body_template
+                            </text>
+                            <text
+                                x="830"
+                                y="52"
+                                fill="#4ad07e"
+                                font-size="13.5"
+                            >
+                                always compiled in
+                            </text>
+
+                            <rect
+                                x="306"
+                                y="93"
+                                width="500"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="328"
+                                y="119"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                KAFKA
+                            </text>
+                            <text
+                                x="328"
+                                y="139"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                topic · key_template · value_template
+                            </text>
+                            <text
+                                x="830"
+                                y="129"
+                                fill="#f5b544"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                --features kafka
+                            </text>
+
+                            <rect
+                                x="306"
+                                y="170"
+                                width="500"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="328"
+                                y="196"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                REDIS_STREAM
+                            </text>
+                            <text
+                                x="328"
+                                y="216"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                stream · fields_template · max_len
+                            </text>
+                            <text
+                                x="830"
+                                y="206"
+                                fill="#f5b544"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                --features redis-stream
+                            </text>
+
+                            <text x="0" y="256" fill="#64748b" font-size="14">
+                                Same job, same retry policy, same attempt rows,
+                                same idempotency key on the way out.
+                            </text>
+                        </g>
+                    </svg>
                 </section>
 
                 <section
@@ -1585,7 +2006,8 @@
                                 <text x="286" y="44">SELECT execution_id</text>
                                 <text x="286" y="70">FROM executions</text>
                                 <text x="286" y="96">
-                                    WHERE status IN ('QUEUED','RETRYING')
+                                    WHERE status IN
+                                    ('QUEUED','RETRYING','PENDING')
                                 </text>
                                 <text x="286" y="122">
                                     AND run_at &lt;= now()
@@ -1692,7 +2114,6 @@
                             </text>
                         </g>
                     </svg>
-
                 </section>
 
                 <section
@@ -2876,7 +3297,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
         <footer>
             <span id="slide-label">Invokr</span>
             <span class="bar"><i id="progress"></i></span>
-            <span id="slide-num">1 / 13</span>
+            <span id="slide-num">1 / 16</span>
         </footer>
 
         <script>
