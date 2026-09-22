@@ -1183,14 +1183,6 @@ GET …/attempts</pre>
                             </text>
                         </g>
                     </svg>
-
-                    <div
-                        class="punch reveal"
-                        style="margin-top: 18px; font-size: 24px"
-                    >
-                        This de-duplicates <em>scheduling</em>. Delivery is a
-                        different promise, and we make a weaker one on purpose.
-                    </div>
                 </section>
 
                 <section
@@ -1427,11 +1419,6 @@ GET …/attempts</pre>
                             >
                                 skipped — the row is locked
                             </text>
-
-                            <text x="0" y="266" fill="#64748b" font-size="14.5">
-                                One row. Three askers. Nothing coordinating
-                                them, and no second ask for the two that lost.
-                            </text>
                         </g>
                     </svg>
 
@@ -1452,8 +1439,7 @@ GET …/attempts</pre>
                     <h2>At-least-once delivery</h2>
                     <p class="sub">
                         The delivery happens <b>inside</b> the claiming
-                        transaction. That is deliberate, and it has a cost we
-                        name.
+                        transaction.
                     </p>
 
                     <svg
@@ -1793,17 +1779,11 @@ GET …/attempts</pre>
                             </tr>
                         </tbody>
                     </table>
-
                     <div class="punch reveal" style="font-size: 24px">
-                        Nothing detected the failure.
-                        <em>There was nothing to detect</em> — the claim only
-                        ever existed inside a transaction that did not commit.
-                    </div>
-                    <div class="kicker-note reveal">
-                        No lease to expire, no heartbeat table, no stuck-claim
-                        reaper to tune. The 180ms is just the next poll coming
-                        round — <code>INVOKR_WORKER_POLL_INTERVAL_MS</code>,
-                        default 200.
+                        There is <em>no monitoring worker</em> watching for
+                        stuck jobs. The claim and the delivery are the same
+                        transaction, so a worker that dies never committed
+                        either one.
                     </div>
                 </section>
 
@@ -1813,10 +1793,6 @@ GET …/attempts</pre>
                 >
                     <div class="eyebrow">guarantees</div>
                     <h2>Observable</h2>
-                    <p class="sub">
-                        "Did it actually go out?" is a query, not an archaeology
-                        project.
-                    </p>
 
                     <div
                         class="kicker-note"
@@ -1868,21 +1844,18 @@ GET …/attempts</pre>
                     </table>
 
                     <div class="punch reveal" style="font-size: 24px">
-                        Three tries, one idempotency key,
-                        <em>every one of them on the record</em> — queryable,
-                        not just logged.
+                        There is <em>an endpoint for this</em>. Executions per
+                        job, attempts per execution.
                     </div>
                     <div class="kicker-note reveal">
-                        Per-attempt duration, status, response body and error,
-                        plus <code>execution_logs</code> for anything the
-                        attempt printed. Prometheus on both the API and the
-                        worker; the Grafana dashboard ships in
-                        <code>monitoring/</code>.
+                        <code>GET /v1/jobs/{id}/executions</code> ·
+                        <code>GET /v1/executions/{id}</code> ·
+                        <code>GET /v1/executions/{id}/attempts</code> ·
                     </div>
                 </section>
 
                 <!-- 9 ─────────────────────────────────────────────────────────────────── -->
-                <section
+                <!--<section
                     class="slide"
                     data-notes="~7min. Switch to the demo tab. The whole machine is on screen and the work moves through it — point at the four regions once, left to right, and at the one edge that goes back the way it came. Then you drive: nothing advances until you press → (or hand it to auto). Do not read the JSON out; say the idea and let the chip travel. Start by typing a mandate id the room gives you and let them watch the request change before anything is sent. Page 1, set it up: four POSTs, each landing as a row in its store and lighting the placeholder it feeds; stop on the secret step — what you send, then what you can read back, and there is no value field. Page 2, one short task: set when = in a few seconds, then kill both workers on the run_at step and start a fresh one; the chip does not move and the job still goes out. Run it again with failures = 2 and watch it go round the loop twice — three tries, one key. Page 3: same board, same loop, once per check; Aarokya says 202 still working and the back edge says Retry-After. The line that lands is the last step: polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. Press P for presentation view if the room is large — the board fills the screen and the only text is the step's name. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 17:15"
                 >
@@ -1911,7 +1884,7 @@ GET …/attempts</pre>
                             </p>
                         </div>
                     </div>
-                </section>
+                </section>-->
 
                 <!-- 10 ────────────────────────────────────────────────────────────────── -->
                 <!--<section
@@ -2100,12 +2073,12 @@ GET …/attempts</pre>
                     <h2>You do not have to run anything</h2>
                     <p class="sub">
                         Library mode: Invokr embeds in a Rust service you
-                        already operate, on the PgPool you already have.
+                        already operate, on the Postgres you already have.
                     </p>
 
                     <div class="cols tight">
                         <div>
-                            <pre><span class="c">// your pool, your migrations, your deploy</span>
+                            <pre>
 <span class="k">let</span> client = <span class="f">InvokrLibraryClient::new</span>(
     pool, <span class="s">"sched_"</span>, &amp;enc_key, <span class="k">None</span>)?;
 
@@ -2131,22 +2104,11 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
                                     way
                                 </li>
                                 <li>
-                                    <b>No new on-call.</b> It pages you the way
-                                    your service already does
-                                </li>
-                                <li>
-                                    <b>Same <code>InvokrClient</code> trait</b>
-                                    as the HTTP client — when you outgrow
-                                    embedded, you swap the constructor and your
-                                    call sites do not change
+                                    <b>Service mode</b> is the same code with an HTTP hop in front.
+                                    You can start embedded and move to service when you have a reason.
                                 </li>
                             </ul>
                         </div>
-                    </div>
-
-                    <div class="kicker-note reveal">
-                        Service mode is the same code with an HTTP hop in front.
-                        Start embedded; graduate when you have a reason.
                     </div>
                 </section>
 
