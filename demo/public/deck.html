@@ -1446,7 +1446,7 @@ GET …/attempts</pre>
 
                 <section
                     class="slide wide"
-                    data-notes="~90s. THE credibility slide — land it deliberately and do not let it slide past. Walk the four boxes left to right, then put your hand on the red window and say what it is: the call has already landed at Aarokya, and the commit has not happened yet. Kill the worker there and it goes out again. Then the punchline. If you claim exactly-once delivery to an arbitrary HTTP endpoint, the room's best engineer stops believing the rest of the deck — so claim the weaker thing and show why it is the honest one. | running total 8:30"
+                    data-notes="~90s. THE credibility slide — land it deliberately and do not let it slide past. Walk the four boxes left to right, then put your hand on the red window and say what it is: the call has already landed at Aarokya, and the commit has not happened yet. Kill the worker there and it goes out again. Then the punchline. If you claim exactly-once delivery to an arbitrary HTTP endpoint, the room's best engineer stops believing the rest of the deck — so claim the weaker thing and show why it is the honest one. Land on the teal box: the key is the same on both deliveries, which is what makes the redelivery survivable. If asked — the worker sets x-invokr-idempotency-key itself unless the endpoint spec already defines that header, in which case yours wins. The value is the job's idempotency key, falling back to the execution id. | running total 8:30"
                 >
                     <div class="eyebrow">guarantees</div>
                     <h2>At-least-once delivery</h2>
@@ -1457,7 +1457,7 @@ GET …/attempts</pre>
                     </p>
 
                     <svg
-                        viewBox="0 0 1120 300"
+                        viewBox="0 0 1120 340"
                         style="width: 100%; height: auto; margin-top: 2px"
                     >
                         <defs>
@@ -1673,22 +1673,49 @@ GET …/attempts</pre>
                             </text>
                             <text
                                 x="278"
-                                y="248"
+                                y="246"
                                 fill="#97a6ba"
                                 font-size="14.5"
                             >
                                 the transaction never commits → the row is
                                 QUEUED again → Aarokya is called twice
                             </text>
-                            <text
+
+                            <rect
                                 x="278"
-                                y="278"
-                                fill="#64748b"
-                                font-size="13.5"
+                                y="262"
+                                width="400"
+                                height="70"
+                                rx="10"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="300"
+                                y="290"
+                                fill="#7fb8ae"
+                                font-size="11.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.14em"
+                            >
+                                BOTH DELIVERIES CARRY THE SAME KEY
+                            </text>
+                            <text
+                                x="300"
+                                y="319"
+                                fill="#2fd4b6"
+                                font-size="19"
+                                font-weight="600"
                                 font-family="ui-monospace, Menlo, monospace"
                             >
-                                both calls carry the same
-                                x-invokr-idempotency-key
+                                x-invokr-idempotency-key: M-77
+                            </text>
+                            <text x="704" y="299" fill="#97a6ba" font-size="15">
+                                so the receiving service can drop
+                            </text>
+                            <text x="704" y="321" fill="#97a6ba" font-size="15">
+                                the second one on the floor
                             </text>
                         </g>
                     </svg>
