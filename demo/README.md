@@ -78,8 +78,7 @@ with its real id on it; the regions it travels between are the real ones.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Invokr   ① Set it up  ② Short tasks  ③ Long-running       ● api ● workers  │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  A job is a row.   run_at is a column.                                     │
-│  ● POST /v1/jobs ─ ● two rows ─ ◉ one worker wins ─ ○ the call goes out     │  rail
+│  One task, end to end · Same name, two teams · Not just HTTP               │
 ├─────────────────┬──────────────────────────────────────────────────────────┤
 │ SELECT …        │  ┌ your ─┐   ┌ executions ──┐   ┌ workers ┐   ┌ aarokya ┐│
 │  FROM executions│  │service│──▶│ due now      │──▶│ 62e359  │──▶│  200    ││
@@ -89,9 +88,12 @@ with its real id on it; the regions it travels between are the real ones.
 │  SKIP LOCKED    │              └──────────────┘   └─────────┘        │     │
 │                 │                    ▲──── retry · run_at + backoff ──┘     │
 ├─────────────────┴──────────────────────────────────────────────────────────┤
-│ ◀ ▶ auto  5/7     mandate ▭  when ▾  failures ▭          wire 3     Fire it │
+│ ◀ ▶ auto  5/7 One worker wins   mandate ▭  when ▾         wire 3   Fire it  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Nothing sits above the flow but the page and take pickers. Where you are — the
+count and the current step's name — is in the console, with the controls.
 
 Four regions in the order the work travels, and **one edge that goes back the
 way it came**. The chip is written into `executions`, a worker takes it, it
@@ -100,8 +102,7 @@ running on its face. That back edge is the mechanism: a retry, a cron tick and
 a long-running poll are all the same circuit, walked again.
 
 The panel on the left is whatever is **executing at that moment** — the claim
-query, the resolved request, the `attempts` rows, the `polls` rows. The rail
-above says where you are.
+query, the resolved request, the `attempts` rows, the `polls` rows.
 
 Everything on the board is read back from the running system: the worker ids
 are the processes `just demo` started, the winner is the one Invokr wrote on
@@ -147,9 +148,9 @@ to read.
 
 ### Presentation view (`P`)
 
-For a room rather than a reader. The panel, the rail, the takes and the fields
-go away; the board fills the wall, the boxes and arrows double in weight, and
-the only text is **the step's own name**. Same board, same live data — you can
+For a room rather than a reader. The panel, the takes and the fields go away;
+the board fills the wall, the boxes and arrows double in weight, and the only
+text is **the step's own name**. Same board, same live data — you can
 flip into it mid-run and back out again. The beat lengthens to 1.9s, because a
 room reads slower than a person at a desk.
 
@@ -184,8 +185,8 @@ One task from trigger to end, with everything that shapes it under your hand:
 | **failures** | how many times Aarokya refuses before it works |
 | **max tries** | the job's own `max_attempts`, overriding the endpoint's |
 
-The journey changes shape with the trigger: pick `on a schedule` and the rail
-becomes nine steps, with *pg_cron owns it*, *a row nobody inserted* and *cancel
+The journey changes shape with the trigger: pick `on a schedule` and it becomes
+nine steps, with *pg_cron owns it*, *a row nobody inserted* and *cancel
 when it is terminal* in place of *run_at is a column*. A second region appears
 under *your service* — `pg_cron` — and the enqueue edge moves to it, because on
 that path nothing of ours inserts the row.

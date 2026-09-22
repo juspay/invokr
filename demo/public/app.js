@@ -201,12 +201,16 @@ function settleSteps() {
     });
 }
 
+/// The rail is not on screen, so the console carries where we are: the count,
+/// and the current step's own name.
 function updateStepCount() {
   const host = $("#rail");
   const all = host.querySelectorAll(".step").length;
-  if (!all) return ($("#step-count").textContent = "");
+  const el = $("#step-count");
+  if (!all) return (el.innerHTML = "");
   const done = host.querySelectorAll(".step.done, .step.now, .step.bad").length;
-  $("#step-count").textContent = `${done} / ${all}`;
+  const label = currentStep()?.label ?? "";
+  el.innerHTML = `${done} / ${all}${label ? `<span class="name">${esc(label)}</span>` : ""}`;
 }
 
 // ─── the stage ───────────────────────────────────────────────────────────────
@@ -1336,7 +1340,6 @@ const takes = [
     page: "setup",
     label: "Everything a job needs",
     claim: "Four POSTs and the endpoint exists.",
-    sub: "Config, secret, payload spec, endpoint. No deploy, no restart — the call is four rows in Postgres.",
     action: "Build it, live",
     steps: SETUP_STEPS,
     board: buildBoard,
@@ -1359,7 +1362,6 @@ const takes = [
     page: "short",
     label: "One task, end to end",
     claim: "A job is a row.",
-    sub: "<b>run_at</b> is a column. A worker asks for rows that are due, and exactly one wins each.",
     action: "Fire it",
     steps: (v) => (v.trigger === "CRON" ? CRON_STEPS : SHORT_STEPS),
     // A cron run walks a different set of steps, so it needs its own tape —
@@ -1421,7 +1423,6 @@ const takes = [
     page: "short",
     label: "Same name, two teams",
     claim: "Two teams, one deployment, nothing shared.",
-    sub: "One endpoint name in two workspaces is two unrelated rows in two Postgres schemas.",
     action: "Fire into both",
     steps: TEAM_STEPS,
     board: flowBoard,
@@ -1445,7 +1446,6 @@ const takes = [
     page: "short",
     label: "Not just HTTP",
     claim: "The destination is a field.",
-    sub: "HTTP, a Kafka topic or a Redis Stream. Same job, same retries, same record.",
     action: "Send it three ways",
     steps: TRANSPORT_STEPS,
     board: flowBoard,
@@ -1464,7 +1464,6 @@ const takes = [
     page: "long",
     label: "Work that takes minutes",
     claim: "202 is not an answer.",
-    sub: "The row parks. Nothing is held open. Invokr checks back or gets called — either way, <b>one attempt</b>.",
     action: "Start the long job",
     steps: LONG_STEPS,
     tape: (v) => `long-running-${v.mode}`,
@@ -2570,8 +2569,7 @@ function mountTake(i) {
   state.current = Math.max(0, Math.min(list.length - 1, i));
   const take = list[state.current];
 
-  $("#claim").textContent = take.claim ?? "";
-  $("#subclaim").innerHTML = take.sub ?? "";
+  document.title = take.claim ? `${take.claim} — Invokr` : "Invokr — live demo";
 
   renderInputs(take);
   resetStage(take);

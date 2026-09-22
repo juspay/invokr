@@ -36,17 +36,12 @@
 <div class="takes" id="takes"></div>
 
 <main>
-  <div class="pagehead">
-    <h1 id="claim"></h1>
-    <p id="subclaim"></p>
-  </div>
-
   <!-- Presentation view: the step's own name, big, and nothing else. -->
   <div class="bigstep" id="bigstep"></div>
 
-  <!-- Where we are, as one line. The whole journey is in the tooltip-free
-       strip so nobody has to hold it in their head. -->
-  <ol class="rail" id="rail"></ol>
+  <!-- Off-screen: holds each step's state, its timestamp and the bad-step
+       marker. The console reads the current step's name out of it. -->
+  <ol class="rail" id="rail" aria-hidden="true"></ol>
 
   <div class="body">
     <!-- What is executing right now. -->

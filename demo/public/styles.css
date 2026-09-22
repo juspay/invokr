@@ -153,46 +153,16 @@ body.replaying .replay-flag { display: inline-flex; }
 
 main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 
-.pagehead { flex: 0 0 auto; padding: 16px 26px 12px; }
-.pagehead h1 { font-family: var(--serif); font-size: 26px; font-weight: 600; letter-spacing: -0.018em; margin: 0 0 3px; line-height: 1.2; }
-.pagehead p { margin: 0; color: var(--muted); font-size: 14.5px; max-width: 100ch; }
-.pagehead b { color: var(--ink-soft); font-weight: 600; }
-
 /* ─── the rail ────────────────────────────────────────────────────────────── */
+/*
+   Not rendered. It stays in the DOM because it is where each step's state, its
+   timestamp and the bad-step marker live, and `markStep` writes into it; the
+   console reads the current step's name back out. Nothing sits above the flow
+   but the page and take pickers.
+*/
+.rail { display: none; }
 
-.rail {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  margin: 0;
-  padding: 2px 26px 12px;
-  list-style: none;
-  overflow-x: auto;
-}
-.rail .step { display: flex; align-items: center; gap: 7px; color: var(--faint); white-space: nowrap; padding: 3px 8px; border-radius: 999px; }
-.rail .step .dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  border: 1.5px solid var(--rule);
-  background: var(--paper);
-  flex: 0 0 auto;
-  transition: all 0.25s ease;
-}
-.rail .step .title { font-size: 12.5px; }
-.rail .step .at { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: 6px; font-variant-numeric: tabular-nums; }
-.rail .step + .step::before { content: ""; width: 15px; height: 1.5px; background: var(--rule-soft); margin: 0 6px; flex: 0 0 auto; }
-
-.rail .step.done { color: var(--ink-soft); }
-.rail .step.done .dot { border-color: var(--green); background: var(--green); }
-.rail .step.done + .step::before { background: #cfe3d6; }
-.rail .step.now { color: var(--ink); background: var(--teal-soft); }
-.rail .step.now .title { font-weight: 650; }
-.rail .step.now .dot { border-color: var(--teal); background: var(--teal); }
-.rail .step.bad .dot { border-color: var(--clay); background: var(--clay); }
-.rail .step.bad { color: var(--clay); }
-
-.body { flex: 1 1 auto; display: grid; grid-template-columns: 430px minmax(0, 1fr); min-height: 0; position: relative; }
+.body { flex: 1 1 auto; display: grid; grid-template-columns: clamp(300px, 27vw, 430px) minmax(0, 1fr); min-height: 0; position: relative; }
 
 /* ─── what is executing right now ─────────────────────────────────────────── */
 
@@ -201,7 +171,7 @@ main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 #now {
   min-width: 0; min-height: 0;
   overflow-y: auto;
-  padding: 0 22px 24px 26px;
+  padding: 18px 22px 24px 26px;
   border-right: 1px solid var(--rule-soft);
   display: flex; flex-direction: column; gap: 14px;
 }
@@ -221,14 +191,14 @@ main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
   inset: 0;
   padding: 22px 30px 64px;
   display: grid;
-  gap: 0 44px;
+  gap: 0 clamp(20px, 2.6vw, 44px);
   align-content: center;
   z-index: 1;
 }
 /* Four columns, left to right, in the order the work travels. */
-.zones.flow { grid-template-columns: 216px minmax(240px, 1fr) 236px 196px; }
+.zones.flow { grid-template-columns: minmax(130px, 0.85fr) minmax(200px, 1.55fr) minmax(150px, 1fr) minmax(125px, 0.8fr); }
 /* Page 1 has no loop: three stores feeding one description. */
-.zones.build { grid-template-columns: 250px minmax(320px, 1fr); }
+.zones.build { grid-template-columns: minmax(180px, 0.75fr) minmax(280px, 1.5fr); }
 
 /* Two regions sharing one column — your service above pg_cron, or the three
    stores on page 1. */
@@ -239,7 +209,7 @@ main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
   border-radius: 14px;
   background: var(--surface);
   min-width: 0;
-  min-height: 118px;
+  min-height: 140px;
   display: flex; flex-direction: column;
   transition: border-color 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
 }
@@ -266,8 +236,8 @@ main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 .shelf.cool { border-color: #ecd7ad; background: var(--amber-soft); }
 
 /* A worker is a real process with a real id. */
-.slot { border: 1px solid var(--rule-soft); border-radius: 10px; background: var(--paper); padding: 7px 10px 9px; min-height: 108px; transition: border-color 0.3s ease, background 0.3s ease, opacity 0.3s ease; }
-.slot .drop, .shelf .drop { min-height: 62px; margin-top: 5px; }
+.slot { border: 1px solid var(--rule-soft); border-radius: 10px; background: var(--paper); padding: 7px 10px 9px; min-height: 118px; transition: border-color 0.3s ease, background 0.3s ease, opacity 0.3s ease; }
+.slot .drop, .shelf .drop { min-height: 72px; margin-top: 5px; }
 .slot .who { font-family: var(--mono); font-size: 11px; font-weight: 650; color: var(--ink-soft); }
 .slot .state { font-size: 10.5px; color: var(--faint); margin-top: 2px; }
 .slot.on { border-color: var(--teal); background: var(--teal-soft); }
@@ -496,6 +466,7 @@ footer.console {
 .transport button:disabled { opacity: 0.3; }
 
 .step-count { flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.step-count .name { font-family: var(--sans); font-size: 13px; color: var(--ink-soft); font-weight: 600; margin-left: 10px; }
 
 .inputs { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
 .field { display: flex; align-items: center; gap: 6px; }
@@ -532,8 +503,6 @@ footer.console {
 .bigstep { display: none; }
 
 body.present .takes,
-body.present .pagehead,
-body.present .rail,
 body.present #now,
 body.present .inputs,
 body.present .extras,
@@ -561,8 +530,8 @@ body.present .bigstep .of {
 body.present .bigstep.bad { color: var(--clay); }
 
 body.present .body { grid-template-columns: minmax(0, 1fr); }
-body.present .zones { padding: 6px 44px 84px; gap: 0 62px; }
-body.present .zones.flow { grid-template-columns: 250px minmax(300px, 1fr) 280px 240px; }
+body.present .zones { padding: 6px 44px 84px; gap: 0 clamp(26px, 3.4vw, 62px); }
+body.present .zones.flow { grid-template-columns: minmax(150px, 0.85fr) minmax(230px, 1.5fr) minmax(175px, 1fr) minmax(145px, 0.85fr); }
 
 body.present .zone { border-width: 2px; border-radius: 18px; min-height: 200px; }
 body.present .zone.on { box-shadow: 0 0 0 5px rgba(15, 123, 108, 0.12); }
@@ -603,3 +572,4 @@ body.present .bigstep .punch {
 }
 body.present .bigstep .punch b { color: var(--teal); font-weight: 650; }
 body.present .bigstep.bad .punch b { color: var(--clay); }
+
