@@ -584,10 +584,24 @@ GET /v1/executions/{id}
 GET …/attempts</pre>
                         </div>
                     </div>
+                </section>
 
-                    <div class="punch reveal">
-                        Your endpoint spec is <em>data</em>. Nothing of yours
-                        runs inside Invokr.
+                <section
+                    class="slide"
+                    data-notes='~30s. Say it and stop. This is the slide that answers "so what do we have to build" before anyone asks it — nothing. No handler to write against our interface, no worker of ours in your deploy, no language we make you use. The endpoint you register is a row of JSON describing a call; the code behind that call is yours and never moves. If someone asks what runs inside Invokr: an HTTP request built from that row, and nothing else. | running total 3:30'
+                >
+                    <div class="holding">
+                        <div>
+                            <div class="eyebrow" style="text-align: center">
+                                what invokr is
+                            </div>
+                            <h2>We never deploy your code</h2>
+                            <p class="sub" style="margin-top: 20px">
+                                Your task stays in your service, on your deploy,
+                                in your language.<br />
+                                You tell us when to call it, and what to send.
+                            </p>
+                        </div>
                     </div>
                 </section>
 
@@ -1707,12 +1721,12 @@ GET …/attempts</pre>
                     </svg>
 
                     <!--<div-->
-                        <!--class="punch reveal"-->
-                        <!--style="margin-top: 6px; font-size: 24px"-->
+                    <!--class="punch reveal"-->
+                    <!--style="margin-top: 6px; font-size: 24px"-->
                     <!-->
                         <!--We say <em>at-least-once</em> on purpose. Nobody can-->
-                        <!--honestly promise exactly-once delivery to an arbitrary-->
-                        <!--endpoint.-->
+                    <!--honestly promise exactly-once delivery to an arbitrary-->
+                    <!--endpoint.-->
                     <!--</div>-->
                 </section>
 
@@ -2104,8 +2118,9 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
                                     way
                                 </li>
                                 <li>
-                                    <b>Service mode</b> is the same code with an HTTP hop in front.
-                                    You can start embedded and move to service when you have a reason.
+                                    <b>Service mode</b> is the same code with an
+                                    HTTP hop in front. You can start embedded
+                                    and move to service when you have a reason.
                                 </li>
                             </ul>
                         </div>
