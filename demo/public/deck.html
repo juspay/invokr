@@ -546,10 +546,6 @@
                 >
                     <div class="eyebrow">what invokr is</div>
                     <h2>Register once, then invoke</h2>
-                    <p class="sub">
-                        Four POSTs to set it up, one to fire it, one GET to see
-                        what happened.
-                    </p>
 
                     <svg
                         viewBox="0 0 1120 296"
@@ -1697,13 +1693,6 @@
                         </g>
                     </svg>
 
-                    <div
-                        class="punch reveal"
-                        style="margin-top: 8px; font-size: 24px"
-                    >
-                        No lease. No heartbeat. No "is that worker still alive?"
-                        <em>The lock is the transaction.</em>
-                    </div>
                 </section>
 
                 <section
@@ -1996,11 +1985,7 @@
                     data-notes="~60s. Read the four rows as a story, then the punchline. The thing to land: nothing noticed the crash, because there was nothing to notice. This is the payoff of putting the delivery inside the transaction — the cost was the previous slide, and this is what you bought with it. If asked about the reaper: there is one, but it retires expired CRON jobs, not stuck claims, and it is itself an ordinary Invokr job. | running total 9:30"
                 >
                     <div class="eyebrow">guarantees</div>
-                    <h2>Crash recovery, free</h2>
-                    <p class="sub">
-                        One execution, one worker killed mid-flight, and nothing
-                        written to handle it.
-                    </p>
+                    <h2>Crash recovery</h2>
 
                     <table style="font-size: 18px; margin-top: 8px">
                         <thead>
