@@ -2022,13 +2022,13 @@ GET …/attempts</pre>
 
                 <section
                     class="slide wide"
-                    data-notes="~60s. The adoption argument nobody argues with: you do not learn a new client, and you do not learn ours either — it is generated from the same model as the OpenAPI spec the curl users read. Point at the left box once, then read the right column as three languages and a spec. Every path on this slide is a real path you can open. If someone asks which is most used: TypeScript in the test suite, Rust by aarokya via a Cargo git dep against the committed crates/client. | running total 18:15"
+                    data-notes="~60s. You do not learn a new client, and you do not learn ours either — every one of these is generated from the same Smithy model as the OpenAPI spec the curl users read. Point at the box once, then read the four. The examples, if anyone asks where: TypeScript cli/src/test-immediate.ts and four more in cli/src/, Rust examples/sdk-mode/, Haskell haskell-example/, and for raw HTTP the postman/ collection plus the curls in the README. crates/client/ is committed, so a Rust consumer takes a Cargo git dep with no JVM in the way. | running total 18:15"
                 >
                     <div class="eyebrow">the on-ramp</div>
                     <h2>One model, every client</h2>
                     <p class="sub">
                         Three SDKs and an OpenAPI spec, all generated from the
-                        same six Smithy files — with a runnable example each.
+                        Smithy spec — with a runnable example each.
                     </p>
 
                     <svg
@@ -2046,26 +2046,6 @@ GET …/attempts</pre>
                             >
                                 CLIENT
                             </text>
-                            <text
-                                x="576"
-                                y="16"
-                                fill="#64748b"
-                                font-size="11.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                                letter-spacing="0.13em"
-                            >
-                                GENERATED AS
-                            </text>
-                            <text
-                                x="790"
-                                y="16"
-                                fill="#64748b"
-                                font-size="11.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                                letter-spacing="0.13em"
-                            >
-                                EXAMPLE YOU CAN RUN
-                            </text>
 
                             <rect
                                 x="0"
@@ -2079,29 +2059,13 @@ GET …/attempts</pre>
                             />
                             <text
                                 x="24"
-                                y="118"
+                                y="138"
                                 fill="#2fd4b6"
                                 font-size="16"
                                 font-weight="600"
                                 font-family="ui-monospace, Menlo, monospace"
                             >
                                 smithy/model/
-                            </text>
-                            <text
-                                x="24"
-                                y="144"
-                                fill="#7fb8ae"
-                                font-size="13.5"
-                            >
-                                six files · one contract
-                            </text>
-                            <text
-                                x="24"
-                                y="166"
-                                fill="#7fb8ae"
-                                font-size="13.5"
-                            >
-                                hand-written, reviewed, versioned
                             </text>
 
                             <g fill="none" stroke="#2c3d52" stroke-width="2">
@@ -2123,53 +2087,8 @@ GET …/attempts</pre>
                                 <text x="404" y="166">Haskell</text>
                                 <text x="404" y="220">OpenAPI</text>
                             </g>
-
-                            <g
-                                font-size="14.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                                fill="#2fd4b6"
-                            >
-                                <text x="576" y="58">invokr-sdk</text>
-                                <text x="576" y="112">invokr_sdk</text>
-                                <text x="576" y="166">InvokrSDK</text>
-                                <text x="576" y="220">3.0.2 · 14 paths</text>
-                            </g>
-
-                            <g
-                                font-size="14"
-                                font-family="ui-monospace, Menlo, monospace"
-                                fill="#97a6ba"
-                            >
-                                <text x="790" y="58">
-                                    cli/src/test-immediate.ts
-                                </text>
-                                <text x="790" y="112">examples/sdk-mode/</text>
-                                <text x="790" y="166">haskell-example/</text>
-                                <text x="790" y="220">
-                                    postman/ · curl in the README
-                                </text>
-                            </g>
-
-                            <g font-size="12.5" fill="#64748b">
-                                <text x="790" y="76">
-                                    and four more in cli/src/
-                                </text>
-                                <text x="790" y="130">
-                                    committed to the repo — a Cargo git dep, no
-                                    JVM
-                                </text>
-                            </g>
                         </g>
                     </svg>
-
-                    <div
-                        class="punch reveal"
-                        style="margin-top: 14px; font-size: 24px"
-                    >
-                        Change the model, regenerate, and
-                        <em>every client moves together</em> — including the
-                        spec the curl users read.
-                    </div>
                 </section>
 
                 <!-- 12 ────────────────────────────────────────────────────────────────── -->
