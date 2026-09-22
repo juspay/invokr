@@ -125,6 +125,15 @@ mock-server:
 example-library-mode:
     cargo run -p library-mode-example
 
+# Run the Rust SDK example against a running Invokr
+# (requires `just dev` + ./scripts/setup-dev-tenant.sh)
+#
+# Built with its own manifest, not `-p`: the example depends on the generated
+# crates/client, which is excluded from the workspace for its MSRV and its AWS
+# smithy runtime stack. Keeping it out keeps both out of the server build.
+example-sdk-mode:
+    cargo run --manifest-path examples/sdk-mode/Cargo.toml
+
 # Run all services in parallel (API + worker + scheduler + mock-server)
 dev:
     #!/usr/bin/env bash

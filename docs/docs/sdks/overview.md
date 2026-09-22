@@ -46,7 +46,7 @@ The `smithy/smithy-build.json` file configures code generation for three languag
       "packageVersion": "0.1.0"
     },
     "haskell-client-codegen": {
-      "packageName": "SuperpositionSDK",
+      "packageName": "InvokrSDK",
       "edition": "2010",
       "version": "0.0.1",
       "service": "com.invokr#InvokrService"
@@ -76,7 +76,7 @@ The `smithy/smithy-build.json` file configures code generation for three languag
 |--------|--------|-------------|
 | `typescript-client-codegen` | TypeScript SDK | `invokr-sdk` |
 | `rust-client-codegen` | Rust SDK | `invokr_sdk` |
-| `haskell-client-codegen` | Haskell SDK | `SuperpositionSDK` |
+| `haskell-client-codegen` | Haskell SDK | `InvokrSDK` |
 | `openapi` | OpenAPI spec | — |
 
 ## Single Source of Truth
@@ -123,7 +123,7 @@ See [Rust SDK](./rust) for details.
 
 ### Haskell SDK
 
-- **Package**: `SuperpositionSDK`
+- **Package**: `InvokrSDK`
 - **Example**: `haskell-example/`
 - **Build**: `just test-haskell`
 

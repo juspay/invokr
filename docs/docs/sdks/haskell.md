@@ -9,7 +9,7 @@ The Haskell SDK is generated from Smithy IDL models via the `in.juspay.smithy.ha
 
 ## Package
 
-- **Package name**: `SuperpositionSDK`
+- **Package name**: `InvokrSDK`
 - **Smithy plugin**: `haskell-client-codegen`
 - **Example project**: `haskell-example/`
 
@@ -18,7 +18,7 @@ The Haskell SDK is generated from Smithy IDL models via the `in.juspay.smithy.ha
 ```json
 {
   "haskell-client-codegen": {
-    "packageName": "SuperpositionSDK",
+    "packageName": "InvokrSDK",
     "edition": "2010",
     "version": "0.0.1",
     "service": "com.invokr#InvokrService"

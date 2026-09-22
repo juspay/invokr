@@ -52,45 +52,76 @@ git add smithy/ crates/client/
 git commit
 ```
 
+## Runnable Example
+
+A complete, working program lives at [`examples/sdk-mode/`](https://github.com/juspay/invokr/tree/main/examples/sdk-mode)
+— it creates an endpoint, fires an IMMEDIATE job, polls the execution to a
+terminal state and prints every attempt. It is the Rust counterpart of
+`cli/src/test-immediate.ts` and `haskell-example/`, so the three SDKs can be
+read side by side.
+
+```bash
+just dev                            # API, worker, mock server
+./scripts/setup-dev-tenant.sh       # writes org/workspace ids to .env
+just example-sdk-mode
+```
+
 ## Client Setup
 
 ```rust
+use invokr_sdk::config::{Config, Token};
 use invokr_sdk::Client;
-use invokr_sdk::config::Config;
 
-// Build the client
-let config = Config::builder()
-    .endpoint_url("http://localhost:8080")
-    .bearer_token("dev-api-key")
-    .build();
-
-let client = Client::from_conf(config);
+let client = Client::from_conf(
+    Config::builder()
+        .behavior_version_latest()
+        .endpoint_url("http://localhost:8080")
+        .bearer_token(Token::new("dev-api-key", None))
+        .build(),
+);
 ```
+
+:::warning
+`behavior_version_latest()` is required. Without it the SDK **panics at client
+construction** — "A behavior major version must be set" — and nothing catches
+it at compile time. The alternative is enabling the crate's
+`behavior-version-latest` feature.
+:::
 
 ## Usage Example
 
 ```rust
-use invokr_sdk::Client;
-use invokr_sdk::types::TriggerType;
-use invokr_sdk::operation::create_job::CreateJobInput;
+use aws_smithy_types::Document;
+use invokr_sdk::types::TriggerTypeEnum;
+use std::collections::HashMap;
 
-let client = Client::from_conf(config);
+// `input` and `spec` are smithy `Document`s, not `serde_json::Value`, and
+// there is no `json!` macro for them.
+let input = Document::Object(HashMap::from([
+    ("order_id".to_string(), Document::String("order-1234".into())),
+    ("user_id".to_string(), Document::String("u_abc".into())),
+]));
 
-let response = client.create_job()
+let response = client
+    .create_job()
     .org_id("org_abc")
     .workspace_id("ws_def")
     .endpoint("send-welcome-email")
-    .trigger(TriggerType::Immediate)
+    .trigger(TriggerTypeEnum::Immediate)
     .idempotency_key("order-1234-welcome")
-    .input(serde_json::json!({
-        "order_id": "order-1234",
-        "user_id": "u_abc"
-    }))
+    .input(input)
     .send()
     .await?;
 
 println!("Job ID: {}", response.data.job_id);
 ```
+
+:::note
+`ListJobExecutions` returns a leaner `ExecutionResource` than `GetExecution`:
+`duration_ms`, `worker_id`, `endpoint` and `idempotency_key` are left unset on
+the list route. Poll the list for a terminal status, then call `GetExecution`
+for the full record.
+:::
 
 ## Fluent-Builder Pattern
 
