@@ -1,8 +1,8 @@
 /* Invokr demo.
-   One idea at a time. Each step owns the whole canvas and is drawn for that
-   idea alone, big enough to read from the back of the room. The vocabulary
-   below — panes, code, tables, one big number — is what the frames are built
-   from, so every page looks like the same thing. */
+   The machine stays on screen and the work moves through it: named regions,
+   edges between them, and a chip per job that travels. The panel on the left
+   is whatever is executing at that moment, built from the vocabulary at the
+   bottom of this file. */
 
 :root {
   --paper: #faf7f2;
@@ -158,107 +158,225 @@ main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 .pagehead p { margin: 0; color: var(--muted); font-size: 14.5px; max-width: 100ch; }
 .pagehead b { color: var(--ink-soft); font-weight: 600; }
 
-.body { flex: 1 1 auto; display: grid; grid-template-columns: 292px minmax(0, 1fr); min-height: 0; position: relative; }
+/* ─── the rail ────────────────────────────────────────────────────────────── */
 
-/* ─── the table of contents ───────────────────────────────────────────────── */
-
-.steps { margin: 0; padding: 2px 16px 18px 26px; list-style: none; overflow-y: auto; min-height: 0; border-right: 1px solid var(--rule-soft); }
-.step { position: relative; padding: 6px 0 6px 25px; color: var(--faint); transition: color 0.25s ease; }
-.step::before {
-  content: "";
-  position: absolute;
-  left: 4px; top: 12px;
-  width: 9px; height: 9px;
+.rail {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 2px 26px 12px;
+  list-style: none;
+  overflow-x: auto;
+}
+.rail .step { display: flex; align-items: center; gap: 7px; color: var(--faint); white-space: nowrap; padding: 3px 8px; border-radius: 999px; }
+.rail .step .dot {
+  width: 8px; height: 8px;
   border-radius: 50%;
   border: 1.5px solid var(--rule);
   background: var(--paper);
+  flex: 0 0 auto;
   transition: all 0.25s ease;
+}
+.rail .step .title { font-size: 12.5px; }
+.rail .step .at { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.rail .step + .step::before { content: ""; width: 15px; height: 1.5px; background: var(--rule-soft); margin: 0 6px; flex: 0 0 auto; }
+
+.rail .step.done { color: var(--ink-soft); }
+.rail .step.done .dot { border-color: var(--green); background: var(--green); }
+.rail .step.done + .step::before { background: #cfe3d6; }
+.rail .step.now { color: var(--ink); background: var(--teal-soft); }
+.rail .step.now .title { font-weight: 650; }
+.rail .step.now .dot { border-color: var(--teal); background: var(--teal); }
+.rail .step.bad .dot { border-color: var(--clay); background: var(--clay); }
+.rail .step.bad { color: var(--clay); }
+
+.body { flex: 1 1 auto; display: grid; grid-template-columns: 430px minmax(0, 1fr); min-height: 0; position: relative; }
+
+/* ─── what is executing right now ─────────────────────────────────────────── */
+
+/* Addressed by id, not by class: `.now` is also the rail's current-step
+   state, and a bare `.now` rule here would give that pill this padding. */
+#now {
+  min-width: 0; min-height: 0;
+  overflow-y: auto;
+  padding: 0 22px 24px 26px;
+  border-right: 1px solid var(--rule-soft);
+  display: flex; flex-direction: column; gap: 14px;
+}
+#now > * { animation: framein 0.25s var(--ease); }
+@keyframes framein { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* ─── the stage ───────────────────────────────────────────────────────────── */
+
+.stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+/* Above the boxes so an edge's label is never clipped by one, below the chips
+   so the work always reads on top. */
+.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.toks { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+
+.zones {
+  position: absolute;
+  inset: 0;
+  padding: 22px 30px 64px;
+  display: grid;
+  gap: 0 44px;
+  align-content: center;
   z-index: 1;
 }
-.step:not(:last-child)::after { content: ""; position: absolute; left: 8.25px; top: 21px; bottom: -6px; width: 1.5px; background: var(--rule-soft); }
-.step .title { font-size: 13.5px; line-height: 1.3; }
-.step .at { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-left: 7px; font-variant-numeric: tabular-nums; }
-.step .blurb { font-size: 12.5px; line-height: 1.45; color: var(--muted); margin-top: 3px; display: none; }
+/* Four columns, left to right, in the order the work travels. */
+.zones.flow { grid-template-columns: 216px minmax(240px, 1fr) 236px 196px; }
+/* Page 1 has no loop: three stores feeding one description. */
+.zones.build { grid-template-columns: 250px minmax(320px, 1fr); }
 
-.step.done { color: var(--ink-soft); }
-.step.done::before { border-color: var(--green); background: var(--green); }
-.step.done:not(:last-child)::after { background: #cfe3d6; }
+/* Two regions sharing one column — your service above pg_cron, or the three
+   stores on page 1. */
+.zones .stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
-.step.now { color: var(--ink); }
-.step.now .title { font-size: 15px; font-weight: 600; }
-.step.now::before { border-color: var(--teal); background: var(--teal); transform: scale(1.3); box-shadow: 0 0 0 4px rgba(15, 123, 108, 0.15); }
-.step.now .blurb { display: block; }
-
-.step.bad::before { border-color: var(--clay); background: var(--clay); }
-.step.bad .title { color: var(--clay); }
-
-/* Before a run, the whole journey reads at a glance. */
-body.idle .step .blurb { display: block; }
-body.idle .step { color: var(--ink-soft); }
-
-/* ─── the frame ───────────────────────────────────────────────────────────── */
-
-/* The frame is a stage, not a panel: whatever the step draws sits in the middle
-   of the canvas at the size of a slide. `safe center` so a tall frame still
-   scrolls from its top instead of losing it above the fold. */
-.frame {
+.zone {
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface);
   min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 44px 30px;
-  display: flex;
-  flex-direction: column;
-  justify-content: safe center;
-  align-items: center;
+  min-height: 118px;
+  display: flex; flex-direction: column;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
 }
-.frame > * { animation: framein 0.28s var(--ease); }
-@keyframes framein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.zone.dim { opacity: 0.45; }
+.zone.on { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(15, 123, 108, 0.1); }
+.zone.warm { border-color: #e8cfa4; box-shadow: 0 0 0 3px rgba(168, 105, 11, 0.08); }
+.zone-h {
+  padding: 9px 14px 8px;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.zone-h .name { font-size: 12.5px; font-weight: 650; color: var(--ink-soft); }
+.zone-h .sub { font-family: var(--mono); font-size: 10px; color: var(--faint); text-align: right; }
+.zone-b { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1 1 auto; }
+/* Where a chip lands. It is a real box so the layout reserves the space and
+   nothing it carries ever sits on top of a label. */
+.zone-b > .drop { flex: 1 1 auto; min-height: 46px; }
 
-.f { display: flex; flex-direction: column; gap: 18px; width: min(1160px, 100%); }
-.f-lead { font-size: 19px; line-height: 1.5; color: var(--ink-soft); max-width: 78ch; }
-.f-lead b { color: var(--ink); font-weight: 600; }
-.f-note { font-size: 15.5px; line-height: 1.55; color: var(--muted); max-width: 84ch; margin: 0; }
+/* A shelf is a named place inside the executions lane — the whole point of
+   page 2 is that "due" and "not yet" are the same table, not two queues. */
+.shelf { border: 1px dashed var(--rule); border-radius: 10px; background: var(--paper); padding: 7px 10px 9px; transition: border-color 0.3s ease, background 0.3s ease; }
+.shelf .cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--faint); text-transform: uppercase; }
+.shelf.hot { border-color: var(--teal); border-style: solid; background: var(--teal-soft); }
+.shelf.cool { border-color: #ecd7ad; background: var(--amber-soft); }
+
+/* A worker is a real process with a real id. */
+.slot { border: 1px solid var(--rule-soft); border-radius: 10px; background: var(--paper); padding: 7px 10px 9px; min-height: 108px; transition: border-color 0.3s ease, background 0.3s ease, opacity 0.3s ease; }
+.slot .drop, .shelf .drop { min-height: 62px; margin-top: 5px; }
+.slot .who { font-family: var(--mono); font-size: 11px; font-weight: 650; color: var(--ink-soft); }
+.slot .state { font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+.slot.on { border-color: var(--teal); background: var(--teal-soft); }
+.slot.skip { border-style: dashed; }
+.slot.skip .state { color: var(--muted); font-style: italic; }
+.slot.gone { opacity: 0.4; border-style: dashed; }
+.slot.gone .state { color: var(--clay); }
+
+.zone .line { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.zone .line b { color: var(--ink-soft); font-weight: 600; }
+.zone code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+.zone .verdict { font-family: var(--mono); font-size: 13px; font-weight: 650; }
+.zone .verdict.ok { color: var(--green); }
+.zone .verdict.bad { color: var(--clay); }
+.zone .verdict.hold { color: var(--amber); }
+
+/* ─── the work, as a chip that moves ──────────────────────────────────────── */
+
+.tok {
+  position: absolute;
+  left: 0; top: 0;
+  min-width: 96px;
+  max-width: 190px;
+  padding: 6px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--teal);
+  background: var(--surface);
+  box-shadow: 0 3px 10px rgba(35, 32, 28, 0.13);
+  /* 620ms is slow enough to follow across the board and still feel like it
+     went somewhere rather than faded. */
+  transition: transform 0.62s var(--ease), opacity 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+  will-change: transform;
+}
+.tok.placing { transition: none; }
+.tok .name { font-family: var(--mono); font-size: 11.5px; font-weight: 650; color: var(--teal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tok .note { font-size: 10.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tok.ok { border-color: var(--green); background: var(--green-soft); }
+.tok.ok .name { color: var(--green); }
+.tok.hold { border-color: var(--amber); background: var(--amber-soft); }
+.tok.hold .name { color: var(--amber); }
+.tok.bad { border-color: var(--clay); background: var(--clay-soft); }
+.tok.bad .name { color: var(--clay); }
+.tok.ghost { opacity: 0.4; box-shadow: none; }
+.tok.pulse { animation: tokpulse 0.7s var(--ease); }
+@keyframes tokpulse {
+  0% { box-shadow: 0 3px 10px rgba(35, 32, 28, 0.13), 0 0 0 0 rgba(15, 123, 108, 0.35); }
+  70% { box-shadow: 0 3px 10px rgba(35, 32, 28, 0.13), 0 0 0 12px rgba(15, 123, 108, 0); }
+  100% { box-shadow: 0 3px 10px rgba(35, 32, 28, 0.13), 0 0 0 0 rgba(15, 123, 108, 0); }
+}
+
+.tok .bar { display: block; width: 100%; margin: 4px 0 0; height: 4px; }
+
+/* ─── the edges between zones ─────────────────────────────────────────────── */
+
+.edges path { fill: none; stroke: var(--rule); stroke-width: 1.5; transition: stroke 0.25s ease, stroke-width 0.25s ease; }
+.edges path.act { stroke: var(--teal); stroke-width: 2.5; }
+.edges path.warm { stroke: var(--amber); stroke-width: 2.5; }
+.edges path.dashed { stroke-dasharray: 5 5; }
+.edges .flow { stroke-dasharray: 7 9; animation: crawl 0.9s linear infinite; }
+@keyframes crawl { to { stroke-dashoffset: -16; } }
+/* A paper-coloured halo keeps a label legible where it crosses a box. */
+.edges text { font-family: var(--sans); font-size: 10.5px; fill: var(--faint); paint-order: stroke; stroke: var(--paper); stroke-width: 4px; stroke-linejoin: round; }
+.edges text.act { fill: var(--teal); font-weight: 600; }
+.edges text.warm { fill: var(--amber); font-weight: 600; }
+.edges .head { fill: var(--rule); stroke: none; }
+.edges .head.act { fill: var(--teal); }
+.edges .head.warm { fill: var(--amber); }
+
+/* ─── the panel vocabulary ────────────────────────────────────────────────── */
+
+.f { display: flex; flex-direction: column; gap: 12px; }
+.f-lead { font-size: 15px; line-height: 1.45; color: var(--ink); font-weight: 600; margin: 0; }
+.f-note { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 0; }
 .f-note b { color: var(--ink); font-weight: 600; }
 .f-note.ok b { color: var(--green); }
-.f-note.bad b { color: var(--clay); }
+.f-note.bad { color: var(--clay); }
 .f-note.warn b { color: var(--amber); }
-.f-kicker { font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+.f-kicker { font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
 
-/* Side by side is the workhorse: what you sent against what came back, the
-   template against what actually went out, before against after. */
-.f-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
-.f-cols.tight { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.f-pane { border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.f-cols { display: flex; flex-direction: column; gap: 10px; }
+.f-pane { border: 1px solid var(--rule); border-radius: 11px; background: var(--surface); overflow: hidden; }
 .f-pane-h {
-  padding: 9px 14px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--rule-soft);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--faint);
   font-weight: 650;
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  display: flex; justify-content: space-between; gap: 8px;
 }
 .f-pane-h .meta { text-transform: none; letter-spacing: 0; font-family: var(--mono); font-weight: 500; color: var(--muted); }
 .f-pane-h .meta.ok { color: var(--green); }
 .f-pane-h .meta.bad { color: var(--clay); }
 .f-pane.ok { border-color: #cfe3d6; }
 .f-pane.bad { border-color: #e7cfc8; }
-.f-pane.dim { opacity: 0.6; }
+.f-pane.dim { opacity: 0.62; }
 
 pre, .f-code {
   margin: 0;
   font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.65;
+  font-size: 11.5px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   color: #3e3831;
 }
-.f-code { padding: 13px 16px; }
-.f-code.big { font-size: 15px; line-height: 1.85; }
+.f-code { padding: 10px 12px; }
+.f-code.big { font-size: 12.5px; line-height: 1.7; }
 .f-code em { font-style: normal; background: var(--amber-soft); color: var(--amber); border-radius: 4px; padding: 1px 4px; }
 .f-code s { text-decoration: none; color: var(--faint); }
 .f-code u { text-decoration: none; background: var(--teal-soft); color: var(--teal); border-radius: 4px; padding: 1px 4px; }
@@ -267,101 +385,42 @@ pre, .f-code {
 .tok-secret { color: var(--clay); }
 .tok-exec { color: var(--plum); }
 
-/* One number, when the number is the point. */
-.f-bigs { display: flex; gap: 40px; align-items: flex-end; }
-.f-big { display: flex; flex-direction: column; gap: 2px; }
-.f-big .v { font-family: var(--serif); font-size: 58px; line-height: 1; font-weight: 600; letter-spacing: -0.02em; }
-.f-big .k { font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+.f-bigs { display: flex; gap: 26px; align-items: flex-end; }
+.f-big { display: flex; flex-direction: column; gap: 1px; }
+.f-big .v { font-family: var(--serif); font-size: 38px; line-height: 1; font-weight: 600; letter-spacing: -0.02em; }
+.f-big .k { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
 .f-big.ok .v { color: var(--green); }
 .f-big.act .v { color: var(--teal); }
 .f-big.warn .v { color: var(--amber); }
 
-/* Rows, because the claim is that everything is a row. */
-.f-table { border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.f-table .cap { padding: 8px 14px; border-bottom: 1px solid var(--rule-soft); display: flex; align-items: baseline; gap: 10px; }
-.f-table .cap .tname { font-family: var(--mono); font-size: 12.5px; font-weight: 650; color: var(--ink-soft); }
-.f-table .cap .tnote { font-size: 12px; color: var(--faint); }
-.f-table table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13.5px; }
+.f-table { border: 1px solid var(--rule); border-radius: 11px; background: var(--surface); overflow: hidden; }
+.f-table .cap { padding: 7px 12px; border-bottom: 1px solid var(--rule-soft); display: flex; align-items: baseline; gap: 8px; }
+.f-table .cap .tname { font-family: var(--mono); font-size: 11.5px; font-weight: 650; color: var(--ink-soft); }
+.f-table .cap .tnote { font-size: 11px; color: var(--faint); }
+.f-table table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11.5px; }
 .f-table th {
   text-align: left;
-  font-size: 10px;
-  letter-spacing: 0.05em;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--faint);
   font-weight: 650;
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-bottom: 1px solid var(--rule-soft);
   white-space: nowrap;
 }
-.f-table td { padding: 9px 16px; border-bottom: 1px solid var(--rule-soft); color: var(--ink-soft); white-space: nowrap; }
+.f-table td { padding: 6px 12px; border-bottom: 1px solid var(--rule-soft); color: var(--ink-soft); white-space: nowrap; }
 .f-table tr:last-child td { border-bottom: 0; }
-.f-table .none { color: var(--faint); font-style: italic; font-family: var(--sans); font-size: 12.5px; }
+.f-table .none { color: var(--faint); font-style: italic; font-family: var(--sans); font-size: 11.5px; }
 
-.st { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; background: var(--sunk); color: var(--muted); }
+.st { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; background: var(--sunk); color: var(--muted); }
 .st.running, .st.polling { background: var(--teal-soft); color: var(--teal); }
 .st.waiting, .st.retrying, .st.queued, .st.pending { background: var(--amber-soft); color: var(--amber); }
 .st.success, .st.active { background: var(--green-soft); color: var(--green); }
 .st.failed, .st.cancelled, .st.retired { background: var(--clay-soft); color: var(--clay); }
 
-/* A countdown you can watch, because "the row is the timer" is the claim. */
-.bar { display: inline-block; width: 120px; height: 7px; border-radius: 4px; background: var(--sunk); overflow: hidden; vertical-align: middle; margin-left: 10px; }
+.bar { display: inline-block; width: 100%; height: 6px; border-radius: 4px; background: var(--sunk); overflow: hidden; vertical-align: middle; }
 .bar i { display: block; height: 100%; background: var(--amber); transition: width 0.45s linear; }
-
-/* Two boxes and an arrow, for the frames that are about who called whom. */
-.f-flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
-.f-box { flex: 1 1 240px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); padding: 13px 16px; min-width: 0; }
-.f-box.on { border-color: var(--teal); background: var(--teal-soft); }
-.f-box.ok { border-color: #cfe3d6; background: var(--green-soft); }
-.f-box.dim { opacity: 0.5; }
-.f-box .who { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
-.f-box .sub { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
-.f-arrow { flex: 0 0 auto; align-self: center; padding: 0 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.f-arrow .glyph { font-size: 18px; color: var(--faint); line-height: 1; }
-.f-arrow .cap { font-size: 11px; color: var(--faint); white-space: nowrap; }
-.f-arrow.act .glyph, .f-arrow.act .cap { color: var(--teal); }
-
-/* The ladder of calls on page 3. */
-.ladder { border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.ladder-h { display: flex; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--rule-soft); gap: 12px; }
-.ladder-h .who { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
-.ladder-h .who.right { margin-left: auto; }
-.ladder-h .who i { font-style: normal; font-weight: 400; color: var(--faint); font-size: 11.5px; margin-left: 6px; }
-.rungs { padding: 10px 0 14px; position: relative; max-height: 100%; overflow-y: auto; }
-.rungs::before, .rungs::after { content: ""; position: absolute; top: 2px; bottom: 2px; width: 1px; background: var(--rule); }
-.rungs::before { left: 70px; }
-.rungs::after { right: 170px; }
-
-.rung { display: grid; grid-template-columns: 70px minmax(0, 1fr) 170px; align-items: center; padding: 1px 0; opacity: 0.34; transition: opacity 0.3s ease; }
-.rung.live { opacity: 1; }
-.rung .at { font-family: var(--mono); font-size: 10.5px; color: var(--faint); text-align: right; padding-right: 10px; font-variant-numeric: tabular-nums; }
-.rung .wirebox { position: relative; padding: 0 10px; height: 30px; }
-.rung .label { position: absolute; left: 0; right: 0; top: 0; text-align: center; font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rung .label b { font-family: var(--mono); font-size: 11.5px; font-weight: 650; color: var(--teal); }
-.rung .label .code { font-family: var(--mono); font-size: 11.5px; font-weight: 650; }
-.rung .label .code.ok { color: var(--green); }
-.rung .label .code.bad { color: var(--clay); }
-.rung .line { position: absolute; left: 0; right: 0; top: 20px; height: 1px; background: var(--rule); }
-.rung .line::after { content: ""; position: absolute; top: -3.5px; border: 4px solid transparent; }
-.rung.out .line::after { right: -1px; border-left-color: var(--faint); border-right-width: 0; }
-.rung.in .line::after { left: -1px; border-right-color: var(--faint); border-left-width: 0; }
-.rung.in .line { background: none; box-shadow: inset 0 1px 0 var(--rule); }
-.rung.live.act .line { background: var(--teal); }
-.rung.live.act.out .line::after { border-left-color: var(--teal); }
-.rung.live.act.in .line { background: none; box-shadow: inset 0 1px 0 var(--teal); }
-.rung.live.act.in .line::after { border-right-color: var(--teal); }
-.rung.live.ok .line { background: var(--green); }
-.rung.live.ok.out .line::after { border-left-color: var(--green); }
-.rung.live.ok.in .line { background: none; box-shadow: inset 0 1px 0 var(--green); }
-.rung.live.ok.in .line::after { border-right-color: var(--green); }
-.rung.live.warn .line { background: var(--amber); }
-.rung.live.warn.in .line { background: none; box-shadow: inset 0 1px 0 var(--amber); }
-.rung.live.warn.in .line::after { border-right-color: var(--amber); }
-.rung.live.warn.out .line::after { border-left-color: var(--amber); }
-.rung .tail { font-size: 11.5px; color: var(--muted); padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rung.gap { opacity: 1; }
-.rung.gap .wirebox { height: 24px; }
-.rung.gap .label { top: 3px; font-size: 12px; color: var(--amber); font-style: italic; }
-.rung.gap .line { display: none; }
 
 /* ─── the wire drawer ─────────────────────────────────────────────────────── */
 

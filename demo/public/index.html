@@ -9,9 +9,12 @@
 </head>
 <body>
 
-<!-- One idea at a time. Each step owns the whole canvas and is drawn for that
-     idea alone; the list on the left is a table of contents, not the
-     explanation. Real data underneath — the frames are fed by a live run. -->
+<!-- The whole machine stays on screen and the work moves through it. A job is a
+     chip with its real id on it; it is written into the executions lane, a
+     worker takes it, it flies to the target, and on a retry it flies back to
+     the lane with the clock running. The panel on the left is whatever is
+     actually executing at that moment — the SQL, the resolved request, the
+     rows. Nothing here is drawn in advance. -->
 
 <header>
   <span class="brand">Invokr</span>
@@ -33,17 +36,25 @@
 <div class="takes" id="takes"></div>
 
 <main>
-  <!-- The question the room is already holding, and its one-line answer. -->
   <div class="pagehead">
     <h1 id="claim"></h1>
     <p id="subclaim"></p>
   </div>
 
-  <div class="body">
-    <ol class="steps" id="steps"></ol>
+  <!-- Where we are, as one line. The whole journey is in the tooltip-free
+       strip so nobody has to hold it in their head. -->
+  <ol class="rail" id="rail"></ol>
 
-    <!-- One frame. It is replaced wholesale each step. -->
-    <section class="frame" id="frame"></section>
+  <div class="body">
+    <!-- What is executing right now. -->
+    <aside class="now" id="now"></aside>
+
+    <!-- The machine. Same regions every step; the work moves between them. -->
+    <section class="stage" id="stage">
+      <svg class="edges" id="edges" aria-hidden="true"></svg>
+      <div class="zones" id="zones"></div>
+      <div class="toks" id="toks"></div>
+    </section>
 
     <!-- Evidence, on request: both sides of every call. -->
     <aside class="drawer" id="drawer">

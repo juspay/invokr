@@ -5,7 +5,7 @@ Two artifacts for the 30-minute session:
 | | |
 |---|---|
 | **Deck** | `demo/public/deck.html` — 14 slides plus an unshown appendix. Self-contained: no network, no build, opens from a file path |
-| **Demo site** | `demo/public/index.html` — three pages, one frame per step, firing real jobs at a real Invokr and served by `demo/server.mjs`, with the receiving service reporting what it did |
+| **Demo site** | `demo/public/index.html` — three pages, one board per page with the work moving through it, firing real jobs at a real Invokr and served by `demo/server.mjs`, with the receiving service reporting what it did |
 
 The narrative and the timing budget live in the design doc. This file is about
 running the thing.
@@ -71,38 +71,49 @@ demo dialling the fake bank; the page says so under the spec.
 
 ## The screen
 
-One idea at a time. Each step owns the whole canvas and is drawn for that idea
-alone; the list on the left is a table of contents, not the explanation.
+The machine stays on screen and the work moves through it. A job is a **chip**
+with its real id on it; the regions it travels between are the real ones.
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│ Invokr   ① Set it up  ② Short tasks  ③ Long-running   ● api ● workers  │  header
-├────────────────────────────────────────────────────────────────────────┤
-│  One task, end to end · Same name, two teams · Not just HTTP           │  takes
-├────────────────────────────────────────────────────────────────────────┤
-│  A job is a row. Nothing is counting down.                             │  claim
-├──────────────────┬─────────────────────────────────────────────────────┤
-│ ● why a row      │                                                     │
-│ ● you ask        │            the frame for this step                  │
-│ ◉ exactly one    │        drawn for this one idea, nothing else        │
-│   worker takes it│                                                     │
-│ ○ it calls out   │                                                     │
-├──────────────────┴─────────────────────────────────────────────────────┤
-│ ◀ ▶ auto   5/8      mandate ▭  when ▾  failures ▭      wire 3   Fire it │  console
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Invokr   ① Set it up  ② Short tasks  ③ Long-running       ● api ● workers  │
+├────────────────────────────────────────────────────────────────────────────┤
+│  A job is a row.   run_at is a column.                                     │
+│  ● POST /v1/jobs ─ ● two rows ─ ◉ one worker wins ─ ○ the call goes out     │  rail
+├─────────────────┬──────────────────────────────────────────────────────────┤
+│ SELECT …        │  ┌ your ─┐   ┌ executions ──┐   ┌ workers ┐   ┌ aarokya ┐│
+│  FROM executions│  │service│──▶│ due now      │──▶│ 62e359  │──▶│  200    ││
+│  WHERE status = │  └───────┘   │  ▸MND-8842   │   │ ▸chip   │   │ terminal││
+│    'QUEUED'     │              │ not yet      │   │ 8f21c4  │   └─────────┘│
+│  FOR UPDATE     │              │ finished     │   │ skipped │        │     │
+│  SKIP LOCKED    │              └──────────────┘   └─────────┘        │     │
+│                 │                    ▲──── retry · run_at + backoff ──┘     │
+├─────────────────┴──────────────────────────────────────────────────────────┤
+│ ◀ ▶ auto  5/7     mandate ▭  when ▾  failures ▭          wire 3     Fire it │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Every frame is built from the same small vocabulary — a lead line, two panes
-side by side, a database table, one big number, a call ladder — so the room
-learns the visual language once and then only has to read the content.
+Four regions in the order the work travels, and **one edge that goes back the
+way it came**. The chip is written into `executions`, a worker takes it, it
+goes out, and it comes back — to `finished`, or to `not yet` with the backoff
+running on its face. That back edge is the mechanism: a retry, a cron tick and
+a long-running poll are all the same circuit, walked again.
 
-Evidence stays behind the **wire** button rather than on screen: both sides of
-every call Invokr made, and Aarokya's own log of what it did. Press `W` when
-somebody asks to see it.
+The panel on the left is whatever is **executing at that moment** — the claim
+query, the resolved request, the `attempts` rows, the `polls` rows. The rail
+above says where you are.
 
-At rest, before you press anything, the first frame already shows **the request
-you are about to send**, built from whatever the fields say. Change a field and
-the JSON changes with it. There is no preamble to get through.
+Everything on the board is read back from the running system: the worker ids
+are the processes `just demo` started, the winner is the one Invokr wrote on
+the execution row, and the loser's *skipped it — locked* is what `SKIP LOCKED`
+actually did.
+
+Evidence stays behind the **wire** button: both sides of every call Invokr
+made, and Aarokya's own log of what it did. Press `W` when somebody asks.
+
+At rest, before you press anything, the machine is already drawn and the chip
+is sitting at your service, with the request you are about to send in the left
+panel. Change a field and both change with it.
 
 ### The controller
 
@@ -128,14 +139,17 @@ to read.
 
 ## 1 · Set it up
 
-Four frames, four `POST`s, and the endpoint exists.
+No loop on this page: three stores feed one description of a call. The board is
+`configs`, `secrets` and `payload_specs` on the left with an edge each into the
+`endpoints` row on the right. Every `201` lands as a chip in its store, and the
+placeholder it satisfies lights in the endpoint's template as it does.
 
-| | The frame | What the room learns |
+| | Step | What the room learns |
 |---|---|---|
 | 1 | **config** | the values that change between environments, as data |
 | 2 | **secret** | what you send, then what you can read back — there is no `value` field, and no read path for it at all |
 | 3 | **payload spec** | the JSON Schema beside a real job refused `422` for a missing `mandate_id` |
-| 4 | **endpoint** | the whole call as one template, with `▲` arrows naming which namespace each placeholder resolves from |
+| 4 | **endpoint** | the three stores feeding one template — nothing is resolved until a job fires |
 
 ## 2 · Short tasks
 
@@ -151,29 +165,32 @@ One task from trigger to end, with everything that shapes it under your hand:
 | **failures** | how many times Aarokya refuses before it works |
 | **max tries** | the job's own `max_attempts`, overriding the endpoint's |
 
-The journey changes shape with the trigger: pick `on a schedule` and the
-contents become nine entries, with *pg_cron owns it*, *a row nobody inserted*
-and *cancel when it is terminal* in place of *run_at is a column*.
+The journey changes shape with the trigger: pick `on a schedule` and the rail
+becomes nine steps, with *pg_cron owns it*, *a row nobody inserted* and *cancel
+when it is terminal* in place of *run_at is a column*. A second region appears
+under *your service* — `pg_cron` — and the enqueue edge moves to it, because on
+that path nothing of ours inserts the row.
 
 Ask for failures and the run switches to `aarokya-mandate-sync-impatient` — the
 same call with retries measured in seconds rather than the minutes the real
 policy uses — and says so on screen, so nobody thinks Invokr retries that fast
-by default.
+by default. **Set `failures` to 2 and watch the chip go round the loop twice**:
+out to a worker, out to Aarokya, back to *not yet* amber, and round again. The
+`attempts` table on the left grows a row each time, all three carrying one key.
 
-Each frame carries one claim and nothing else:
-
-| Step | The frame | The claim |
+| Step | Where the chip goes | The claim |
 |---|---|---|
-| `POST /v1/jobs` | the body, beside what is *not* in it | one POST naming an endpoint **is** the integration |
-| Two rows, then 201 | the `jobs` and `executions` rows, and how long the API took | both existed **before the POST returned** |
-| `run_at` is a column | the `executions` row with the countdown **in the `run_at` cell** | nothing is counting down |
-| One worker wins | two workers, one database, the `SKIP LOCKED` query | no leader election, no lock service, no coordination |
-| The call goes out | what you registered, beside what went out | resolved **now**, not at registration |
-| Every try is a row | the response, and every attempt with its code, duration and key | three tries, **one key** |
-| The record | attempts and status, and the three `GET`s that read them | no log scraping, no agent, no separate store |
+| `POST /v1/jobs` | sitting at *your service* | one POST naming an endpoint **is** the integration |
+| Two rows, then 201 | into `due now` | it existed **before the POST returned** |
+| `run_at` is a column | into `not yet`, with the clock on its face | nothing is counting down |
+| One worker wins | into the winner's box; the other says *skipped it — locked* | no leader election, no lock service, no coordination |
+| The call goes out | stays, while the call edge fires | resolved **now**, not at registration |
+| Every try is a row | back to `finished`, or to `not yet` for the next try | three tries, **one key** |
+| The record | resting in `finished` | no log scraping, no agent, no separate store |
 
-**Kill a worker** and **Add a worker** appear on the `run_at` frame and nowhere
-else, because that is the frame where killing one proves something.
+**Kill a worker** and **Add a worker** appear on the `run_at` step and nowhere
+else, because that is the step where killing one proves something: the chip
+does not move, and the job still goes out when a fresh worker arrives.
 
 Two more takes sit on the same page. **Same name, two teams** fires the same
 endpoint name into both workspaces and lets Aarokya's own log be the proof —
@@ -183,27 +200,21 @@ and a Redis Stream, and says plainly which brokers are not running here.
 
 ## 3 · Long-running
 
-When the other side answers `202` and keeps working, the interesting thing is
-**who called whom, in what order, and how long apart**. So this page's frames
-are a two-rail ladder with time running downwards — the rungs still to come are
-greyed rather than hidden, so the room can see where it is going:
+Same board, same loop — which is the point. The middle lane's second shelf is
+labelled `waiting · next check` instead of `not yet`, and the chip goes round
+the circuit **once per check**: out of the lane, to a worker, to Aarokya, back
+to the lane. Aarokya says `202 / still working`, the back edge says
+`Retry-After 2.0s`, and the `polls` table on the left grows a row.
 
-```
-        INVOKR                                   AAROKYA
-  142ms  ├────────── POST /async/start ─────────────▶│  here is the work
-  149ms  │◀───────── 202  Location: /async/status/… ─┤  accepted, still working
-         │  parked · WAITING — nothing held open      │
-  1.2s   ├────────── GET /async/status/… ───────────▶│  check 1
-  1.2s   │◀───────── 202  still working ─────────────┤  Retry-After 2s
-  3.3s   ├────────── GET /async/status/… ───────────▶│  check 2
-  ⋮
-  5.2s   │◀───────── POST /v1/callbacks/…/complete ──┤  Aarokya calls us
-```
+A callback is the same edge with a different label — Aarokya calling us, going
+straight into the row — so *poll* and *callback* are visibly two ways round one
+machine rather than two features.
 
-Each rung is a real row: the first pair from `attempts`, every check from the
-`polls` table with its own `status_code` and `retry_after_ms`, and the callback
-from Aarokya's own log. The console is the `async` block as a form — edit it and
-the next run is sent with what you typed:
+Between checks, both workers read *asking for due rows*. Nothing is holding the
+execution, which is the claim the page exists to make.
+
+The console is the `async` block as a form — edit it and the next run is sent
+with what you typed:
 
 | Field | What it is |
 |---|---|
@@ -213,11 +224,11 @@ the next run is sent with what you typed:
 | **Retry-After (s)** | what Aarokya asks for between checks — Invokr honours it over the backoff |
 | **calls back after (s)** | in callback mode, how long Aarokya works before POSTing `/v1/callbacks/…/complete` |
 
-Two frames carry the whole page. *WAITING* is one table row and one line —
+Two steps carry the whole page. *WAITING* is one table row and one line —
 **nothing of yours is waiting**: no open socket, no blocked thread, no in-memory
 state. And the last is two numbers side by side, attempts against polls, under
-**polls are not attempts** — ten check-ins and the execution still has one
-attempt on the record.
+**polls are not attempts** — ten trips round the loop and the execution still
+has one attempt on the record.
 
 ---
 
@@ -283,6 +294,23 @@ honest source for "what key actually went out" is the side that received it.
 Aarokya remembers how many times it has been asked about each mandate, so every
 run resets that first. If you are testing by hand, `POST /_polls/reset` clears
 it.
+
+### Two teams needs the scoped caches
+
+**Same name, two teams** only tells the truth on a build that has
+`fix(worker): scope the config and secret caches to the workspace schema`. One
+worker serves every active workspace from one cache; keyed on the object's name
+alone, whichever workspace warms `aarokya-config` first serves its values to the
+other. Run the take against a build without it and Aarokya's log names the same
+team twice — the demo faithfully showing the bug.
+
+That fix is on this branch. It is **not** on `main`, and it is not on
+`feat/long-running-jobs`, which also added two call sites that read the secret
+cache unscoped — `crates/worker/src/poll.rs`, on the poll path and the
+stop-`DELETE` path, where `process_poll` already takes `schema_name` and
+discards it with a `let _ =`. Merging the two branches as they stand would
+leave the long-running paths handing one tenant's decrypted credential to
+another's dispatch. Worth fixing in that branch before the merge.
 
 ### Not just HTTP, and the brokers
 
