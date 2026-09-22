@@ -542,430 +542,7 @@
 
                 <section
                     class="slide wide"
-                    data-notes="~60s. Four POSTs, and the payload on the right is the whole point — it references the other three by name: payload_spec, config, and the secret by template inside the spec. Everything in double braces is resolved at execution time, not at registration. A secret's value is write-only; you can list the names, you can never read a value back. | running total 3:30"
-                >
-                    <div class="eyebrow">what invokr is</div>
-                    <h2>Register once</h2>
-
-                    <div
-                        class="cols"
-                        style="
-                            grid-template-columns: 0.82fr 1.18fr;
-                            gap: 34px;
-                            margin-top: 22px;
-                        "
-                    >
-                        <div>
-                            <table style="font-size: 15.5px">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 46%">POST</th>
-                                        <th>stores</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td class="m">/v1/payload-specs</td>
-                                        <td>
-                                            a JSON schema the job input is
-                                            checked against
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="m">/v1/configs</td>
-                                        <td>named values, not secret</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="m">/v1/secrets</td>
-                                        <td>
-                                            named values, encrypted, write-only
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="m">/v1/endpoints</td>
-                                        <td>
-                                            the call, referencing the three
-                                            above
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div>
-                            <pre
-                                style="font-size: 12.5px"
-                            ><span class="c">POST /v1/endpoints</span>
-{
-  <span class="f">"name"</span>: <span class="s">"send-welcome-email"</span>,
-  <span class="f">"type"</span>: <span class="s">"HTTP"</span>,
-  <span class="f">"payload_spec"</span>: <span class="s">"order-input"</span>,
-  <span class="f">"config"</span>: <span class="s">"email-service"</span>,
-  <span class="f">"spec"</span>: {
-    <span class="f">"url"</span>: <span class="s">"{{config.api_base_url}}/emails/welcome"</span>,
-    <span class="f">"method"</span>: <span class="s">"POST"</span>,
-    <span class="f">"headers"</span>: { <span class="f">"Authorization"</span>: <span class="s">"Bearer {{secret.email_api_key}}"</span> },
-    <span class="f">"body_template"</span>: { <span class="f">"order_id"</span>: <span class="s">"{{input.order_id}}"</span> }
-  },
-  <span class="f">"retry_policy"</span>: { <span class="f">"max_attempts"</span>: 3, <span class="f">"backoff"</span>: <span class="s">"exponential"</span> }
-}</pre>
-                        </div>
-                    </div>
-                </section>
-
-                <section
-                    class="slide wide"
-                    data-notes="~75s. Three presses. Start on the immediate payload and read it. Space — change one value, add one field, it is a delayed job. Space — change the value again, add two fields, it is a cron job. That is the whole difference; there is no second API and no second concept. The idempotency key is required for DELAYED, optional for IMMEDIATE, and for CRON the tick synthesises its own per fire. | running total 4:30"
-                >
-                    <div class="eyebrow">what invokr is</div>
-                    <h2>Then invoke</h2>
-
-                    <div
-                        class="cols"
-                        style="
-                            grid-template-columns: 1.4fr 0.8fr 0.8fr;
-                            gap: 26px;
-                            margin-top: 22px;
-                        "
-                    >
-                        <div class="panel" style="padding: 18px 20px">
-                            <h3>immediate</h3>
-                            <pre
-                                style="
-                                    font-size: 12.5px;
-                                    background: none;
-                                    border: 0;
-                                    padding: 0;
-                                "
-                            ><span class="c">POST /v1/jobs</span>
-{
-  <span class="f">"endpoint"</span>: <span class="s">"send-welcome-email"</span>,
-  <span class="f">"trigger"</span>: <span class="s">"IMMEDIATE"</span>,
-  <span class="f">"idempotency_key"</span>: <span class="s">"order-1234"</span>,
-  <span class="f">"input"</span>: { <span class="f">"order_id"</span>: <span class="s">"o-1234"</span> }
-}</pre>
-                        </div>
-
-                        <div class="panel reveal" style="padding: 18px 20px">
-                            <h3>+ one field &nbsp;→&nbsp; delayed</h3>
-                            <pre
-                                style="
-                                    font-size: 12.5px;
-                                    background: none;
-                                    border: 0;
-                                    padding: 0;
-                                "
-                            ><span class="f">"trigger"</span>: <span class="s">"DELAYED"</span>,
-<span class="f">"run_at"</span>:
-  <span class="s">"2026-03-20T18:00:00Z"</span></pre>
-                        </div>
-
-                        <div class="panel reveal" style="padding: 18px 20px">
-                            <h3>+ two more &nbsp;→&nbsp; cron</h3>
-                            <pre
-                                style="
-                                    font-size: 12.5px;
-                                    background: none;
-                                    border: 0;
-                                    padding: 0;
-                                "
-                            ><span class="f">"trigger"</span>: <span class="s">"CRON"</span>,
-<span class="f">"cron"</span>: <span class="s">"0 9 * * MON"</span>,
-<span class="f">"timezone"</span>: <span class="s">"Asia/Kolkata"</span></pre>
-                        </div>
-                    </div>
-                </section>
-
-                <section
-                    class="slide wide"
-                    data-notes="~45s. Same endpoint, same call, and the only difference is whether a run exists when the POST returns. Immediate and delayed both come back with an execution id you can poll straight away. A cron create comes back with next_run_at and no execution at all — that is the one to say out loud, because it is what the next slide explains. | running total 5:15"
-                >
-                    <div class="eyebrow">what invokr is</div>
-                    <h2>What the create writes</h2>
-
-                    <table style="font-size: 18px; margin-top: 26px">
-                        <thead>
-                            <tr>
-                                <th style="width: 20%">trigger</th>
-                                <th style="width: 26%"><code>jobs</code></th>
-                                <th><code>executions</code></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class="m">IMMEDIATE</td>
-                                <td>one row</td>
-                                <td>one row — <code>run_at = now()</code></td>
-                            </tr>
-                            <tr>
-                                <td class="m">DELAYED</td>
-                                <td>one row</td>
-                                <td>
-                                    one row — <code>run_at</code> is what you
-                                    sent
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="m">CRON</td>
-                                <td>one row</td>
-                                <td style="color: #2fd4b6">
-                                    none — pg_cron inserts one per tick
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <div
-                        class="kicker-note"
-                        style="margin-top: 28px; max-width: none"
-                    >
-                        Both writes happen in one transaction, before the API
-                        answers.
-                    </div>
-                </section>
-
-                <section
-                    class="slide wide"
-                    data-notes="~90s. Walk it left to right. The POST writes two rows in one transaction — the jobs row and a row in pg_cron's own table. After that no Invokr process is involved: pg_cron polls its own table, and when a schedule is due it runs the stored command, which inserts one execution. Worth having ready: that command re-reads the jobs row and is guarded on the job still being ACTIVE and inside its start/end window, so a cancelled job ticks into a no-op, and it ends with ON CONFLICT DO NOTHING. | running total 6:45"
-                >
-                    <div class="eyebrow">what invokr is</div>
-                    <h2>There is no scheduler</h2>
-
-                    <svg
-                        viewBox="0 0 1120 320"
-                        style="width: 100%; height: auto; margin-top: 24px"
-                    >
-                        <defs>
-                            <marker
-                                id="sa"
-                                viewBox="0 0 10 10"
-                                refX="9"
-                                refY="5"
-                                markerWidth="6"
-                                markerHeight="6"
-                                orient="auto-start-reverse"
-                            >
-                                <path
-                                    d="M 0 0 L 10 5 L 0 10 z"
-                                    fill="#2c3d52"
-                                />
-                            </marker>
-                            <marker
-                                id="sg"
-                                viewBox="0 0 10 10"
-                                refX="9"
-                                refY="5"
-                                markerWidth="6"
-                                markerHeight="6"
-                                orient="auto-start-reverse"
-                            >
-                                <path
-                                    d="M 0 0 L 10 5 L 0 10 z"
-                                    fill="#2fd4b6"
-                                />
-                            </marker>
-                        </defs>
-                        <g font-family="Inter, sans-serif">
-                            <rect
-                                x="0"
-                                y="112"
-                                width="196"
-                                height="66"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="20"
-                                y="140"
-                                fill="#e9eff7"
-                                font-size="14"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                POST /v1/jobs
-                            </text>
-                            <text
-                                x="20"
-                                y="162"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                trigger: CRON
-                            </text>
-
-                            <g fill="none" stroke="#2c3d52" stroke-width="2">
-                                <path d="M 200 145 C 228 145, 232 66, 258 66" />
-                                <path
-                                    d="M 200 145 C 228 145, 232 224, 258 224"
-                                />
-                            </g>
-                            <path
-                                d="M 258 66 L 274 66"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#sa)"
-                            />
-                            <path
-                                d="M 258 224 L 274 224"
-                                stroke="#2c3d52"
-                                stroke-width="2"
-                                marker-end="url(#sa)"
-                            />
-
-                            <rect
-                                x="278"
-                                y="26"
-                                width="310"
-                                height="80"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="300"
-                                y="52"
-                                fill="#cbd6e4"
-                                font-size="15"
-                                font-weight="600"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                jobs
-                            </text>
-                            <text
-                                x="300"
-                                y="74"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                cron_expression 0 9 * * MON
-                            </text>
-                            <text
-                                x="300"
-                                y="94"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                cron_timezone Asia/Kolkata
-                            </text>
-
-                            <rect
-                                x="278"
-                                y="184"
-                                width="310"
-                                height="80"
-                                rx="9"
-                                fill="#111823"
-                                stroke="#243144"
-                                stroke-width="1.5"
-                            />
-                            <text
-                                x="300"
-                                y="210"
-                                fill="#cbd6e4"
-                                font-size="15"
-                                font-weight="600"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                cron.job
-                            </text>
-                            <text
-                                x="300"
-                                y="232"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                schedule 0 9 * * MON
-                            </text>
-                            <text
-                                x="300"
-                                y="252"
-                                fill="#64748b"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                command INSERT INTO executions …
-                            </text>
-
-                            <path
-                                d="M 330 184 C 330 150, 420 150, 420 182"
-                                fill="none"
-                                stroke="#2fd4b6"
-                                stroke-width="2"
-                                marker-end="url(#sg)"
-                            />
-                            <text x="446" y="166" fill="#2fd4b6" font-size="13">
-                                pg_cron polls its own table
-                            </text>
-
-                            <path
-                                d="M 592 224 L 700 224"
-                                stroke="#2fd4b6"
-                                stroke-width="2"
-                                marker-end="url(#sg)"
-                            />
-                            <text x="600" y="212" fill="#2fd4b6" font-size="13">
-                                when it is due
-                            </text>
-
-                            <rect
-                                x="704"
-                                y="184"
-                                width="344"
-                                height="80"
-                                rx="9"
-                                fill="#0f2226"
-                                stroke="#2fd4b6"
-                                stroke-width="2"
-                            />
-                            <text
-                                x="726"
-                                y="210"
-                                fill="#2fd4b6"
-                                font-size="15"
-                                font-weight="600"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                executions
-                            </text>
-                            <text
-                                x="726"
-                                y="232"
-                                fill="#7fb8ae"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                status QUEUED
-                            </text>
-                            <text
-                                x="726"
-                                y="252"
-                                fill="#7fb8ae"
-                                font-size="12.5"
-                                font-family="ui-monospace, Menlo, monospace"
-                            >
-                                run_at now()
-                            </text>
-                        </g>
-                    </svg>
-
-                    <div
-                        class="kicker-note"
-                        style="margin-top: 22px; max-width: none"
-                    >
-                        The POST writes both rows in one transaction. Everything
-                        after that happens inside the database.
-                    </div>
-                </section>
-
-                <section
-                    class="slide wide"
-                    data-notes='~45s. Three options, and the answer to "how do I pick" is the line at the bottom: you set it once as "type" on the endpoint. POST /v1/jobs looks the endpoint up and copies that type onto the job and onto every execution — a job never chooses its own transport. HTTP is always compiled in; Kafka and Redis are cargo features, so a worker built without them refuses that endpoint type rather than dropping the job. The Redis arm is an XADD with optional MAXLEN trimming. There is a fourth type, INTERNAL, which is Invokr&apos;s own cleanup job and the public API refuses to create one. | running total 8:30'
+                    data-notes='~45s. Three options, and the answer to "how do I pick" is the line at the bottom: you set it once as "type" on the endpoint. POST /v1/jobs looks the endpoint up and copies that type onto the job and onto every execution — a job never chooses its own transport. HTTP is always compiled in; Kafka and Redis are cargo features, so a build without them refuses that endpoint type rather than dropping the job. The Redis arm is an XADD with optional MAXLEN trimming. There is a fourth type, INTERNAL, which is Invokr&apos;s own cleanup job and the public API refuses to create one. | running total 8:30'
                 >
                     <div class="eyebrow">what invokr is</div>
                     <h2>Three ways to deliver</h2>
@@ -1008,7 +585,7 @@
                                 font-size="17"
                                 font-weight="600"
                             >
-                                worker
+                                Invokr
                             </text>
 
                             <g fill="none" stroke="#2c3d52" stroke-width="2">
@@ -1133,6 +710,663 @@
                         Chosen once, as <code>"type"</code> on
                         <code>POST /v1/endpoints</code>. Every job on that
                         endpoint inherits it.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. Four POSTs, and the payload on the right is the whole point — it references the other three by name: payload_spec, config, and the secret by template inside the spec. Everything in double braces is resolved at execution time, not at registration. A secret's value is write-only; you can list the names, you can never read a value back. | running total 3:30"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Register once</h2>
+
+                    <div
+                        class="cols"
+                        style="
+                            grid-template-columns: 0.82fr 1.18fr;
+                            gap: 34px;
+                            margin-top: 22px;
+                        "
+                    >
+                        <div>
+                            <table style="font-size: 15.5px">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 46%">POST</th>
+                                        <th>stores</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="m">/v1/payload-specs</td>
+                                        <td>
+                                            a JSON schema the job input is
+                                            checked against
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="m">/v1/configs</td>
+                                        <td>named values, not secret</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="m">/v1/secrets</td>
+                                        <td>
+                                            named values, encrypted, write-only
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="m">/v1/endpoints</td>
+                                        <td>
+                                            the call, referencing the three
+                                            above
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div>
+                            <pre
+                                style="font-size: 12.5px"
+                            ><span class="c">POST /v1/endpoints</span>
+{
+  <span class="f">"name"</span>: <span class="s">"send-welcome-email"</span>,
+  <span class="f">"type"</span>: <span class="s">"HTTP"</span>,
+  <span class="f">"payload_spec"</span>: <span class="s">"order-input"</span>,
+  <span class="f">"config"</span>: <span class="s">"email-service"</span>,
+  <span class="f">"spec"</span>: {
+    <span class="f">"url"</span>: <span class="s">"{{config.api_base_url}}/emails/welcome"</span>,
+    <span class="f">"method"</span>: <span class="s">"POST"</span>,
+    <span class="f">"headers"</span>: { <span class="f">"Authorization"</span>: <span class="s">"Bearer {{secret.email_api_key}}"</span> },
+    <span class="f">"body_template"</span>: { <span class="f">"order_id"</span>: <span class="s">"{{input.order_id}}"</span> }
+  },
+  <span class="f">"retry_policy"</span>: { <span class="f">"max_attempts"</span>: 3, <span class="f">"backoff"</span>: <span class="s">"exponential"</span> }
+}</pre>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~45s. The plain case. One POST, two rows, and the run is due the moment the API answers. Both writes are in one transaction, so a 201 means the execution exists. The idempotency key is optional here; supply one and a repeat POST gets a 409 instead of a second job. | running total 4:30"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Immediate</h2>
+
+                    <div
+                        class="cols"
+                        style="
+                            grid-template-columns: 1fr 1fr;
+                            gap: 34px;
+                            margin-top: 24px;
+                        "
+                    >
+                        <div>
+                            <pre
+                                style="font-size: 13px"
+                            ><span class="c">POST /v1/jobs</span>
+{
+  <span class="f">"endpoint"</span>: <span class="s">"send-welcome-email"</span>,
+  <span class="f">"trigger"</span>: <span class="s">"IMMEDIATE"</span>,
+  <span class="f">"idempotency_key"</span>: <span class="s">"order-1234"</span>,
+  <span class="f">"input"</span>: { <span class="f">"order_id"</span>: <span class="s">"o-1234"</span> }
+}</pre>
+                        </div>
+
+                        <div>
+                            <svg
+                                viewBox="0 0 520 250"
+                                style="width: 100%; height: auto"
+                            >
+                                <defs>
+                                    <marker
+                                        id="m1"
+                                        viewBox="0 0 10 10"
+                                        refX="9"
+                                        refY="5"
+                                        markerWidth="6"
+                                        markerHeight="6"
+                                        orient="auto-start-reverse"
+                                    >
+                                        <path
+                                            d="M 0 0 L 10 5 L 0 10 z"
+                                            fill="#2fd4b6"
+                                        />
+                                    </marker>
+                                </defs>
+                                <g font-family="Inter, sans-serif">
+                                    <g
+                                        fill="none"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                    >
+                                        <path
+                                            d="M 0 125 C 30 125, 34 52, 62 52"
+                                        />
+                                        <path
+                                            d="M 0 125 C 30 125, 34 190, 62 190"
+                                        />
+                                    </g>
+                                    <path
+                                        d="M 62 52 L 78 52"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                        marker-end="url(#m1)"
+                                    />
+                                    <path
+                                        d="M 62 190 L 78 190"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                        marker-end="url(#m1)"
+                                    />
+
+                                    <rect
+                                        x="82"
+                                        y="16"
+                                        width="430"
+                                        height="72"
+                                        rx="9"
+                                        fill="#111823"
+                                        stroke="#243144"
+                                        stroke-width="1.5"
+                                    />
+                                    <text
+                                        x="104"
+                                        y="44"
+                                        fill="#cbd6e4"
+                                        font-size="16"
+                                        font-weight="600"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        jobs
+                                    </text>
+                                    <text
+                                        x="104"
+                                        y="68"
+                                        fill="#64748b"
+                                        font-size="13"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        trigger_type IMMEDIATE
+                                    </text>
+
+                                    <rect
+                                        x="82"
+                                        y="154"
+                                        width="430"
+                                        height="72"
+                                        rx="9"
+                                        fill="#0f2226"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                    />
+                                    <text
+                                        x="104"
+                                        y="182"
+                                        fill="#2fd4b6"
+                                        font-size="16"
+                                        font-weight="600"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        executions
+                                    </text>
+                                    <text
+                                        x="104"
+                                        y="206"
+                                        fill="#7fb8ae"
+                                        font-size="13"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        status QUEUED · run_at now()
+                                    </text>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~45s. One field different. The execution row is written now, with your run_at on it, and simply sits there until the pickup query asks for run_at &lt;= now(). Nothing is counting down — a delayed job costs a row, not a timer. The idempotency key is required for DELAYED. | running total 5:15"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Delayed</h2>
+
+                    <div
+                        class="cols"
+                        style="
+                            grid-template-columns: 1fr 1fr;
+                            gap: 34px;
+                            margin-top: 24px;
+                        "
+                    >
+                        <div>
+                            <pre
+                                style="font-size: 13px"
+                            ><span class="c">POST /v1/jobs</span>
+{
+  <span class="f">"endpoint"</span>: <span class="s">"send-welcome-email"</span>,
+  <span class="f">"trigger"</span>: <span class="s">"DELAYED"</span>,
+  <span class="f">"run_at"</span>: <span class="s">"2026-03-20T18:00:00Z"</span>,
+  <span class="f">"idempotency_key"</span>: <span class="s">"order-1234"</span>,
+  <span class="f">"input"</span>: { <span class="f">"order_id"</span>: <span class="s">"o-1234"</span> }
+}</pre>
+                        </div>
+
+                        <div>
+                            <svg
+                                viewBox="0 0 520 250"
+                                style="width: 100%; height: auto"
+                            >
+                                <defs>
+                                    <marker
+                                        id="m2"
+                                        viewBox="0 0 10 10"
+                                        refX="9"
+                                        refY="5"
+                                        markerWidth="6"
+                                        markerHeight="6"
+                                        orient="auto-start-reverse"
+                                    >
+                                        <path
+                                            d="M 0 0 L 10 5 L 0 10 z"
+                                            fill="#2fd4b6"
+                                        />
+                                    </marker>
+                                </defs>
+                                <g font-family="Inter, sans-serif">
+                                    <g
+                                        fill="none"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                    >
+                                        <path
+                                            d="M 0 125 C 30 125, 34 52, 62 52"
+                                        />
+                                        <path
+                                            d="M 0 125 C 30 125, 34 190, 62 190"
+                                        />
+                                    </g>
+                                    <path
+                                        d="M 62 52 L 78 52"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                        marker-end="url(#m2)"
+                                    />
+                                    <path
+                                        d="M 62 190 L 78 190"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                        marker-end="url(#m2)"
+                                    />
+
+                                    <rect
+                                        x="82"
+                                        y="16"
+                                        width="430"
+                                        height="72"
+                                        rx="9"
+                                        fill="#111823"
+                                        stroke="#243144"
+                                        stroke-width="1.5"
+                                    />
+                                    <text
+                                        x="104"
+                                        y="44"
+                                        fill="#cbd6e4"
+                                        font-size="16"
+                                        font-weight="600"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        jobs
+                                    </text>
+                                    <text
+                                        x="104"
+                                        y="68"
+                                        fill="#64748b"
+                                        font-size="13"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        trigger_type DELAYED
+                                    </text>
+
+                                    <rect
+                                        x="82"
+                                        y="154"
+                                        width="430"
+                                        height="72"
+                                        rx="9"
+                                        fill="#0f2226"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                    />
+                                    <text
+                                        x="104"
+                                        y="182"
+                                        fill="#2fd4b6"
+                                        font-size="16"
+                                        font-weight="600"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        executions
+                                    </text>
+                                    <text
+                                        x="104"
+                                        y="206"
+                                        fill="#7fb8ae"
+                                        font-size="13"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        run_at 2026-03-20T18:00Z
+                                    </text>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~60s. Two fields different, and one row different: there is no execution. The second row goes into pg_cron's own table, carrying the schedule and the insert it will run. Both writes are in one transaction — if pg_cron is unhealthy the create fails and the client retries. The response carries next_run_at instead of an execution id. Then the next slide. | running total 6:15"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Cron</h2>
+
+                    <div
+                        class="cols"
+                        style="
+                            grid-template-columns: 1fr 1fr;
+                            gap: 34px;
+                            margin-top: 24px;
+                        "
+                    >
+                        <div>
+                            <pre
+                                style="font-size: 13px"
+                            ><span class="c">POST /v1/jobs</span>
+{
+  <span class="f">"endpoint"</span>: <span class="s">"send-welcome-email"</span>,
+  <span class="f">"trigger"</span>: <span class="s">"CRON"</span>,
+  <span class="f">"cron"</span>: <span class="s">"0 9 * * MON"</span>,
+  <span class="f">"timezone"</span>: <span class="s">"Asia/Kolkata"</span>,
+  <span class="f">"input"</span>: { <span class="f">"order_id"</span>: <span class="s">"o-1234"</span> }
+}</pre>
+                        </div>
+
+                        <div>
+                            <svg
+                                viewBox="0 0 520 250"
+                                style="width: 100%; height: auto"
+                            >
+                                <defs>
+                                    <marker
+                                        id="m3"
+                                        viewBox="0 0 10 10"
+                                        refX="9"
+                                        refY="5"
+                                        markerWidth="6"
+                                        markerHeight="6"
+                                        orient="auto-start-reverse"
+                                    >
+                                        <path
+                                            d="M 0 0 L 10 5 L 0 10 z"
+                                            fill="#2fd4b6"
+                                        />
+                                    </marker>
+                                </defs>
+                                <g font-family="Inter, sans-serif">
+                                    <g
+                                        fill="none"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                    >
+                                        <path
+                                            d="M 0 125 C 30 125, 34 52, 62 52"
+                                        />
+                                        <path
+                                            d="M 0 125 C 30 125, 34 190, 62 190"
+                                        />
+                                    </g>
+                                    <path
+                                        d="M 62 52 L 78 52"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                        marker-end="url(#m3)"
+                                    />
+                                    <path
+                                        d="M 62 190 L 78 190"
+                                        stroke="#2fd4b6"
+                                        stroke-width="2"
+                                        marker-end="url(#m3)"
+                                    />
+
+                                    <rect
+                                        x="82"
+                                        y="16"
+                                        width="430"
+                                        height="72"
+                                        rx="9"
+                                        fill="#111823"
+                                        stroke="#243144"
+                                        stroke-width="1.5"
+                                    />
+                                    <text
+                                        x="104"
+                                        y="44"
+                                        fill="#cbd6e4"
+                                        font-size="16"
+                                        font-weight="600"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        jobs
+                                    </text>
+                                    <text
+                                        x="104"
+                                        y="68"
+                                        fill="#64748b"
+                                        font-size="13"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        cron_expression · cron_timezone
+                                    </text>
+
+                                    <rect
+                                        x="82"
+                                        y="154"
+                                        width="430"
+                                        height="72"
+                                        rx="9"
+                                        fill="#111823"
+                                        stroke="#243144"
+                                        stroke-width="1.5"
+                                    />
+                                    <text
+                                        x="104"
+                                        y="182"
+                                        fill="#cbd6e4"
+                                        font-size="16"
+                                        font-weight="600"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        cron.job
+                                    </text>
+                                    <text
+                                        x="104"
+                                        y="206"
+                                        fill="#64748b"
+                                        font-size="13"
+                                        font-family="ui-monospace, Menlo, monospace"
+                                    >
+                                        schedule · command
+                                    </text>
+                                </g>
+                            </svg>
+
+                            <div
+                                class="kicker-note"
+                                style="
+                                    margin-top: 18px;
+                                    max-width: none;
+                                    color: #2fd4b6;
+                                "
+                            >
+                                No execution row yet.
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~90s. One loop, running inside the database. pg_cron wakes every minute, reads its own table for anything due, and runs that row's command — which inserts one execution. Then it goes round again. Point at the loop, not the boxes. Worth having ready: the command re-reads the jobs row and is guarded on the job still being ACTIVE and inside its start/end window, so a cancelled job ticks into a no-op, and it ends with ON CONFLICT DO NOTHING so two ticks in the same millisecond collapse. | running total 7:45"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>There is no scheduler</h2>
+
+                    <svg
+                        viewBox="0 0 1120 300"
+                        style="width: 100%; height: auto; margin-top: 30px"
+                    >
+                        <defs>
+                            <marker
+                                id="la"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="7"
+                                markerHeight="7"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2fd4b6"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <path
+                                d="M 315 108 C 315 26, 815 26, 815 106"
+                                fill="none"
+                                stroke="#2fd4b6"
+                                stroke-width="2.5"
+                                marker-end="url(#la)"
+                            />
+                            <text
+                                x="560"
+                                y="34"
+                                fill="#2fd4b6"
+                                font-size="15"
+                                text-anchor="middle"
+                            >
+                                reads whatever is due
+                            </text>
+
+                            <path
+                                d="M 815 200 C 815 282, 315 282, 315 202"
+                                fill="none"
+                                stroke="#2fd4b6"
+                                stroke-width="2.5"
+                                marker-end="url(#la)"
+                            />
+                            <text
+                                x="560"
+                                y="296"
+                                fill="#2fd4b6"
+                                font-size="15"
+                                text-anchor="middle"
+                            >
+                                and again on the next tick
+                            </text>
+
+                            <rect
+                                x="150"
+                                y="110"
+                                width="330"
+                                height="90"
+                                rx="10"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="176"
+                                y="146"
+                                fill="#cbd6e4"
+                                font-size="17"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                cron.job
+                            </text>
+                            <text
+                                x="176"
+                                y="176"
+                                fill="#64748b"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                schedule 0 9 * * MON
+                            </text>
+
+                            <text
+                                x="560"
+                                y="150"
+                                fill="#2fd4b6"
+                                font-size="17"
+                                font-weight="600"
+                                text-anchor="middle"
+                            >
+                                pg_cron
+                            </text>
+                            <text
+                                x="560"
+                                y="174"
+                                fill="#7fb8ae"
+                                font-size="13.5"
+                                text-anchor="middle"
+                            >
+                                every minute
+                            </text>
+
+                            <rect
+                                x="640"
+                                y="110"
+                                width="350"
+                                height="90"
+                                rx="10"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="666"
+                                y="146"
+                                fill="#2fd4b6"
+                                font-size="17"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                executions
+                            </text>
+                            <text
+                                x="666"
+                                y="176"
+                                fill="#7fb8ae"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                one row QUEUED run_at now()
+                            </text>
+                        </g>
+                    </svg>
+
+                    <div
+                        class="kicker-note"
+                        style="margin-top: 26px; max-width: none"
+                    >
+                        The <code>cron.job</code> row was written by your
+                        <code>POST</code>. Nothing outside the database runs
+                        after that.
                     </div>
                 </section>
 
@@ -2948,7 +3182,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
         <footer>
             <span id="slide-label">Invokr</span>
             <span class="bar"><i id="progress"></i></span>
-            <span id="slide-num">1 / 16</span>
+            <span id="slide-num">1 / 17</span>
         </footer>
 
         <script>
