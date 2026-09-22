@@ -113,6 +113,26 @@ const F = {
 const chipBar = (left, total) =>
   `<span class="bar"><i style="width:${total ? Math.max(0, Math.min(100, (1 - left / total) * 100)) : 0}%"></i></span>`;
 
+/// Which box a chip belongs in. A row that has gone back to QUEUED for a retry
+/// has no `worker_id` yet, so the honest answer is "a worker has it" rather
+/// than naming one — the whole zone, not a box inside it.
+const workerAnchor = (id) => (id ? `w:${id}` : "workers");
+
+/// Claiming the row and stamping `worker_id` on it are two writes, and the
+/// attempt can be visible before the second lands. Give it a few hundred
+/// milliseconds to appear rather than saying "a worker" when we could say
+/// which one — but never block the walk waiting for it.
+async function whoClaimed(executionId, ws, known) {
+  if (known) return known;
+  for (let i = 0; i < 5; i++) {
+    const row = (await api("GET", `/v1/executions/${executionId}`, { ws })).body?.data;
+    if (row?.worker_id) return row.worker_id;
+    if (["SUCCESS", "FAILED", "CANCELLED"].includes(row?.status)) return row?.worker_id ?? null;
+    await sleep(120);
+  }
+  return null;
+}
+
 /// The worker boxes, from the processes actually running. `winner` marks the
 /// one that claimed the row; everyone else says what they did instead, which
 /// is the honest answer and also the interesting one.
@@ -205,12 +225,29 @@ function renderFrame() {
   const take = currentTake();
   const step = currentStep();
   $("#now").innerHTML = step?.now ? step.now(state.facts) : "";
+  renderBigStep(take, step);
   const plan = take.board?.(state.facts, step?.id) ?? { cols: "flow", zones: [], edges: [] };
   $("#zones").className = `zones ${plan.cols ?? "flow"}`;
   $("#zones").innerHTML = (plan.zones ?? []).join("");
   renderTokens(state.facts.tokens);
   renderEdges(plan.edges ?? [], state.facts.edge);
   renderExtras(take, step);
+}
+
+/// In presentation view the step's own name is the only text on screen, so it
+/// has to carry the beat by itself. That is why the labels are short.
+function renderBigStep(take, step) {
+  const steps = stepsOf(take) ?? [];
+  const i = steps.findIndex((s) => s.id === step?.id);
+  const bad = $("#rail").querySelector(`.step.bad[data-step="${CSS.escape(step?.id ?? "")}"]`);
+  const el = $("#bigstep");
+  el.className = `bigstep ${bad ? "bad" : ""}`;
+  // A step whose point is a number says it here, because the panel that
+  // normally carries it is not on screen in this view.
+  const punch = step?.big?.(state.facts);
+  el.innerHTML = step
+    ? `${esc(step.label)}<span class="of">${i + 1} / ${steps.length}</span>${punch ? `<div class="punch">${punch}</div>` : ""}`
+    : "";
 }
 
 const Z = {
@@ -307,8 +344,9 @@ function placeTokens() {
   for (const [key, els] of Object.entries(groups)) {
     const r = dropRect(key);
     els.forEach((el, i) => {
-      if (!r) return el.style.setProperty("opacity", "0");
-      el.style.removeProperty("opacity");
+      // An anchor that is not on this board leaves the chip where it was. Work
+      // going quietly invisible is the one failure mode this view cannot have.
+      if (!r) return;
       const w = el.offsetWidth;
       const h = el.offsetHeight;
       const x = r.x + Math.max(6, (r.w - w) / 2);
@@ -488,6 +526,7 @@ const film = {
   playing: false,
   mode: "manual",
   dwell: 1300,
+  beatUntil: null,
   nudge: null,
   waiters: [],
 };
@@ -498,6 +537,7 @@ function resetFilm() {
   film.events.length = 0;
   film.cursor = 0;
   film.closed = false;
+  film.beatUntil = null;
   releaseNudge();
   film.waiters.splice(0).forEach((r) => r());
 }
@@ -516,6 +556,9 @@ function releaseNudge() {
 function advanceOneGroup(take) {
   while (film.cursor < film.events.length) {
     const ev = film.events[film.cursor++];
+    // Pressing ▶ means "next step", so a beat inside this one is skipped
+    // rather than waited out.
+    if (ev.type === "beat") continue;
     draw(take, ev);
     if (PACED.has(ev.type)) return true;
   }
@@ -526,10 +569,24 @@ function advanceOneGroup(take) {
 /// has to happen first. So while a frame is held, keep drawing anything unpaced
 /// that arrives: the frame fills in under the eye rather than only on the way
 /// out of it.
-function drain(take) {
+/// A `beat` is a pause *inside* a step: the events after it belong to the same
+/// frame but must not be drawn until the eye has had the ones before. One step
+/// that contains a round trip — out to a worker and back — needs it, and the
+/// run cannot provide it by sleeping: when the run gets ahead of the film, both
+/// legs are already in the buffer and a single drain collapses them into one
+/// frame. Pacing belongs here, where the drawing happens.
+function drain(take, { instant = false } = {}) {
   let drew = false;
-  while (film.cursor < film.events.length && !PACED.has(film.events[film.cursor].type)) {
-    draw(take, film.events[film.cursor++]);
+  while (film.cursor < film.events.length) {
+    const ev = film.events[film.cursor];
+    if (PACED.has(ev.type)) break;
+    if (ev.type === "beat" && !instant) {
+      film.beatUntil ??= performance.now() + (ev.ms ?? 650);
+      if (performance.now() < film.beatUntil) break;
+      film.beatUntil = null;
+    }
+    film.cursor++;
+    if (ev.type !== "beat") draw(take, ev);
     drew = true;
   }
   return drew;
@@ -540,8 +597,9 @@ function drain(take) {
 function redrawTo(take, n) {
   resetStage(take);
   film.cursor = 0;
+  film.beatUntil = null;
   while (film.cursor < n) draw(take, film.events[film.cursor++]);
-  drain(take); // land on the frame as it looked, not as it first appeared
+  drain(take, { instant: true }); // land on the frame as it looked, not as it first appeared
   renderFrame();
 }
 
@@ -564,6 +622,7 @@ function stepBack() {
 function stepNext() {
   if (film.cursor < film.events.length) {
     const take = currentTake();
+    film.beatUntil = null; // pressing ▶ abandons any pause inside this step
     advanceOneGroup(take);
     drain(take); // whatever already landed for this frame belongs on it
     // Stepping back and then forward again should end on the same picture the
@@ -616,7 +675,9 @@ async function hold(take) {
   let nudged = false;
   if (until === Infinity) waitForNudge().then(() => (nudged = true));
 
-  while (!nudged && film.playing && performance.now() < until) {
+  // A pending beat holds the frame past its dwell: a round trip drawn inside
+  // one step still gets both of its legs.
+  while (!nudged && film.playing && (performance.now() < until || film.beatUntil != null)) {
     if (drain(take)) syncTransport();
     await sleep(Math.min(60, Math.max(1, until - performance.now())));
   }
@@ -834,6 +895,7 @@ const SETUP_STEPS = [
   {
     id: "endpoint",
     label: "endpoint",
+    big: (f) => (f.epOk ? "four rows · <b>no deploy</b>" : null),
     now: (f) =>
       F.wrap(
         F.lead(f.epOk ? "Four rows. No deploy." : "The call itself."),
@@ -1048,8 +1110,18 @@ const SHORT_STEPS = [
   },
   { id: "claim", label: "One worker wins", now: claimNow },
   { id: "call", label: "The call goes out", now: callNow },
-  { id: "answer", label: "Every try is a row", now: answerNow },
-  { id: "record", label: "The record", now: recordNow },
+  {
+    id: "answer",
+    label: "Every try is a row",
+    now: answerNow,
+    big: (f) => ((f.attempts?.length ?? 0) > 1 ? `${f.attempts.length} tries · <b>one key</b>` : null),
+  },
+  {
+    id: "record",
+    label: "The record",
+    now: recordNow,
+    big: (f) => `${f.finalAttempts ?? 1} attempt${(f.finalAttempts ?? 1) === 1 ? "" : "s"} · ${esc(f.finalStatus ?? "")}`,
+  },
 ];
 
 const CRON_STEPS = [
@@ -1204,6 +1276,7 @@ const LONG_STEPS = [
   {
     id: "wait",
     label: "WAITING",
+    big: () => "<b>nothing of yours is waiting</b>",
     now: (f) =>
       F.wrap(
         F.lead(`Nothing of yours is waiting.`),
@@ -1243,6 +1316,7 @@ const LONG_STEPS = [
   {
     id: "record",
     label: "Attempts vs polls",
+    big: (f) => `${f.finalAttempts ?? 1} attempt · ${f.polls ?? 0} polls — <b>polls are not attempts</b>`,
     now: (f) =>
       F.wrap(
         F.bigs(F.big(f.finalAttempts ?? 1, "attempts", "ok"), F.big(f.polls ?? 0, "polls", "act")),
@@ -1673,19 +1747,17 @@ async function runShort(run, v) {
     job: jobRow(job, endpoint),
     exec: job.execution ? execRow({ ...job.execution, run_at: job.run_at ?? job.execution.created_at }) : null,
     nextRun: job.next_run_at ? clock(job.next_run_at) : null,
-    tokens: job.execution ? [chip(later ? "later" : "due", "QUEUED", later ? "hold" : "")] : [],
-    edge: null,
   });
   run.step("written");
+  // The chip enters the lane on this beat, not the one before it.
+  if (job.execution) run.facts({ tokens: [chip(later ? "later" : "due", "QUEUED", later ? "hold" : "")], edge: null });
 
   if (v.trigger === "CRON") return await runCronRest(run, { job, v, endpoint, idem, logSeq, chip });
 
-  // The countdown belongs to the frame the moment it appears, so it goes on
-  // before the step rather than one redraw later.
+  run.step("due");
   if (v.trigger === "DELAYED") {
     run.facts({ tokens: [chip("later", `due in ${seconds}.0s`, "hold", chipBar(seconds * 1000, seconds * 1000))] });
   }
-  run.step("due");
   if (v.trigger === "DELAYED") countdown(run, new Date(jobBody.run_at).getTime(), seconds * 1000, chip);
 
   const done = await follow(run, {
@@ -1772,10 +1844,17 @@ async function follow(run, { job, executionId, ws = "a", endpoint, idem, logSeq,
   const team = state.status?.provisioned?.workspaces?.[ws]?.slug ?? "mandates";
   /// Moving the chip is the explanation, so it is emitted like any other fact
   /// and a replay reproduces the journey exactly.
+  ///
+  /// Order matters: panel data goes *before* its step so the frame draws
+  /// complete, and the move goes *after* so it happens while you are looking at
+  /// the step that explains it. Emitted first, it would be drained during the
+  /// previous beat — the chip leaving for the worker while the room is still
+  /// reading the answer that sent it there.
   const moveChip = (at, note, tone, extra = {}) => chip && run.facts({ tokens: [chip(at, note, tone)], ...extra });
   let seen = 0;
   let claimed = false;
   let seq = logSeq;
+  let lastBackoff = null;
 
   // The key the room is shown is the key Aarokya reports having received.
   // `executions.idempotency_key` is a real column but the API does not
@@ -1805,29 +1884,34 @@ async function follow(run, { job, executionId, ws = "a", endpoint, idem, logSeq,
       // or the claim reads as having happened after the call it caused.
       if (!claimed && !silent && (exec.worker_id || attempts.length)) {
         claimed = true;
-        const who =
-          exec.worker_id ?? (await api("GET", `/v1/executions/${executionId}`, { ws })).body?.data?.worker_id ?? null;
+        const who = await whoClaimed(executionId, ws, exec.worker_id);
         const at = exec.started_at ?? attempts[0]?.started_at;
         run.facts({
           winner: who,
           exec: execRow({ ...exec, worker_id: who ?? exec.worker_id }),
           workerSlots: workerSlots(who),
         });
-        moveChip(`w:${who}`, "RUNNING", "", { edge: "claim" });
         run.emit("step", { id: "claim", at: at ? offset(at) : Math.round(performance.now() - run.t0) });
+        moveChip(workerAnchor(who), "RUNNING", "", { edge: "claim" });
       }
 
-      // A retry re-enters the loop — the row goes back to QUEUED, a worker
-      // claims it again — and the chip has to travel again or the retry is
-      // something you are told about rather than something you watch.
-      if (!silent && seen > 0 && attempts.length === seen && exec.status === "RUNNING") {
-        run.facts({ workerSlots: workerSlots(exec.worker_id) });
-        moveChip(`w:${exec.worker_id}`, `try ${seen + 1}`, "", { edge: "claim" });
+      // While the row is backing off, the clock runs on the chip's face in the
+      // lane. Once a second, not every poll, or the tape fills with ticks.
+      if (!silent && seen > 0 && exec.run_at) {
+        const left = new Date(exec.run_at) - Date.now();
+        const secs = Math.ceil(left / 1000);
+        if (left > 0 && secs !== lastBackoff) {
+          lastBackoff = secs;
+          moveChip("later", `try ${seen + 1} in ${secs}s`, "hold");
+        }
       }
 
       for (const a of silent ? [] : attempts.slice(seen)) {
         const ok = a.status === "SUCCESS";
         const code = a.output?.status_code ?? a.error?.status_code ?? "";
+        lastBackoff = null;
+        const more = !ok && a.attempt_number < (exec.max_attempts ?? 1);
+
         run.facts({
           winner: exec.worker_id,
           template: `POST {{config.base_url}}/mandates/{{input.mandate_id}}/sync\nAuthorization: {{secret.${
@@ -1838,39 +1922,48 @@ async function follow(run, { job, executionId, ws = "a", endpoint, idem, logSeq,
             `Authorization: ••••••••\nx-team: ${esc(team)}\n<u>x-invokr-idempotency-key: ${esc(wireKey ?? "—")}</u>`,
           idem: wireKey,
           sentAt: clock(a.started_at),
-          edge: "call",
           verdict: null,
         });
         run.emit("step", { id: "call", at: offset(a.started_at) });
+        // Every attempt goes out from a worker, so the chip travels for every
+        // attempt — not only the first. A retry re-claims the row in the gap
+        // between two polls, so waiting to catch that gap meant the second and
+        // third tries never left the lane on screen.
+        run.facts({ workerSlots: workerSlots(exec.worker_id), edge: "call" });
+        moveChip(workerAnchor(exec.worker_id), a.attempt_number > 1 ? `try ${a.attempt_number}` : "RUNNING");
 
         // The answer comes back and the row goes one of two ways. That fork is
         // the loop: onward to `finished`, or round again to `not yet` with the
         // backoff running.
-        const more = !ok && a.attempt_number < (exec.max_attempts ?? 1);
         run.facts({
           answerBody: asJson(a.output?.body) ?? a.error ?? null,
           answerCode: code,
           answerTook: ms(a.duration_ms),
           answerOk: ok,
+        });
+        run.emit("step", { id: "answer", at: offset(a.completed_at ?? a.started_at), bad: !ok });
+        run.facts({
           verdict: { text: `${code || (ok ? "200" : "error")}`, tone: ok ? "ok" : "bad", sub: ok ? "terminal" : "it refused" },
           edge: "back",
           backTone: ok ? "act" : "warm",
           backLabel: ok ? "SUCCESS, written back" : more ? `try ${a.attempt_number + 1} · run_at + backoff` : "FAILED, out of tries",
         });
         moveChip(more ? "later" : "done", more ? `retry ${a.attempt_number + 1}` : ok ? "SUCCESS" : "FAILED", more ? "hold" : ok ? "ok" : "bad");
-        run.emit("step", { id: "answer", at: offset(a.completed_at ?? a.started_at), bad: !ok });
       }
       seen = attempts.length;
 
       if (["SUCCESS", "FAILED", "CANCELLED"].includes(exec.status)) {
         ({ seq } = await tailTarget(run, seq));
         if (!silent) {
+          // `executions.worker_id` is only published once the row is
+          // terminal, so this is the first honest chance to name the winner —
+          // and the loser's "skipped it — locked" with it.
           run.facts({
             exec: execRow(exec),
             attempts: attemptRows(attempts, wireKey),
             finalAttempts: seen,
             finalStatus: exec.status,
-            workerSlots: workerSlots(),
+            workerSlots: workerSlots(exec.worker_id),
             edge: null,
           });
           moveChip("done", exec.status, exec.status === "SUCCESS" ? "ok" : "bad");
@@ -2225,28 +2318,24 @@ async function followLong(run, executionId, { logSeq, jobName, mode }) {
       if (!claimed && (exec.attempt_count > 0 || exec.worker_id || first)) {
         claimed = true;
         const at = exec.started_at ?? first?.started_at;
-        run.facts({ workerSlots: workerSlots(exec.worker_id) });
-        move(`w:${exec.worker_id}`, "RUNNING", "", { edge: "claim" });
+        const who = await whoClaimed(executionId, "a", exec.worker_id);
+        run.facts({ workerSlots: workerSlots(who) });
         run.emit("step", { id: "claim", at: at ? offset(at) : Math.round(performance.now() - run.t0) });
+        move(workerAnchor(who), "RUNNING", "", { edge: "claim" });
       }
 
       if (first && !sent) {
         sent = true;
-        move(`w:${exec.worker_id}`, "one dispatch", "", { edge: "call", verdict: null });
         run.emit("step", { id: "send", at: offset(first.started_at) });
+        move(workerAnchor(exec.worker_id), "one dispatch", "", { edge: "call", verdict: null });
 
-        run.facts({ verdict: { text: "202", tone: "hold", sub: "accepted, still working" } });
         run.emit("step", { id: "accepted", at: offset(first.completed_at ?? first.started_at) });
+        run.facts({ verdict: { text: "202", tone: "hold", sub: "accepted, still working" } });
 
-        run.facts({
-          nextCheck: exec.run_at ? clock(exec.run_at) : "—",
-          polls: exec.poll_count ?? 0,
-          edge: "back",
-          backTone: "warm",
-          backLabel: "parked · nothing held open",
-        });
-        move("later", "WAITING", "hold");
+        run.facts({ nextCheck: exec.run_at ? clock(exec.run_at) : "—", polls: exec.poll_count ?? 0 });
         run.emit("step", { id: "wait", at: offset(first.completed_at ?? first.started_at) });
+        run.facts({ edge: "back", backTone: "warm", backLabel: "parked · nothing held open" });
+        move("later", "WAITING", "hold");
       }
 
       const polls = ((await api("GET", `/v1/executions/${executionId}/polls`)).body?.data ?? [])
@@ -2266,11 +2355,17 @@ async function followLong(run, executionId, { logSeq, jobName, mode }) {
           pollRows: [...pollRows],
           lastRetryAfter: p.retry_after_ms ? ms(p.retry_after_ms) : null,
           claimLabel: `check ${p.poll_number}`,
-          callLabel: "GET status",
+          callLabel: "GET",
         });
+        run.emit("step", { id: "poll", at: offset(p.polled_at) });
 
-        // Round the loop once, for this one check.
-        move(`w:${exec.worker_id}`, `check ${p.poll_number}`, "", { edge: "claim" });
+        // Round the loop once, for this one check — out of the lane, to a
+        // worker, and back. Both legs land inside this step's own beat, so the
+        // outbound one needs room to be seen before the return overwrites it.
+        // The pause is in our narration, not in the system: the check already
+        // happened, and we are reading its row.
+        move(workerAnchor(exec.worker_id), `check ${p.poll_number}`, "", { edge: "claim" });
+        run.emit("beat", { ms: 700 });
         run.facts({
           verdict: { text: String(p.status_code), tone: pending ? "hold" : p.classification === "SUCCESS" ? "ok" : "bad", sub: pending ? "still working" : "terminal" },
           edge: "back",
@@ -2278,7 +2373,6 @@ async function followLong(run, executionId, { logSeq, jobName, mode }) {
           backLabel: p.retry_after_ms ? `Retry-After ${ms(p.retry_after_ms)}` : "terminal",
         });
         move(pending ? "later" : "done", pending ? "WAITING" : "done", pending ? "hold" : "ok");
-        run.emit("step", { id: "poll", at: offset(p.polled_at) });
       }
       seenPolls = polls.length;
 
@@ -2310,7 +2404,7 @@ async function followLong(run, executionId, { logSeq, jobName, mode }) {
             : null,
           finalAttempts: exec.attempt_count ?? 1,
           polls: seenPolls,
-          workerSlots: workerSlots(),
+          workerSlots: workerSlots(exec.worker_id),
           edge: null,
         });
         move("done", exec.status, ok ? "ok" : "bad");
@@ -2585,6 +2679,19 @@ function toggleWire(force) {
   $("#t-wire").classList.toggle("on", open);
 }
 
+/// Boxes and arrows at the size of a wall, one line of text, nothing else.
+/// Same board and same live data — only what sits beside it changes. The beat
+/// lengthens, because a room reads slower than a person at a desk.
+function togglePresent(force) {
+  const on = force ?? !document.body.classList.contains("present");
+  document.body.classList.toggle("present", on);
+  $("#t-present").classList.toggle("on", on);
+  film.dwell = on ? 1900 : 1300;
+  if (on) toggleWire(false);
+  renderFrame();
+  relayout();
+}
+
 // ─── boot ────────────────────────────────────────────────────────────────────
 
 $("#go").addEventListener("click", () => (state.replay ? replayTake() : runTake()));
@@ -2593,6 +2700,7 @@ $("#t-next").addEventListener("click", stepNext);
 $("#t-back").addEventListener("click", stepBack);
 $("#t-auto").addEventListener("click", () => setMode(film.mode === "auto" ? "manual" : "auto"));
 $("#t-wire").addEventListener("click", () => toggleWire());
+$("#t-present").addEventListener("click", () => togglePresent());
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) return;
@@ -2619,6 +2727,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "3") return setPage("long");
   if (e.key.toLowerCase() === "a") return setMode(film.mode === "auto" ? "manual" : "auto");
   if (e.key.toLowerCase() === "w") return toggleWire();
+  if (e.key.toLowerCase() === "p") return togglePresent();
   if (e.key.toLowerCase() === "r") return setReplay(!state.replay);
 });
 

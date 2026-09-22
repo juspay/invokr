@@ -516,7 +516,90 @@ footer.console {
 .extras { display: flex; gap: 7px; flex: 0 0 auto; }
 .extras button { font-size: 13px; padding: 6px 12px; }
 
-#t-wire { font-size: 13px; padding: 6px 12px; color: var(--muted); }
+#t-wire, #t-present { font-size: 13px; padding: 6px 12px; color: var(--muted); }
+#t-present.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 #t-wire.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 #t-wire .badge { font-family: var(--mono); font-size: 10.5px; margin-left: 6px; color: var(--faint); }
 #t-wire.on .badge { color: #bdb3a6; }
+
+/* ─── presentation view ───────────────────────────────────────────────────── */
+/*
+   For the room rather than the reader: the machine at the size of a wall, one
+   line of text, and nothing else competing with it. Same board, same live data
+   — the only thing that changes is what is on screen beside it.
+*/
+
+.bigstep { display: none; }
+
+body.present .takes,
+body.present .pagehead,
+body.present .rail,
+body.present #now,
+body.present .inputs,
+body.present .extras,
+body.present .step-count { display: none; }
+
+body.present .bigstep {
+  display: block;
+  flex: 0 0 auto;
+  padding: 18px 40px 14px;
+  font-family: var(--serif);
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+body.present .bigstep .of {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--faint);
+  margin-left: 16px;
+  letter-spacing: 0;
+}
+body.present .bigstep.bad { color: var(--clay); }
+
+body.present .body { grid-template-columns: minmax(0, 1fr); }
+body.present .zones { padding: 6px 44px 84px; gap: 0 62px; }
+body.present .zones.flow { grid-template-columns: 250px minmax(300px, 1fr) 280px 240px; }
+
+body.present .zone { border-width: 2px; border-radius: 18px; min-height: 200px; }
+body.present .zone.on { box-shadow: 0 0 0 5px rgba(15, 123, 108, 0.12); }
+body.present .zone-h { padding: 13px 20px 12px; }
+body.present .zone-h .name { font-size: 19px; }
+body.present .zone-h .sub { display: none; }
+body.present .zone-b { padding: 14px 16px 16px; gap: 11px; }
+body.present .zone .line { font-size: 15px; }
+body.present .zone .verdict { font-size: 27px; }
+
+body.present .shelf { border-width: 2px; border-radius: 14px; padding: 9px 14px 12px; }
+body.present .shelf .cap { font-size: 12.5px; letter-spacing: 0.05em; }
+body.present .slot { border-width: 2px; border-radius: 14px; padding: 12px 16px 14px; min-height: 152px; }
+body.present .slot .who { font-size: 14.5px; }
+body.present .slot .state { font-size: 13px; }
+body.present .slot .drop, body.present .shelf .drop { min-height: 84px; }
+
+body.present .tok { min-width: 132px; max-width: 250px; padding: 11px 17px; border-width: 2px; border-radius: 13px; }
+body.present .tok .name { font-size: 16px; }
+body.present .tok .note { font-size: 13.5px; margin-top: 3px; }
+
+body.present .edges path { stroke-width: 2.5; stroke: #d9cebe; }
+body.present .edges path.act, body.present .edges path.warm { stroke-width: 4.5; }
+body.present .edges text { font-size: 15px; font-weight: 600; stroke-width: 6px; }
+body.present .edges .head { transform-box: fill-box; transform-origin: center; transform: scale(1.7); }
+
+body.present footer.console { padding: 12px 40px; }
+body.present .transport button { font-size: 15px; padding: 9px 18px; min-width: 46px; }
+body.present .transport button.wide { min-width: 74px; }
+
+body.present .bigstep .punch {
+  font-family: var(--sans);
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-top: 8px;
+}
+body.present .bigstep .punch b { color: var(--teal); font-weight: 650; }
+body.present .bigstep.bad .punch b { color: var(--clay); }

@@ -108,6 +108,13 @@ are the processes `just demo` started, the winner is the one Invokr wrote on
 the execution row, and the loser's *skipped it — locked* is what `SKIP LOCKED`
 actually did.
 
+One honest gap: `executions.worker_id` is only populated once the row is
+**terminal**. While a job is QUEUED, RUNNING or RETRYING the API returns `null`
+for it, so mid-flight the board says a chip is *in the workers lane* rather than
+naming a box — and the winner is named on the last step, where the row finally
+carries it. Worth fixing in the API: mid-flight, "which worker holds this
+execution" is exactly the question an operator asks.
+
 Evidence stays behind the **wire** button: both sides of every call Invokr
 made, and Aarokya's own log of what it did. Press `W` when somebody asks.
 
@@ -125,6 +132,7 @@ Nothing advances on its own until you say so.
 | `◀` or `←` | go back one step |
 | `auto` or `A` | hand it over: each step is held for a beat, then the next |
 | `W` | the wire drawer — every request and response, both sides |
+| `P` | presentation view — the board at the size of a wall, one line of text |
 | `Enter` | run (or replay) the current take |
 | `1` `2` `3` | pages · `Tab` (`⇧Tab`) cycles takes on this page · `R` replay |
 
@@ -136,6 +144,17 @@ and every step keeps the time it actually happened at.
 `auto`'s beat is a *floor*, never a substitute. A 15-second wait still takes
 fifteen seconds; it is only the 8-millisecond bursts that get stretched enough
 to read.
+
+### Presentation view (`P`)
+
+For a room rather than a reader. The panel, the rail, the takes and the fields
+go away; the board fills the wall, the boxes and arrows double in weight, and
+the only text is **the step's own name**. Same board, same live data — you can
+flip into it mid-run and back out again. The beat lengthens to 1.9s, because a
+room reads slower than a person at a desk.
+
+That is why the step names are short: in this view each one has to carry the
+beat by itself.
 
 ## 1 · Set it up
 
@@ -191,6 +210,11 @@ out to a worker, out to Aarokya, back to *not yet* amber, and round again. The
 **Kill a worker** and **Add a worker** appear on the `run_at` step and nowhere
 else, because that is the step where killing one proves something: the chip
 does not move, and the job still goes out when a fresh worker arrives.
+
+The retry is the thing to watch. Every attempt travels — the chip leaves the
+lane for a worker, goes out, and comes back — because the row's leg out is
+drawn on the `call` step and its leg back on the `answer` step. A failure is
+not a red label; it is the work visibly going round again.
 
 Two more takes sit on the same page. **Same name, two teams** fires the same
 endpoint name into both workspaces and lets Aarokya's own log be the proof —
@@ -420,8 +444,8 @@ bad take can't clobber a good one.
    have.
 
 **Keys:** `1` `2` `3` pages, `Tab` cycles takes, `→` / `←` step through a run,
-`A` hands it to auto, `W` opens the wire, `Enter` runs the current one, `R`
-toggles replay.
+`A` hands it to auto, `P` presentation view, `W` opens the wire, `Enter` runs
+the current one, `R` toggles replay.
 
 **If a live take fails in the room:** the console says so and suggests replay.
 Flip the toggle, re-run it, carry on. Do not debug in front of the room — the
