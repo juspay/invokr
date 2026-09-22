@@ -4,7 +4,7 @@ Two artifacts for the 30-minute session:
 
 | | |
 |---|---|
-| **Deck** | `demo/public/deck.html` — 14 slides plus an unshown appendix. Self-contained: no network, no build, opens from a file path |
+| **Deck** | `demo/public/deck.html` — 11 slides plus an unshown appendix. Self-contained: no network, no build, opens from a file path |
 | **Demo site** | `demo/public/index.html` — three pages, one board per page with the work moving through it, firing real jobs at a real Invokr and served by `demo/server.mjs`, with the receiving service reporting what it did |
 
 The narrative and the timing budget live in the design doc. This file is about

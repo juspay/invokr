@@ -295,14 +295,14 @@ footer .bar i { display: block; height: 100%; background: var(--accent); transit
   <div id="surface">
 
     <!-- 1 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide title-slide" data-notes="~30s. Say the subtitle out loud and stop. The analogy does the work; do not explain it yet. | Act 1 of 6 · running total 0:30">
+    <section class="slide title-slide" data-notes="~30s. Say the subtitle out loud and stop. The analogy does the work; do not explain it yet. | Act 1 of 5 · running total 0:30">
       <div class="mark"></div>
       <h1>Invokr</h1>
       <div class="tag">setTimeout and setInterval, as a service</div>
     </section>
 
     <!-- 2 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~90s. Walk the four rows. Then hit space for the reveal and let it land — the reveal is the product. Note the wording: de-duplicates on your key, every attempt on the record. Not 'never fires twice' — we say at-least-once delivery on slide 8 and we mean it. | running total 2:00">
+    <section class="slide" data-notes="~90s. Walk the four rows. Then hit space for the reveal and let it land — the reveal is the product. Note the wording: de-duplicates on your key, every attempt on the record. Not 'never fires twice' — we say at-least-once delivery on slide 5 and we mean it. | running total 2:00">
       <div class="eyebrow">the mental model</div>
       <h2>You already know this API</h2>
       <p class="sub">If you have written JavaScript, you have written half of Invokr.</p>
@@ -321,128 +321,7 @@ footer .bar i { display: block; height: 100%; background: var(--accent); transit
     </section>
 
     <!-- 3 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~90s. This is the adoption thesis in one image. Do not read the labels — let the room recognise their own box. The point is not that these are bad; it is that there are N of them. | Act 2 · running total 3:30">
-      <div class="eyebrow">the problem</div>
-      <h2>Every team has built this</h2>
-      <p class="sub">Same shape, slightly different, N times over. Each one is somebody's weekend.</p>
-
-      <svg viewBox="0 0 1120 204" style="width:100%;height:auto;margin-top:10px">
-        <g font-family="ui-monospace, Menlo, monospace" font-size="12">
-          <g transform="translate(0,0)">
-            <rect x="0" y="0" width="200" height="78" rx="10" fill="#111823" stroke="#243144" stroke-width="1.5"/>
-            <text x="16" y="30" fill="#e9eff7" font-size="13.5">orders · tasks</text>
-            <text x="16" y="52" fill="#64748b">poller every 5s</text>
-            <text x="16" y="68" fill="#64748b">retry_count column</text>
-          </g>
-          <g transform="translate(232,10)">
-            <rect x="0" y="0" width="208" height="72" rx="3" fill="#111823" stroke="#243144" stroke-width="1.5"/>
-            <text x="16" y="28" fill="#e9eff7" font-size="13.5">billing · sched_jobs</text>
-            <text x="16" y="50" fill="#64748b">cron on box-01</text>
-            <text x="16" y="66" fill="#64748b">slack alert on stall</text>
-          </g>
-          <g transform="translate(472,2)">
-            <rect x="0" y="0" width="190" height="84" rx="14" fill="#111823" stroke="#243144" stroke-width="2"/>
-            <text x="16" y="30" fill="#e9eff7" font-size="13.5">risk · timers</text>
-            <text x="16" y="52" fill="#64748b">in-process setTimeout</text>
-            <text x="16" y="70" fill="#64748b">lost on deploy</text>
-          </g>
-          <g transform="translate(694,12)">
-            <rect x="0" y="0" width="196" height="70" rx="6" fill="#111823" stroke="#243144" stroke-width="1"/>
-            <text x="16" y="28" fill="#e9eff7" font-size="13.5">refunds · retry_q</text>
-            <text x="16" y="50" fill="#64748b">redis list + worker</text>
-            <text x="16" y="66" fill="#64748b">no attempt history</text>
-          </g>
-          <g transform="translate(922,4)">
-            <rect x="0" y="0" width="190" height="80" rx="10" fill="#111823" stroke="#243144" stroke-width="1.5" stroke-dasharray="6 3"/>
-            <text x="16" y="30" fill="#e9eff7" font-size="13.5">ops · reminder.py</text>
-            <text x="16" y="52" fill="#64748b">crontab, one laptop</text>
-            <text x="16" y="68" fill="#64748b">owner left in March</text>
-          </g>
-
-          <g transform="translate(20,118)">
-            <rect x="0" y="0" width="196" height="76" rx="8" fill="#111823" stroke="#243144" stroke-width="1.5"/>
-            <text x="16" y="30" fill="#e9eff7" font-size="13.5">notify · outbox</text>
-            <text x="16" y="52" fill="#64748b">poller every 1s</text>
-            <text x="16" y="68" fill="#64748b">2 pods → double-fire</text>
-          </g>
-          <g transform="translate(252,126)">
-            <rect x="0" y="0" width="204" height="68" rx="12" fill="#111823" stroke="#243144" stroke-width="1"/>
-            <text x="16" y="28" fill="#e9eff7" font-size="13.5">kyc · pending_checks</text>
-            <text x="16" y="50" fill="#64748b">status + updated_at</text>
-            <text x="16" y="64" fill="#64748b">retries by hand</text>
-          </g>
-          <g transform="translate(492,120)">
-            <rect x="0" y="0" width="186" height="76" rx="4" fill="#111823" stroke="#243144" stroke-width="2"/>
-            <text x="16" y="30" fill="#e9eff7" font-size="13.5">settlement · eod</text>
-            <text x="16" y="52" fill="#64748b">k8s CronJob</text>
-            <text x="16" y="68" fill="#64748b">no per-job state</text>
-          </g>
-          <g transform="translate(714,128)">
-            <rect x="0" y="0" width="200" height="66" rx="9" fill="#111823" stroke="#243144" stroke-width="1.5"/>
-            <text x="16" y="28" fill="#e9eff7" font-size="13.5">support · followups</text>
-            <text x="16" y="50" fill="#64748b">celery beat</text>
-            <text x="16" y="64" fill="#64748b">creds in settings.py</text>
-          </g>
-          <g transform="translate(950,122)">
-            <rect x="0" y="0" width="162" height="74" rx="7" fill="#0d141d" stroke="#1b2634" stroke-width="1.5"/>
-            <text x="16" y="30" fill="#5d6b7e" font-size="13.5">yours</text>
-            <text x="16" y="52" fill="#4a5768">…probably</text>
-          </g>
-        </g>
-      </svg>
-
-      <div class="punch reveal" style="margin-top:22px">Nine teams solved the same problem nine times, and none of us can see each other's failures.</div>
-    </section>
-
-    <!-- 4 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~2min. The credibility slide. Say 'we have written these too' — because we have. Read the right column slowly; every line is a real incident shape. Do not accuse; the room should be nodding, not defending. | running total 5:30">
-      <div class="eyebrow">the problem</div>
-      <h2>Anatomy of a hand-rolled tracker</h2>
-      <p class="sub">Independently, we all converge on the same five pieces — and the same five bugs.</p>
-
-      <div class="cols tight">
-        <div class="panel">
-          <h3>what everyone builds</h3>
-          <ul>
-            <li>A <code>tasks</code> table with a <code>status</code> column</li>
-            <li>A poller on a few-second tick</li>
-            <li>A <code>retry_count</code> column, incremented by hand</li>
-            <li>A cron entry, on one box</li>
-            <li>A Slack webhook for when it silently stops</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>what ships with it</h3>
-          <ul>
-            <li class="bad"><b>Double-fire</b> the day a second pod starts polling</li>
-            <li class="bad"><b>Timers lost on deploy</b> — they were in process memory</li>
-            <li class="bad"><b>"Did it actually go out?"</b> is unanswerable; no attempt history</li>
-            <li class="bad"><b>Retry storms</b> — fixed delay, no jitter, no ceiling</li>
-            <li class="bad"><b>Credentials in config</b>, and config is in git</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="kicker-note reveal">We have written these too. That is where the requirements came from.</div>
-    </section>
-
-    <!-- 5 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~90s. Note out loud that there is no rupee figure and say why: any number we invent gets discounted, and we do not need it to make the argument. The last bullet is the one that hurts — failure mode is silence. | running total 7:00">
-      <div class="eyebrow">the problem</div>
-      <h2>What the duplication actually costs</h2>
-      <p class="sub">No invented rupee figure on this slide — you would discount it, and the argument does not need it.</p>
-
-      <ul style="margin-top:6px">
-        <li><b>N on-call surfaces</b> for one class of problem</li>
-        <li><b>N places to debug</b> one missed timer, each with different logs and vocabulary</li>
-        <li><b>No shared observability</b> — no common metric, no common dashboard, no cross-team comparison</li>
-        <li><b>Every new team pays the tax again</b>, from scratch, in their first quarter</li>
-        <li class="bad"><b>And the failure mode is silence.</b> A tracker that stops looks exactly like a tracker with nothing to do</li>
-      </ul>
-    </section>
-
-    <!-- 6 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~60s. The entire API surface. Three verbs. If someone asks about auth/tenancy, say 'two headers' and move on — detail is in the appendix. | Act 3 · running total 8:00">
+    <section class="slide" data-notes="~60s. The entire API surface. Three verbs. If someone asks about auth/tenancy, say 'two headers' and move on — detail is in the appendix. | Act 2 · running total 3:00">
       <div class="eyebrow">what invokr is</div>
       <h2>Three steps. That is the whole surface.</h2>
 
@@ -468,8 +347,8 @@ GET …/attempts</pre>
       <div class="punch reveal">Your endpoint spec is <em>data</em>. Nothing of yours runs inside Invokr.</div>
     </section>
 
-    <!-- 7 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~2min. Walk left to right, then hit space for the punchline and PAUSE. This is the one genuinely interesting architectural decision, and it explains the low moving-part count: pg_cron materialises ticks, delayed jobs are claimed by the worker's own pickup query. Nothing is holding a timer. | running total 10:00">
+    <!-- 4 ─────────────────────────────────────────────────────────────────── -->
+    <section class="slide wide" data-notes="~2min. Walk left to right, then hit space for the punchline and PAUSE. This is the one genuinely interesting architectural decision, and it explains the low moving-part count: pg_cron materialises ticks, delayed jobs are claimed by the worker's own pickup query. Nothing is holding a timer. | running total 5:00">
       <div class="eyebrow">what invokr is</div>
       <h2>Architecture</h2>
 
@@ -513,8 +392,8 @@ GET …/attempts</pre>
       <div class="kicker-note reveal">pg_cron materializes CRON ticks inside PostgreSQL. Delayed jobs are claimed straight off the worker's pickup query when <code>run_at &lt;= now()</code>. Two processes, one database, nothing holding a timer in memory.</div>
     </section>
 
-    <!-- 8 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~2min. Engineers discount adjectives and audit mechanisms, so every claim here is paired with the thing that makes it true. Land the at-least-once row deliberately — do not let it slide past. If you claim exactly-once delivery to an arbitrary HTTP endpoint, the room's best engineer stops believing the rest of the deck. | running total 12:00">
+    <!-- 5 ─────────────────────────────────────────────────────────────────── -->
+    <section class="slide wide" data-notes="~2min. Engineers discount adjectives and audit mechanisms, so every claim here is paired with the thing that makes it true. Land the at-least-once row deliberately — do not let it slide past. If you claim exactly-once delivery to an arbitrary HTTP endpoint, the room's best engineer stops believing the rest of the deck. | running total 7:00">
       <div class="eyebrow">what invokr is</div>
       <h2>Guarantees, and what makes them true</h2>
 
@@ -533,8 +412,8 @@ GET …/attempts</pre>
       <div class="punch reveal" style="font-size:23px">We say <em>at-least-once</em> on purpose. Nobody can honestly promise exactly-once delivery to an arbitrary endpoint.</div>
     </section>
 
-    <!-- 9 ─────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~7min. Switch to the demo tab. The whole machine is on screen and the work moves through it — point at the four regions once, left to right, and at the one edge that goes back the way it came. Then you drive: nothing advances until you press → (or hand it to auto). Do not read the JSON out; say the idea and let the chip travel. Start by typing a mandate id the room gives you and let them watch the request change before anything is sent. Page 1, set it up: four POSTs, each landing as a row in its store and lighting the placeholder it feeds; stop on the secret step — what you send, then what you can read back, and there is no value field. Page 2, one short task: set when = in a few seconds, then kill both workers on the run_at step and start a fresh one; the chip does not move and the job still goes out. Run it again with failures = 2 and watch it go round the loop twice — three tries, one key. Page 3: same board, same loop, once per check; Aarokya says 202 still working and the back edge says Retry-After. The line that lands is the last step: polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. Press P for presentation view if the room is large — the board fills the screen and the only text is the step's name. If anything goes wrong, flip the replay toggle and keep talking. | Act 4 · running total 19:00">
+    <!-- 6 ─────────────────────────────────────────────────────────────────── -->
+    <section class="slide" data-notes="~7min. Switch to the demo tab. The whole machine is on screen and the work moves through it — point at the four regions once, left to right, and at the one edge that goes back the way it came. Then you drive: nothing advances until you press → (or hand it to auto). Do not read the JSON out; say the idea and let the chip travel. Start by typing a mandate id the room gives you and let them watch the request change before anything is sent. Page 1, set it up: four POSTs, each landing as a row in its store and lighting the placeholder it feeds; stop on the secret step — what you send, then what you can read back, and there is no value field. Page 2, one short task: set when = in a few seconds, then kill both workers on the run_at step and start a fresh one; the chip does not move and the job still goes out. Run it again with failures = 2 and watch it go round the loop twice — three tries, one key. Page 3: same board, same loop, once per check; Aarokya says 202 still working and the back edge says Retry-After. The line that lands is the last step: polls are not attempts. It needs the feature branch; on any other build it says so and you replay it. Press P for presentation view if the room is large — the board fills the screen and the only text is the step's name. If anything goes wrong, flip the replay toggle and keep talking. | Act 3 · running total 14:00">
       <div class="holding">
         <div>
           <div class="eyebrow" style="text-align:center">live</div>
@@ -545,8 +424,8 @@ GET …/attempts</pre>
       </div>
     </section>
 
-    <!-- 10 ────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~2min. Cover all four families fast; you do not know which one the room is holding. The top row is the real incumbent — spend your time there. Temporal is a different axis, not a competitor; say that and move on. | Act 5 · running total 21:00">
+    <!-- 7 ────────────────────────────────────────────────────────────────── -->
+    <section class="slide wide" data-notes="~2min. Cover all four families fast; you do not know which one the room is holding. The top row is the real incumbent — spend your time there. Temporal is a different axis, not a competitor; say that and move on. | Act 4 · running total 16:00">
       <div class="eyebrow">why not x</div>
       <h2>Why not the thing you are already using</h2>
 
@@ -577,8 +456,8 @@ GET …/attempts</pre>
       </table>
     </section>
 
-    <!-- 11 ────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~90s. Owning the limits buys more credibility than any feature slide, and it stops the Temporal question turning into a debate. If you need a saga, use a saga — say it plainly. | running total 22:30">
+    <!-- 8 ────────────────────────────────────────────────────────────────── -->
+    <section class="slide" data-notes="~90s. Owning the limits buys more credibility than any feature slide, and it stops the Temporal question turning into a debate. If you need a saga, use a saga — say it plainly. | running total 17:30">
       <div class="eyebrow">why not x</div>
       <h2>What Invokr is not</h2>
 
@@ -592,8 +471,8 @@ GET …/attempts</pre>
       <div class="punch reveal">If you need a saga, use a saga. Invokr is for <em>"do this thing, then, reliably"</em> — which is most of what we actually build.</div>
     </section>
 
-    <!-- 12 ────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~90s. This slide is what converts a nod into a pilot, so do not rush it. The ask is small on purpose: no new service, no new infra, no new on-call. The InvokrClient trait means call sites do not change when they later graduate to service mode — migration is a constructor swap. | Act 6 · running total 24:00">
+    <!-- 9 ────────────────────────────────────────────────────────────────── -->
+    <section class="slide wide" data-notes="~90s. This slide is what converts a nod into a pilot, so do not rush it. The ask is small on purpose: no new service, no new infra, no new on-call. The InvokrClient trait means call sites do not change when they later graduate to service mode — migration is a constructor swap. | Act 5 · running total 19:00">
       <div class="eyebrow">the on-ramp</div>
       <h2>You do not have to run anything</h2>
       <p class="sub">Library mode: Invokr embeds in a Rust service you already operate, on the PgPool you already have.</p>
@@ -627,8 +506,8 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
       <div class="kicker-note reveal">Service mode is the same code with an HTTP hop in front. Start embedded; graduate when you have a reason.</div>
     </section>
 
-    <!-- 13 ────────────────────────────────────────────────────────────────── -->
-    <section class="slide wide" data-notes="~90s. Say plainly: this is a gap list, not a roadmap. A finished-looking roadmap invites critique; an explicit gap list invites contribution. Ask for ONE thing each. The idempotency-key row is a concrete example of the granularity we want back. | running total 25:30">
+    <!-- 10 ────────────────────────────────────────────────────────────────── -->
+    <section class="slide wide" data-notes="~90s. Say plainly: this is a gap list, not a roadmap. A finished-looking roadmap invites critique; an explicit gap list invites contribution. Ask for ONE thing each. The idempotency-key row is a concrete example of the granularity we want back. | running total 20:30">
       <div class="eyebrow">what we have not built</div>
       <h2>These are questions, not a roadmap</h2>
       <p class="sub">Deliberately unbuilt. We would rather hear which of these blocks you than guess.</p>
@@ -644,8 +523,8 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
       <div class="punch reveal" style="font-size:24px">Bring us <em>one thing</em> you would need before you would migrate.</div>
     </section>
 
-    <!-- 14 ────────────────────────────────────────────────────────────────── -->
-    <section class="slide" data-notes="~60s, then Q&A (~7min at the planned pace). Make the first ask a name in the room, not a volunteer form. The second ask is the good one: a real incident, and an honest answer about whether we would have prevented it. | running total 26:30 · Q&A to 30:00">
+    <!-- 11 ────────────────────────────────────────────────────────────────── -->
+    <section class="slide" data-notes="~60s, then Q&A (~8:30 at this pace). Make the first ask a name in the room, not a volunteer form. The second ask is the good one: a real incident, and an honest answer about whether we would have prevented it. | running total 21:30 · Q&A to 30:00">
       <div class="eyebrow">the ask</div>
       <h2>Two asks</h2>
 
@@ -758,7 +637,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
 <footer>
   <span id="slide-label">Invokr</span>
   <span class="bar"><i id="progress"></i></span>
-  <span id="slide-num">1 / 14</span>
+  <span id="slide-num">1 / 11</span>
 </footer>
 
 <script>
