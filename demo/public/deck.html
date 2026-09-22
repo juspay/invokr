@@ -523,71 +523,6 @@
                 <!-- 6 ─────────────────────────────────────────────────────────────────── -->
                 <section
                     class="slide"
-                    data-notes="~60s. The entire API surface. Three verbs. If someone asks about auth/tenancy, say 'two headers' and move on — detail is in the appendix. | Act 2 · running total 3:00"
-                >
-                    <div class="eyebrow">what invokr is</div>
-                    <h2>Three steps. That is the whole surface.</h2>
-
-                    <div
-                        class="cols tight"
-                        style="
-                            grid-template-columns: repeat(3, 1fr);
-                            margin-top: 14px;
-                        "
-                    >
-                        <div class="panel">
-                            <h3>1 · register</h3>
-                            <p
-                                style="
-                                    font-size: 18px;
-                                    color: #97a6ba;
-                                    line-height: 1.45;
-                                    margin: 0 0 12px;
-                                "
-                            >
-                                Where to deliver, what to send, how to retry. A
-                                row, not a deploy.
-                            </p>
-                            <pre style="font-size: 13.5px">
-POST /v1/endpoints</pre>
-                        </div>
-                        <div class="panel">
-                            <h3>2 · invoke</h3>
-                            <p
-                                style="
-                                    font-size: 18px;
-                                    color: #97a6ba;
-                                    line-height: 1.45;
-                                    margin: 0 0 12px;
-                                "
-                            >
-                                Now, later, or on a schedule. Same call, one
-                                field different.
-                            </p>
-                            <pre style="font-size: 13.5px">POST /v1/jobs</pre>
-                        </div>
-                        <div class="panel">
-                            <h3>3 · observe</h3>
-                            <p
-                                style="
-                                    font-size: 18px;
-                                    color: #97a6ba;
-                                    line-height: 1.45;
-                                    margin: 0 0 12px;
-                                "
-                            >
-                                Every execution, every attempt, every error
-                                body. Without asking us.
-                            </p>
-                            <pre style="font-size: 13.5px">
-GET /v1/executions/{id}
-GET …/attempts</pre>
-                        </div>
-                    </div>
-                </section>
-
-                <section
-                    class="slide"
                     data-notes='~30s. Say it and stop. This is the slide that answers "so what do we have to build" before anyone asks it — nothing. No handler to write against our interface, no worker of ours in your deploy, no language we make you use. The endpoint you register is a row of JSON describing a call; the code behind that call is yours and never moves. If someone asks what runs inside Invokr: an HTTP request built from that row, and nothing else. | running total 3:30'
                 >
                     <div class="holding">
@@ -603,6 +538,332 @@ GET …/attempts</pre>
                             </p>
                         </div>
                     </div>
+                </section>
+
+                <section
+                    class="slide wide"
+                    data-notes="~90s. Walk it left to right. The left column is the setup you do once per integration: the shape of the input, the non-secret values, the credentials. The endpoint is the description of the call itself and it references the other three. Then a job says when, and the executions say what happened. Two details worth having ready: the payload spec and the config are named ON the endpoint, while secrets are pulled in by template inside the spec — and the secret's value is write-only, you can list the names but never read a value back. If someone counts: four POSTs to set up, one to fire, one GET to answer for it. | running total 3:30"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Register once, then invoke</h2>
+                    <p class="sub">
+                        Four POSTs to set it up, one to fire it, one GET to see
+                        what happened.
+                    </p>
+
+                    <svg
+                        viewBox="0 0 1120 296"
+                        style="width: 100%; height: auto; margin-top: 2px"
+                    >
+                        <defs>
+                            <marker
+                                id="fa"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <text
+                                x="0"
+                                y="12"
+                                fill="#64748b"
+                                font-size="11.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.13em"
+                            >
+                                REGISTER ONCE
+                            </text>
+                            <text
+                                x="596"
+                                y="12"
+                                fill="#2fd4b6"
+                                font-size="11.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                                letter-spacing="0.13em"
+                            >
+                                THEN INVOKE
+                            </text>
+
+                            <path
+                                d="M 572 24 L 572 268"
+                                stroke="#1f2b3a"
+                                stroke-width="1.5"
+                                stroke-dasharray="5 5"
+                            />
+
+                            <rect
+                                x="0"
+                                y="26"
+                                width="236"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="50"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                payload spec
+                            </text>
+                            <text
+                                x="20"
+                                y="72"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/payload-specs
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="102"
+                                width="236"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="126"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                config
+                            </text>
+                            <text
+                                x="20"
+                                y="148"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/configs
+                            </text>
+
+                            <rect
+                                x="0"
+                                y="178"
+                                width="236"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="20"
+                                y="202"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                secret
+                            </text>
+                            <text
+                                x="20"
+                                y="224"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/secrets
+                            </text>
+
+                            <g fill="none" stroke="#2c3d52" stroke-width="2">
+                                <path d="M 240 56 C 268 56, 272 132, 298 132" />
+                                <path d="M 240 132 L 298 132" />
+                                <path
+                                    d="M 240 208 C 268 208, 272 132, 298 132"
+                                />
+                            </g>
+                            <path
+                                d="M 298 132 L 316 132"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#fa)"
+                            />
+
+                            <rect
+                                x="320"
+                                y="102"
+                                width="236"
+                                height="60"
+                                rx="9"
+                                fill="#0d1a1d"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="340"
+                                y="126"
+                                fill="#2fd4b6"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                endpoint
+                            </text>
+                            <text
+                                x="340"
+                                y="148"
+                                fill="#7fb8ae"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/endpoints
+                            </text>
+
+                            <path
+                                d="M 588 132 L 626 132"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#fa)"
+                            />
+
+                            <rect
+                                x="630"
+                                y="102"
+                                width="200"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="650"
+                                y="126"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                job
+                            </text>
+                            <text
+                                x="650"
+                                y="148"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                POST /v1/jobs
+                            </text>
+
+                            <path
+                                d="M 834 132 L 872 132"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#fa)"
+                            />
+
+                            <rect
+                                x="876"
+                                y="102"
+                                width="244"
+                                height="60"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="896"
+                                y="126"
+                                fill="#e9eff7"
+                                font-size="15.5"
+                                font-weight="600"
+                            >
+                                executions
+                            </text>
+                            <text
+                                x="896"
+                                y="148"
+                                fill="#64748b"
+                                font-size="12.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                GET /v1/executions/{id}
+                            </text>
+
+                            <text
+                                x="320"
+                                y="182"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                where to deliver, what to send,
+                            </text>
+                            <text
+                                x="320"
+                                y="200"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                how to retry
+                            </text>
+                            <text
+                                x="630"
+                                y="182"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                when — now, later,
+                            </text>
+                            <text
+                                x="630"
+                                y="200"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                or on a schedule
+                            </text>
+                            <text
+                                x="876"
+                                y="182"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                every attempt, every
+                            </text>
+                            <text
+                                x="876"
+                                y="200"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                error body, as received
+                            </text>
+
+                            <text
+                                x="0"
+                                y="278"
+                                fill="#64748b"
+                                font-size="13.5"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                the endpoint pulls the other three in as
+                                {{input.*}} · {{config.*}} · {{secret.*}},
+                                resolved at execution time
+                            </text>
+                        </g>
+                    </svg>
                 </section>
 
                 <section
