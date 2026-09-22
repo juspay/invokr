@@ -715,6 +715,219 @@
 
                 <section
                     class="slide wide"
+                    data-notes="~60s. Four words, and everything after this slide uses them. Read them top to bottom — each one lives inside the one above it, and those are real foreign keys, not a diagram. The line that saves the most confusion is the last: a retry does not make a new execution, it adds an attempt to the one that is already there, so attempt_count on the execution and the rows in attempts always agree. Two extras if asked: a job is versioned — a PUT makes a new version rather than editing the old one — and payload spec and config are foreign keys on the endpoint, while secrets are pulled in by template. | running total 3:45"
+                >
+                    <div class="eyebrow">what invokr is</div>
+                    <h2>Four words</h2>
+
+                    <svg
+                        viewBox="0 0 1120 306"
+                        style="width: 100%; height: auto; margin-top: 24px"
+                    >
+                        <defs>
+                            <marker
+                                id="ta3"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M 0 0 L 10 5 L 0 10 z"
+                                    fill="#2c3d52"
+                                />
+                            </marker>
+                        </defs>
+                        <g font-family="Inter, sans-serif">
+                            <rect
+                                x="0"
+                                y="8"
+                                width="900"
+                                height="62"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="24"
+                                y="34"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                endpoint
+                            </text>
+                            <text x="24" y="56" fill="#97a6ba" font-size="13.5">
+                                where to deliver and how — url or topic, the
+                                body, the retry policy
+                            </text>
+                            <text
+                                x="876"
+                                y="46"
+                                fill="#2fd4b6"
+                                font-size="13"
+                                text-anchor="end"
+                            >
+                                reused by many jobs
+                            </text>
+
+                            <path
+                                d="M 28 70 L 28 111 L 50 111"
+                                fill="none"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta3)"
+                            />
+
+                            <rect
+                                x="56"
+                                y="80"
+                                width="844"
+                                height="62"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="80"
+                                y="106"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                job
+                            </text>
+                            <text
+                                x="80"
+                                y="128"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                the standing instruction — which endpoint, what
+                                input, and when
+                            </text>
+                            <text
+                                x="876"
+                                y="118"
+                                fill="#2fd4b6"
+                                font-size="13"
+                                text-anchor="end"
+                            >
+                                one row, many executions
+                            </text>
+
+                            <path
+                                d="M 84 142 L 84 183 L 106 183"
+                                fill="none"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta3)"
+                            />
+
+                            <rect
+                                x="112"
+                                y="152"
+                                width="788"
+                                height="62"
+                                rx="9"
+                                fill="#111823"
+                                stroke="#243144"
+                                stroke-width="1.5"
+                            />
+                            <text
+                                x="136"
+                                y="178"
+                                fill="#e9eff7"
+                                font-size="16"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                execution
+                            </text>
+                            <text
+                                x="136"
+                                y="200"
+                                fill="#97a6ba"
+                                font-size="13.5"
+                            >
+                                one run of that job — cron produces one per tick
+                            </text>
+                            <text
+                                x="876"
+                                y="190"
+                                fill="#2fd4b6"
+                                font-size="13"
+                                text-anchor="end"
+                            >
+                                one row, many attempts
+                            </text>
+
+                            <path
+                                d="M 140 214 L 140 255 L 162 255"
+                                fill="none"
+                                stroke="#2c3d52"
+                                stroke-width="2"
+                                marker-end="url(#ta3)"
+                            />
+
+                            <rect
+                                x="168"
+                                y="224"
+                                width="732"
+                                height="62"
+                                rx="9"
+                                fill="#0f2226"
+                                stroke="#2fd4b6"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="192"
+                                y="250"
+                                fill="#2fd4b6"
+                                font-size="16"
+                                font-weight="600"
+                                font-family="ui-monospace, Menlo, monospace"
+                            >
+                                attempt
+                            </text>
+                            <text
+                                x="192"
+                                y="272"
+                                fill="#7fb8ae"
+                                font-size="13.5"
+                            >
+                                one delivery try — status, duration, and what
+                                came back
+                            </text>
+                            <text
+                                x="876"
+                                y="262"
+                                fill="#7fb8ae"
+                                font-size="13"
+                                text-anchor="end"
+                            >
+                                a retry adds one
+                            </text>
+                        </g>
+                    </svg>
+
+                    <div
+                        class="kicker-note"
+                        style="margin-top: 24px; max-width: none"
+                    >
+                        A retry does not make a second execution — it adds an
+                        attempt to the one already there.
+                    </div>
+                </section>
+
+                <section
+                    class="slide wide"
                     data-notes="~60s. Four POSTs, and the payload on the right is the whole point — it references the other three by name: payload_spec, config, and the secret by template inside the spec. Everything in double braces is resolved at execution time, not at registration. A secret's value is write-only; you can list the names, you can never read a value back. | running total 3:30"
                 >
                     <div class="eyebrow">what invokr is</div>
@@ -3182,7 +3395,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
         <footer>
             <span id="slide-label">Invokr</span>
             <span class="bar"><i id="progress"></i></span>
-            <span id="slide-num">1 / 17</span>
+            <span id="slide-num">1 / 18</span>
         </footer>
 
         <script>
