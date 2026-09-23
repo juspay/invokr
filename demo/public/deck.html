@@ -470,10 +470,6 @@
                 >
                     <div class="eyebrow">the mental model</div>
                     <h2>You already know this API</h2>
-                    <p class="sub">
-                        If you have written JavaScript, you have written half of
-                        Invokr.
-                    </p>
 
                     <table>
                         <thead>
@@ -1416,7 +1412,7 @@
                     data-notes="~90s. One loop, running inside the database. pg_cron wakes every minute, reads its own table for anything due, and runs that row's command — which inserts one execution. Then it goes round again. Point at the loop, not the boxes. Worth having ready: the command re-reads the jobs row and is guarded on the job still being ACTIVE and inside its start/end window, so a cancelled job ticks into a no-op, and it ends with ON CONFLICT DO NOTHING so two ticks in the same millisecond collapse. | running total 7:45"
                 >
                     <div class="eyebrow">what invokr is</div>
-                    <h2>There is no scheduler</h2>
+                    <h2>pg_cron does the scheduling for CRON jobs</h2>
 
                     <svg
                         viewBox="0 0 1120 300"
@@ -2750,7 +2746,7 @@
                     </div>
                 </section>-->
 
-                <section
+                <!--<section
                     class="slide wide"
                     data-notes='~75s. Start on the left and read the block. async.status_codes are the codes that mean "work pending" — they must be disjoint from expected_status_codes, or the endpoint is rejected. The three poll status sets must also be disjoint; anything outside all three, and any transport error, is a transient error. Presence of the poll block enables polling; callback is a plain boolean. Then the right: a 202 parks the execution instead of finishing it, and the Location header becomes the poll url. No Location on an async response is a hard failure — MISSING_POLL_URL, not retried. This is on feat/long-running-jobs, not yet on main. | long-running'
                 >
@@ -2950,9 +2946,9 @@
                             </svg>
                         </div>
                     </div>
-                </section>
+                </section>-->
 
-                <section
+                <!--<section
                     class="slide wide"
                     data-notes="~90s. The loop is the slide. WAITING is parked with a run_at; when it elapses the ordinary pickup query claims it — WAITING is in the same IN list as QUEUED — and the claim flips it to POLLING, bumps poll_count, and leaves attempt_count and started_at alone. Then one GET, and the status code decides which of four arrows it takes. Walk the loop first, then the three on the right. Recovery: the poll runs inside the claim transaction, so a worker that dies mid-poll rolls the whole thing back — status, poll_count, the polls row — and the row is WAITING again for the next worker. A crashed poll costs nothing. | long-running"
                 >
@@ -3434,7 +3430,7 @@
                         <code>status IN ('WAITING','POLLING')</code> — and gets
                         <code>409 ALREADY_TERMINAL</code>.
                     </div>
-                </section>
+                </section>-->
 
                 <section
                     class="slide wide"
@@ -3642,7 +3638,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
                 </section>-->
 
                 <!-- appendix ──────────────────────────────────────────────────────────── -->
-                <section
+                <!--<section
                     class="slide wide appendix"
                     data-notes="Appendix. Do not present; jump here from the overview grid (press O) when asked."
                 >
@@ -4046,7 +4042,7 @@ client.<span class="f">create_job</span>(<span class="s">"orders"</span>, <span 
                         processes, one database, nothing holding a timer in
                         memory.
                     </div>
-                </section>
+                </section>-->
             </div>
         </div>
 
