@@ -29,7 +29,7 @@ The `Dockerfile` at the repository root uses four stages to produce a minimal ru
 
 ### Dependency caching with cargo-chef
 
-The `planner` stage runs `cargo chef prepare` to create a `recipe.json` that captures the dependency graph. The `builder` stage runs `cargo chef cook` to compile dependencies **before** the application source is copied. This means dependency rebuilds only happen when `Cargo.toml` or `Cargo.lock` change — not on every source edit.
+The `planner` stage runs `cargo chef prepare` to create a `recipe.json` that captures the dependency graph. The `builder` stage runs `cargo chef cook` to compile dependencies **before** the application source is copied. Dependency rebuilds then happen only when `Cargo.toml` or `Cargo.lock` change, not on every source edit.
 
 Build caches are mounted via `--mount=type=cache` for both the Cargo registry and the `target/` directory, enabling fast incremental builds across CI runs.
 

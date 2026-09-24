@@ -139,7 +139,7 @@ The Dockerfile uses [cargo-chef](https://github.com/LukeMathWalker/cargo-chef) t
 2. The `builder` stage runs `cargo chef cook` to compile dependencies before the source is copied
 3. Build caches are mounted via `--mount=type=cache` for the Cargo registry and `target/` directory
 
-This means dependency rebuilds only happen when `Cargo.toml` or `Cargo.lock` change, not on every source edit or CI run.
+Dependency rebuilds only happen when `Cargo.toml` or `Cargo.lock` change, not on every source edit or CI run.
 
 ## Dashboard build
 

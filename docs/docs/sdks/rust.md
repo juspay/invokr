@@ -7,7 +7,7 @@ title: Rust SDK
 
 The Rust SDK is generated from Smithy IDL models via `smithy-rs` codegen. It provides a fully typed, async client for the Invokr REST API with a fluent-builder pattern.
 
-## Location and Status
+## Location and status
 
 The generated Rust SDK lives at `crates/client/` and is published as the `invokr_sdk` crate.
 
@@ -16,16 +16,16 @@ The generated Rust SDK lives at `crates/client/` and is published as the `invokr
 invokr_sdk = { git = "https://github.com/juspay/invokr.git" }
 ```
 
-### Excluded from Workspace Build
+### Excluded from workspace build
 
 The `invokr_sdk` crate is **excluded** from the Invokr workspace (`Cargo.toml` → `[workspace] exclude`) for two reasons:
 
 1. **Different MSRV**: The SDK targets Rust 1.82, while the server crates target a different minimum version
 2. **Heavy AWS runtime stack**: The SDK pulls in the AWS smithy runtime, which the server crates don't need
 
-### Committed to Repository
+### Committed to repository
 
-Despite being generated, the `crates/client/` directory is committed to the repository. This means downstream Rust consumers (e.g. other services within the organization) can depend on it via a Cargo `git` dep without needing the Smithy CLI, JVM, or Maven to build:
+Despite being generated, the `crates/client/` directory is committed to the repository. Downstream Rust consumers (e.g. other services within the organization) can then depend on it via a Cargo `git` dep without needing the Smithy CLI, JVM, or Maven to build:
 
 ```toml
 [dependencies]
@@ -52,7 +52,7 @@ git add smithy/ crates/client/
 git commit
 ```
 
-## Client Setup
+## Client setup
 
 ```rust
 use invokr_sdk::Client;
@@ -67,7 +67,7 @@ let config = Config::builder()
 let client = Client::from_conf(config);
 ```
 
-## Usage Example
+## Usage example
 
 ```rust
 use invokr_sdk::Client;
@@ -92,7 +92,7 @@ let response = client.create_job()
 println!("Job ID: {}", response.data.job_id);
 ```
 
-## Fluent-Builder Pattern
+## Fluent-builder pattern
 
 The Rust SDK uses the fluent-builder pattern (consistent with the AWS SDK for Rust). Each operation has:
 
@@ -121,7 +121,7 @@ let input = CreateJobInput::builder()
 let response = client.create_job().set_input(input).send().await?;
 ```
 
-## Key Types
+## Key types
 
 | Type | Description |
 |------|-------------|
@@ -134,7 +134,7 @@ let response = client.create_job().set_input(input).send().await?;
 | `types::ExecutionStatus` | Enum: `Pending`, `Queued`, `Running`, `Retrying`, `Success`, `Failed`, `Cancelled` |
 | `types::EndpointType` | Enum: `Http`, `Kafka`, `RedisStream` |
 
-## Codegen Configuration
+## Codegen configuration
 
 The `smithy-build.json` configures the Rust codegen:
 
@@ -166,7 +166,7 @@ The `smithy-build.json` configures the Rust codegen:
 | `module` | `invokr_sdk` | Cargo crate name |
 | `minimumSupportedRustVersion` | `1.82.0` | MSRV for the generated crate |
 
-## Related Pages
+## Related pages
 
 - [SDK Overview](./overview) — All SDKs and the Smithy codegen pipeline
 - [TypeScript SDK](./typescript) — TypeScript SDK for JS/TS consumers

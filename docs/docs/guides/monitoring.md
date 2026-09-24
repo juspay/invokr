@@ -5,7 +5,7 @@ title: Monitoring & Observability
 
 # Monitoring & Observability
 
-Invokr exposes Prometheus metrics from both the API server and the worker. A pre-built Grafana dashboard provides visualization of job creation, execution throughput, dispatch latency, and worker health.
+Invokr exposes Prometheus metrics from both the API server and the worker. A pre-built Grafana dashboard visualizes job creation, execution throughput, dispatch latency, and worker health.
 
 ## Metrics endpoints
 

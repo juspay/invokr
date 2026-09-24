@@ -5,7 +5,7 @@ title: Delayed Jobs
 
 # Delayed Jobs
 
-Delayed jobs fire once at a specific future time — the `setTimeout` of Invokr. When you create a delayed job, Invokr inserts an execution with `PENDING` status and a `run_at` timestamp. Workers pick it up automatically when `run_at <= now()` — no separate promoter process is needed.
+Delayed jobs fire once at a specific future time. When you create a delayed job, Invokr inserts an execution with `PENDING` status and a `run_at` timestamp. Workers pick it up automatically once `run_at <= now()`. No separate promoter process is needed.
 
 ## Creating a delayed job
 
@@ -74,7 +74,7 @@ Delayed jobs use **transaction-based pickup** rather than a separate promoter lo
 3. **Execution**: Once `run_at <= now()`, the worker claims the execution, resolves templates, dispatches to the endpoint, and records the result.
 
 :::tip
-There is no separate "promoter" process that transitions `PENDING → QUEUED`. The worker's pickup query directly claims `PENDING` executions whose `run_at` has passed. This eliminates a component and a failure mode.
+There is no separate "promoter" process that transitions `PENDING → QUEUED`. The worker's pickup query directly claims `PENDING` executions whose `run_at` has passed, so there is one fewer component to run and fail.
 :::
 
 ## Pickup index

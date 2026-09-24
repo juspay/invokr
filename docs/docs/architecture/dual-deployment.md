@@ -5,13 +5,13 @@ title: Dual Deployment Modes
 
 # Dual Deployment Modes
 
-Invokr supports two deployment modes: **library mode** (embedded in-process, also called "embedded mode") and **service mode** (standalone REST API). Both modes expose the same API through the `InvokrClient` trait, so call sites are transparent to the deployment mode — switching requires a change only at the construction site; call sites that use the `InvokrClient` trait are unchanged.
+Invokr supports two deployment modes: **library mode** (embedded in-process, also called "embedded mode") and **service mode** (standalone REST API). Both modes expose the same API through the `InvokrClient` trait. Switching modes requires a change only at the construction site; call sites that use the trait are unchanged.
 
 :::tip
 For a step-by-step setup guide for library mode, see [Library Mode Setup](../deployment/library-mode). For service mode setup, see [Quickstart](../quickstart) and [Docker](../deployment/docker).
 :::
 
-## InvokrClient Trait
+## InvokrClient trait
 
 The `InvokrClient` trait abstracts over both deployment modes. It defines the full set of operations for managing Invokr resources:
 
@@ -40,7 +40,7 @@ pub trait InvokrClient: Send + Sync {
 | `cancel_job` | Updates DB + unschedules pg_cron | POST to `/v1/jobs/{id}/cancel` |
 | `get_execution` | Queries DB directly | GET to `/v1/executions/{id}` |
 
-## JobTrigger Enum
+## JobTrigger enum
 
 Both modes accept the same `JobTrigger` enum for job creation:
 
@@ -61,11 +61,11 @@ pub enum JobTrigger {
 }
 ```
 
-## Library Mode (InvokrLibraryClient)
+## Library mode (InvokrLibraryClient)
 
-Library mode embeds Invokr directly into your application process. It holds a caller-provided `PgPool` and accesses the database directly — no HTTP overhead.
+Library mode embeds Invokr directly into your application process. It holds a caller-provided `PgPool` and accesses the database directly, with no HTTP overhead.
 
-### Creating a Library Client
+### Creating a library client
 
 ```rust
 use invokr_worker::InvokrLibraryClient;
@@ -85,7 +85,7 @@ let client = InvokrLibraryClient::new(
 | `encryption_key` | `&str` | 64 hex-char AES-256 key for secrets; pass zeros if not using secrets |
 | `http_client` | `Option<Client>` | Optional reqwest client to reuse the caller's connection pool |
 
-### Provisioning a Workspace
+### Provisioning a workspace
 
 In library mode, `provision_workspace()` applies the `workspace_v1.sql` template directly to the database, creating all workspace-scoped tables. The `{p}` placeholder in the template is replaced by `table_prefix` verbatim:
 
@@ -99,7 +99,7 @@ pub async fn provision_workspace(&self, schema_name: &str) -> anyhow::Result<()>
 In library mode, `provision_workspace()` only creates the tenant schema and tables. It does **not** insert into `public.organizations` or `public.workspaces` — those are managed by the caller. See [Library Mode Setup](../deployment/library-mode) for the full provisioning flow.
 :::
 
-### Starting the Worker
+### Starting the worker
 
 The library client can start a background worker directly via `start_worker()`, which returns a `WorkerHandle`:
 
@@ -142,9 +142,9 @@ pub struct WorkerConfig {
 }
 ```
 
-## Service Mode (InvokrHttpClient)
+## Service mode (InvokrHttpClient)
 
-Service mode communicates with Invokr via the REST API. It's used when Invokr runs as a standalone service:
+Service mode communicates with Invokr via the REST API. It applies when Invokr runs as a standalone service:
 
 ```rust
 use invokr_worker::InvokrHttpClient;
@@ -156,7 +156,7 @@ let client = InvokrHttpClient::new(
 );
 ```
 
-### Workspace Routing
+### Workspace routing
 
 Each request includes `x-org-id` and `x-workspace-id` headers for tenant routing:
 
@@ -169,7 +169,7 @@ fn with_workspace(&self, req: reqwest::RequestBuilder, schema_name: &str) -> req
 
 Invokr resolves the workspace by slug (the `schema_name` is used as the workspace slug). The `resolve_schema` function in `db/workspaces.rs` accepts both slug and workspace UUID.
 
-### Provisioning in Service Mode
+### Provisioning in service mode
 
 In service mode, `provision_workspace()` registers the workspace with Invokr by creating it via the API. The org must already exist (created by the operator):
 
@@ -192,7 +192,7 @@ async fn provision_workspace(&self, schema_name: &str) -> anyhow::Result<()> {
 For service-mode setup guides, see [Quickstart](../quickstart), [Docker](../deployment/docker), and [Production Deployment](../deployment/production).
 :::
 
-## When to Use Which Mode
+## When to use which mode
 
 | Criteria | Library Mode | Service Mode |
 |----------|-------------|-------------|
@@ -208,7 +208,7 @@ For service-mode setup guides, see [Quickstart](../quickstart), [Docker](../depl
 **Library mode** is ideal when you want to add durable job scheduling to a single Rust application with minimal infrastructure. **Service mode** is better when multiple applications need to share a single Invokr deployment, or when you want to decouple Invokr's operational lifecycle from your application.
 :::
 
-## SchemaProvider Trait
+## SchemaProvider trait
 
 The `SchemaProvider` trait tells the worker where to find the list of active workspace schemas. Invokr ships `SchemaRegistry` as the default implementation:
 
@@ -219,7 +219,7 @@ pub trait SchemaProvider: Send + Sync + 'static {
 }
 ```
 
-### SchemaRegistry (Default)
+### SchemaRegistry (default)
 
 `SchemaRegistry` queries Invokr's own `public.workspaces` table with a 30-second TTL cache:
 
@@ -247,11 +247,11 @@ impl SchemaProvider for MyAppSchemaProvider {
 }
 ```
 
-## Table Prefix System
+## Table prefix system
 
 Both deployment modes support a table prefix to avoid collisions when Invokr tables share a schema with other application tables.
 
-### The `tbl()` Function
+### The `tbl()` function
 
 In the codebase, table names are constructed using a prefix-aware `DbContext`:
 
@@ -260,7 +260,7 @@ let mut db = DbContext::new(&mut *conn, prefix);
 // All queries use db.prefix to construct table names
 ```
 
-### The `{p}` Placeholder in workspace_v1.sql
+### The `{p}` placeholder in workspace_v1.sql
 
 The `workspace_v1.sql` template uses `{p}` as a placeholder for the table prefix:
 
@@ -288,7 +288,7 @@ let ddl = WORKSPACE_SCHEMA_V1.replace("{p}", table_prefix);
 The table prefix is validated to contain only alphanumeric characters and underscores. An empty prefix is valid and means no prefix is applied. Pass the full prefix including trailing underscore (e.g. `"sched_"`, not `"sched"`) to get `sched_jobs` instead of `schedjobs`.
 :::
 
-## Related Pages
+## Related pages
 
 - [Library Mode Setup](../deployment/library-mode) — Step-by-step guide for embedding Invokr
 - [Architecture Overview](./overview) — System architecture and process topology

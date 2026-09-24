@@ -5,9 +5,9 @@ title: SDK Overview
 
 # SDK Overview
 
-Invokr provides SDKs in multiple languages, all generated from a single source of truth: Smithy IDL models. This ensures API consistency across languages and eliminates the need for manual SDK maintenance.
+Invokr ships SDKs for several languages, and all of them are generated from the same Smithy IDL models. Because the clients come out of one definition, they stay in step with the API — and with each other — and nobody has to hand-write or hand-update client code.
 
-## Smithy IDL Models
+## Smithy IDL models
 
 All SDKs are generated from Smithy interface definition language (IDL) models located at `smithy/model/*.smithy`. Smithy is Amazon's open-source IDL for defining services and their data shapes.
 
@@ -19,7 +19,7 @@ The Smithy models define:
 - **Enums** (e.g., `TriggerType`, `ExecutionStatus`, `EndpointType`)
 - **Error types** (e.g., `JobNotFound`, `InvalidCron`)
 
-### smithy-build.json Configuration
+### smithy-build.json configuration
 
 The `smithy/smithy-build.json` file configures code generation for three languages plus an OpenAPI spec:
 
@@ -79,9 +79,9 @@ The `smithy/smithy-build.json` file configures code generation for three languag
 | `haskell-client-codegen` | Haskell SDK | `SuperpositionSDK` |
 | `openapi` | OpenAPI spec | — |
 
-## Single Source of Truth
+## Keeping the SDKs in sync
 
-The Smithy models are the single source of truth for the API contract. When the API changes:
+The Smithy models are the authoritative definition of the API contract. When the API changes:
 
 1. Update the Smithy model in `smithy/model/`
 2. Regenerate all SDKs
@@ -129,7 +129,7 @@ See [Rust SDK](./rust) for details.
 
 See [Haskell SDK](./haskell) for details.
 
-## Just Recipes
+## Just recipes
 
 | Recipe | Description |
 |--------|-------------|
@@ -139,9 +139,9 @@ See [Haskell SDK](./haskell) for details.
 | `just cli-install` | Install CLI dependencies (links to built SDK) |
 | `just test-haskell` | Run the Haskell SDK example |
 
-## Regeneration Workflow
+## Regenerating after an API change
 
-When you change the API (add an operation, modify a shape, etc.):
+When you change the API — add an operation, modify a shape, and so on:
 
 ```bash
 # 1. Update Smithy models

@@ -21,9 +21,9 @@ just cli-install
 
 This produces the `invokr-sdk` package in `smithy/build/smithy/source/typescript-client-codegen/`, which is then linked into the `cli/` project.
 
-## Client Setup
+## Client setup
 
-Create a `InvokrServiceClient` with the API endpoint and bearer token:
+Create an `InvokrServiceClient` with the API endpoint and bearer token:
 
 ```typescript
 import { InvokrServiceClient, CreateJobCommand } from "invokr-sdk";
@@ -48,7 +48,7 @@ const tenant = {
 };
 ```
 
-## Creating a Job
+## Creating a job
 
 ```typescript
 import { InvokrServiceClient, CreateJobCommand } from "invokr-sdk";
@@ -71,7 +71,7 @@ const response = await client.send(
 console.log(response.data!.job_id);
 ```
 
-### Response Shape
+### Response shape
 
 For `IMMEDIATE` and `DELAYED` triggers, the response includes an `execution` object:
 
@@ -89,9 +89,9 @@ console.log(response.data!.cron);         // "0 9 * * MON"
 console.log(response.data!.next_run_at);  // "2026-03-16T09:00:00+05:30"
 ```
 
-## Other Operations
+## Other operations
 
-### Create an Endpoint
+### Create an endpoint
 
 ```typescript
 import { CreateEndpointCommand } from "invokr-sdk";
@@ -118,7 +118,7 @@ const endpointResp = await client.send(
 );
 ```
 
-### Create a Payload Spec
+### Create a payload spec
 
 ```typescript
 import { CreatePayloadSpecCommand } from "invokr-sdk";
@@ -139,7 +139,7 @@ await client.send(
 );
 ```
 
-### Get an Execution
+### Get an execution
 
 ```typescript
 import { GetExecutionCommand } from "invokr-sdk";
@@ -156,7 +156,7 @@ console.log(execResp.data!.attempt_count); // 1
 console.log(execResp.data!.duration_ms);   // 340
 ```
 
-### Cancel a Job
+### Cancel a job
 
 ```typescript
 import { CancelJobCommand } from "invokr-sdk";
@@ -169,7 +169,7 @@ await client.send(
 );
 ```
 
-### List Executions for a Job
+### List executions for a job
 
 ```typescript
 import { ListJobExecutionsCommand } from "invokr-sdk";
@@ -187,7 +187,7 @@ for (const exec of executions) {
 }
 ```
 
-### List Execution Attempts
+### List execution attempts
 
 ```typescript
 import { ListExecutionAttemptsCommand } from "invokr-sdk";
@@ -205,7 +205,7 @@ for (const attempt of attempts) {
 }
 ```
 
-## CLI Test Scripts
+## CLI test scripts
 
 The `cli/src/` directory contains test scripts that exercise the full Invokr lifecycle using the TypeScript SDK:
 
@@ -217,7 +217,7 @@ The `cli/src/` directory contains test scripts that exercise the full Invokr lif
 | `load-test.ts` | `just load-test 50` | Create 50 jobs of each type and track completion |
 | `test-internal-guards.ts` | — | Verify API guards reject user jobs targeting INTERNAL endpoints |
 
-### Running Tests
+### Running tests
 
 ```bash
 # Prerequisites: all services running
@@ -237,7 +237,7 @@ just load-test 50      # Create 50 jobs of each type
 just load-test-nw 50   # Fire-and-forget (no polling)
 ```
 
-### Environment Variables
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -247,7 +247,7 @@ just load-test-nw 50   # Fire-and-forget (no polling)
 | `INVOKR_ORG_ID` | *(required)* | Organization ID for tenant routing |
 | `INVOKR_WORKSPACE_ID` | *(required)* | Workspace ID for tenant routing |
 
-### Test Script Example (test-immediate.ts)
+### Test script example (test-immediate.ts)
 
 The test scripts follow a common pattern:
 
@@ -280,7 +280,7 @@ while (Date.now() - startTime < POLL_TIMEOUT_MS) {
 }
 ```
 
-## Error Handling
+## Error handling
 
 The SDK throws errors with metadata for non-success responses:
 
@@ -296,10 +296,10 @@ try {
 ```
 
 :::tip
-The SDK uses the AWS Smithy TypeScript runtime, which provides the same command/response pattern as the AWS SDK for JavaScript. If you're familiar with `aws-sdk` v3, the Invokr SDK will feel immediately familiar.
+The SDK uses the AWS Smithy TypeScript runtime, so it follows the same command/response pattern as the AWS SDK for JavaScript. If you have used `aws-sdk` v3, the API here works the same way.
 :::
 
-## Related Pages
+## Related pages
 
 - [SDK Overview](./overview) — All SDKs and the Smithy codegen pipeline
 - [Rust SDK](./rust) — Generated Rust SDK for Rust consumers

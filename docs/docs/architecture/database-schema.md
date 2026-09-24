@@ -7,7 +7,7 @@ title: Database Schema
 
 Invokr uses a schema-per-tenant architecture backed by PostgreSQL. Each workspace gets its own isolated schema with a complete set of tables for job scheduling and execution. Shared tables that manage tenant discovery live in the `public` schema.
 
-## Schema-Per-Tenant Architecture
+## Schema-per-tenant architecture
 
 ```
 public schema:        organizations, workspaces
@@ -15,7 +15,7 @@ tenant schema:        payload_specs, configs, secrets, endpoints,
 (org_workspace):      jobs, executions, attempts, execution_logs
 ```
 
-### Schema Naming
+### Schema naming
 
 Schema names are derived from the org ID and workspace slug:
 
@@ -39,7 +39,7 @@ pub fn validate_slug(slug: &str) -> bool {
 }
 ```
 
-## Public Schema Tables
+## Public schema tables
 
 The `public` schema contains two tables for multi-tenant management:
 
@@ -84,7 +84,7 @@ The `schema_name` column stores the PostgreSQL schema name for the workspace. Th
 SELECT schema_name FROM public.workspaces WHERE status = 'ACTIVE'
 ```
 
-## Per-Workspace Schema Tables
+## Per-workspace schema tables
 
 Each workspace schema contains seven tables. The schema below shows the unprefixed version (table prefix empty). When a prefix is used, all table names and constraint names are prefixed (see [Table Prefix System](#table-prefix-system)).
 
@@ -261,11 +261,11 @@ CREATE TABLE execution_logs (
 );
 ```
 
-## Table Prefix System
+## Table prefix system
 
 When Invokr tables share a PostgreSQL schema with other application tables, a table prefix prevents name collisions. The `tbl()` function in `DbContext` applies the prefix to all table references.
 
-### How It Works
+### How it works
 
 The `workspace_v1.sql` template uses `{p}` as a placeholder:
 
@@ -297,11 +297,11 @@ let ddl = TEMPLATE.replace("{p}", &p);
 The table prefix is validated to contain only alphanumeric characters and underscores. An empty prefix is valid and produces unprefixed table names.
 :::
 
-## Key Indexes
+## Key indexes
 
-### idx_executions_pickup (Worker Hot Path)
+### idx_executions_pickup (worker hot path)
 
-The most critical index — the worker's `SKIP LOCKED` claim query scans this index on every poll cycle:
+This is the most heavily used index: the worker's `SKIP LOCKED` claim query scans it on every poll cycle.
 
 ```sql
 CREATE INDEX idx_executions_pickup
@@ -309,13 +309,13 @@ CREATE INDEX idx_executions_pickup
     WHERE status IN ('QUEUED', 'RETRYING', 'PENDING');
 ```
 
-This is a **partial index** — it only indexes rows in actionable statuses. The `run_at ASC` ordering ensures the oldest actionable execution is claimed first (FIFO within each status group).
+This is a **partial index**: it only indexes rows in actionable statuses. The `run_at ASC` ordering claims the oldest actionable execution first (FIFO within each status group).
 
 :::warning
 Including `PENDING` is what enables transaction-based pickup for delayed jobs. It used to be added by the `20260322000000_txn_based_pickup.sql` migration, back when `executions` was a single global table; that migration is now a no-op and this index ships as part of the per-workspace `workspace_v1.sql` template.
 :::
 
-### idx_jobs_idempotency (Job Dedup)
+### idx_jobs_idempotency (job dedup)
 
 Prevents duplicate job creation for the same endpoint + idempotency key:
 
@@ -325,9 +325,9 @@ CREATE UNIQUE INDEX idx_jobs_idempotency
     WHERE idempotency_key IS NOT NULL;
 ```
 
-This is a **unique partial index** — it only enforces uniqueness when `idempotency_key` is not NULL, allowing jobs without idempotency keys to coexist.
+This is a **unique partial index**: it only enforces uniqueness when `idempotency_key` is not NULL, so jobs without idempotency keys can coexist.
 
-### idx_executions_cron_dedup (CRON Tick Dedup)
+### idx_executions_cron_dedup (CRON tick dedup)
 
 Prevents duplicate CRON tick executions:
 
@@ -339,7 +339,7 @@ CREATE UNIQUE INDEX idx_executions_cron_dedup
 
 The CRON tick insert uses `ON CONFLICT (job_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING` to silently ignore duplicate ticks.
 
-### Other Indexes
+### Other indexes
 
 | Index | Table | Purpose |
 |-------|-------|---------|
@@ -352,7 +352,7 @@ The CRON tick insert uses `ON CONFLICT (job_id, idempotency_key) WHERE idempoten
 | `idx_logs_by_execution` | `execution_logs` | List logs for an execution (`execution_id, logged_at ASC`) |
 | `idx_logs_by_attempt` | `execution_logs` | List logs by attempt (`execution_id, attempt_number, logged_at ASC`) |
 
-## Migration Files
+## Migration files
 
 Migrations are applied in order to the `invokr_db` database:
 
@@ -364,7 +364,7 @@ Migrations are applied in order to the `invokr_db` database:
 | `20260322000001_pg_cron.sql` | Installs pg_cron extension, migrates existing CRON jobs to pg_cron |
 | `workspace_v1.sql` | Template applied per-workspace at creation time (not a migration) |
 
-### Applying Migrations
+### Applying migrations
 
 ```bash
 for f in migrations/20260317000000_initial.sql \
@@ -382,9 +382,9 @@ just db-migrate    # Run migrations
 just db-reset      # Drop + recreate + migrate
 ```
 
-## workspace_v1.sql Template
+## workspace_v1.sql template
 
-The `workspace_v1.sql` file is a **template**, not a migration. It's applied to each new workspace schema at creation time. It contains all seven per-workspace tables with the `{p}` placeholder for table prefixing.
+The `workspace_v1.sql` file is a **template**, not a migration. It is applied to each new workspace schema at creation time and contains all seven per-workspace tables with the `{p}` placeholder for table prefixing.
 
 Key differences from the initial migration:
 
@@ -392,7 +392,7 @@ Key differences from the initial migration:
 2. **`{p}` placeholder**: All table names and constraint names use `{p}` for prefix support
 3. **No region tables**: `region_heartbeats` and `region_status` are only in the initial migration (public schema)
 
-### Scoped Connections
+### Scoped connections
 
 Workspace-scoped operations use `scoped_connection` or `scoped_transaction`, which set PostgreSQL's `search_path` to the workspace schema:
 
@@ -409,13 +409,13 @@ pub async fn scoped_transaction<'a>(
 }
 ```
 
-This ensures all queries within the transaction automatically resolve unqualified table names to the workspace schema first, then `public` as fallback. Schema names are validated to prevent SQL injection via `search_path` manipulation.
+Within the transaction, unqualified table names then resolve to the workspace schema first, falling back to `public`. Schema names are validated to prevent SQL injection via `search_path` manipulation.
 
 :::danger
 Schema names are validated by `validate_schema_name()` which ensures only alphanumeric characters and underscores. This is critical because schema names are interpolated into `SET search_path` commands. Never bypass this validation.
 :::
 
-## Related Pages
+## Related pages
 
 - [Architecture Overview](./overview) — How the schema fits into the overall system
 - [Exactly-Once Guarantees](./exactly-once) — How the unique indexes ensure deduplication

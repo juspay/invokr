@@ -5,19 +5,19 @@ title: Jobs
 
 # Jobs
 
-A job is an invocation of an endpoint. Creating a job triggers execution — either immediately, at a scheduled time, or on a recurring schedule. Jobs are the core primitive of Invokr: they map directly to the JavaScript `setTimeout` and `setInterval` concepts, but with durability, retries, and observability built in.
+A job is a single invocation of an endpoint. Creating one triggers execution — immediately, at a scheduled time, or on a recurring schedule. Jobs are the core primitive of Invokr: nearly everything you do comes down to creating a job and watching it run.
 
 ---
 
 ## Trigger types
 
-Invokr supports three trigger types, each corresponding to a familiar JavaScript primitive:
+A job has one of three trigger types:
 
-| Trigger | JavaScript equivalent | Behavior |
-|---------|----------------------|----------|
-| `IMMEDIATE` | `setTimeout(fn, 0)` | Fires now. Execution created as `QUEUED` in the same transaction as the job. |
-| `DELAYED` | `setTimeout(fn, delay)` | Fires at a specific time. Execution created as `PENDING` with `run_at`. Workers pick it up when `run_at <= now()`. |
-| `CRON` | `setInterval(fn, interval)` | Fires repeatedly on a schedule. Registered with pg_cron at creation time. Each tick inserts a new `QUEUED` execution. |
+| Trigger | Behavior |
+|---------|----------|
+| `IMMEDIATE` | Fires now. Execution created as `QUEUED` in the same transaction as the job. |
+| `DELAYED` | Fires at a specific time. Execution created as `PENDING` with `run_at`. Workers pick it up when `run_at <= now()`. |
+| `CRON` | Fires repeatedly on a schedule. Registered with pg_cron at creation time. Each tick inserts a new `QUEUED` execution. |
 
 ---
 

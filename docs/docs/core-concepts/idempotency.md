@@ -5,7 +5,7 @@ title: Idempotency
 
 # Idempotency
 
-Idempotency is the mechanism that ensures Invokr never fires the same job twice. Every job has an idempotency key, and the database enforces uniqueness constraints that prevent duplicate executions.
+Idempotency is how Invokr avoids firing the same job twice. Every job has an idempotency key, and the database enforces uniqueness constraints that prevent duplicate executions.
 
 ---
 
@@ -36,7 +36,7 @@ CREATE UNIQUE INDEX idx_jobs_idempotency
     WHERE idempotency_key IS NOT NULL;
 ```
 
-This index ensures that only one job can exist per `(endpoint, idempotency_key)` pair. When a duplicate `POST /v1/jobs` request arrives with the same endpoint and idempotency key, the `INSERT` fails with a unique constraint violation. The API catches this and returns the existing job with `200 OK` instead of `201 Created`.
+The index allows only one job per `(endpoint, idempotency_key)` pair. When a duplicate `POST /v1/jobs` request arrives with the same endpoint and idempotency key, the `INSERT` fails with a unique constraint violation. The API catches this and returns the existing job with `200 OK` instead of `201 Created`.
 
 ### `idx_executions_cron_dedup` — Execution-level dedup for CRON
 
@@ -46,7 +46,7 @@ CREATE UNIQUE INDEX idx_executions_cron_dedup
     WHERE idempotency_key IS NOT NULL;
 ```
 
-This index ensures that only one execution can exist per `(job_id, idempotency_key)` pair. This is critical for CRON tick deduplication — if pg_cron fires the same tick twice (e.g. due to a retry), the second execution insert is a no-op (`ON CONFLICT DO NOTHING`).
+The index allows only one execution per `(job_id, idempotency_key)` pair. This matters for CRON tick deduplication: if pg_cron fires the same tick twice (e.g. due to a retry), the second execution insert is a no-op (`ON CONFLICT DO NOTHING`).
 
 ---
 
@@ -73,10 +73,10 @@ For `CRON` jobs, idempotency keys are system-generated for each tick:
 cron_{job_id}_{epoch_ms}
 ```
 
-Where `epoch_ms` is the Unix epoch millisecond timestamp of the CRON tick. This ensures:
+Where `epoch_ms` is the Unix epoch millisecond timestamp of the CRON tick. This scheme has three effects:
 
 1. **Each tick has a unique key** — `cron_job_abc_1742025600000` for the 09:00:00 UTC tick
-2. **Duplicate ticks are deduplicated** — if pg_cron fires the same tick twice, the `INSERT ... ON CONFLICT DO NOTHING` ensures only one execution is created
+2. **Duplicate ticks are deduplicated** — if pg_cron fires the same tick twice, `INSERT ... ON CONFLICT DO NOTHING` creates only one execution
 3. **Missed ticks are caught up** — the scheduler computes `next_run_at` from the current tick, not `now()`, so missed ticks are materialized sequentially
 
 ### CRON materialization query

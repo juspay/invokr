@@ -5,7 +5,7 @@ title: Exactly-Once Guarantees
 
 # Exactly-Once Guarantees
 
-Invokr provides exactly-once execution semantics through a combination of durability, idempotency keys, database unique constraints, and transaction-based claiming. This means every job fires exactly once — no duplicates, no missed executions, even under crashes and concurrent access.
+Invokr provides exactly-once execution semantics through durability, idempotency keys, database unique constraints, and transaction-based claiming. Every job fires exactly once, with no duplicates and no missed executions, even under crashes and concurrent access.
 
 ## Durability
 
@@ -25,11 +25,11 @@ COMMIT;
 
 If the transaction commits, the job is durable. If the process crashes before the response is sent, the client can retry with the same idempotency key and get the original result. If the transaction rolls back, no partial state exists.
 
-## Exactly-Once Execution
+## Exactly-once execution
 
-Exactly-once is achieved through three layers:
+Exactly-once rests on three layers:
 
-### 1. Idempotency Keys + Unique Constraints
+### 1. Idempotency keys + unique constraints
 
 Every job creation requires (or generates) an idempotency key. The `idx_jobs_idempotency` unique partial index prevents duplicate job creation:
 
@@ -45,9 +45,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency
 | `DELAYED` | Client | `order-1234-reminder` |
 | `CRON` | System | `cron_{job_id}_{epoch_ms}` |
 
-For CRON ticks, the system generates the key as `cron_{job_id}_{epoch_ms}`, where `epoch_ms` is the current Unix timestamp in milliseconds. This ensures each tick produces a unique key, while the unique index prevents duplicate ticks within the same millisecond.
+For CRON ticks, the system generates the key as `cron_{job_id}_{epoch_ms}`, where `epoch_ms` is the current Unix timestamp in milliseconds. Each tick therefore produces a unique key, and the unique index prevents duplicate ticks within the same millisecond.
 
-### 2. Execution-Level Deduplication
+### 2. Execution-level deduplication
 
 The `idx_executions_cron_dedup` unique partial index prevents duplicate executions for the same job + idempotency key combination:
 
@@ -65,9 +65,9 @@ VALUES (...)
 ON CONFLICT (job_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING;
 ```
 
-### 3. SKIP LOCKED for Claiming
+### 3. SKIP LOCKED for claiming
 
-The worker claims executions using `SELECT FOR UPDATE SKIP LOCKED` within a transaction. This ensures that once a worker claims an execution, no other worker can claim it:
+The worker claims executions using `SELECT FOR UPDATE SKIP LOCKED` within a transaction. Once a worker claims an execution, no other worker can claim it:
 
 - The row lock is held until the transaction commits
 - Other workers skip the locked row and try the next one
@@ -75,7 +75,7 @@ The worker claims executions using `SELECT FOR UPDATE SKIP LOCKED` within a tran
 
 ## Immutability
 
-### CRON Job Immutability
+### CRON job immutability
 
 CRON jobs are immutable. Updates create a new version and retire the old one, linked via `previous_version_id`:
 
@@ -90,7 +90,7 @@ The full version chain is preserved for audit. The `GET /v1/jobs/{job_id}/versio
 
 One-shot jobs (`IMMEDIATE`, `DELAYED`) are also immutable — they fire once and complete. Attempting to update them returns `409 JOB_NOT_UPDATABLE`.
 
-### Version Chain Schema
+### Version chain schema
 
 The `jobs` table tracks the version chain through two columns:
 
@@ -101,7 +101,7 @@ The `jobs` table tracks the version chain through two columns:
 | `replaced_by_id` | `TEXT` | Job ID of the new version (NULL if not replaced) |
 | `status` | `TEXT` | `ACTIVE` or `RETIRED` (old version is retired when a new one is created) |
 
-## Duplicate Request Handling
+## Duplicate request handling
 
 When a client sends a job creation request with an idempotency key that already exists, the API returns the existing entity with `200 OK` instead of `201 Created`:
 
@@ -111,9 +111,9 @@ When a client sends a job creation request with an idempotency key that already 
 | Duplicate (same idempotency key) | `200 OK` | Existing job + execution resource |
 | Duplicate CRON tick (same epoch_ms) | Silently ignored | `ON CONFLICT DO NOTHING` |
 
-This allows clients to safely retry on network failures without fear of creating duplicate jobs.
+Clients can safely retry on network failures without creating duplicate jobs.
 
-## Transaction Boundaries
+## Transaction boundaries
 
 All execution state changes are atomic. The worker pipeline operates within a single scoped transaction per execution:
 
@@ -136,7 +136,7 @@ If any step fails, the entire transaction can roll back — the execution stays 
 The reaper also operates within this transaction boundary. When the reaper retires expired CRON jobs and unschedules their pg_cron entries, those changes commit atomically with the reaper execution's outcome. See [Reaper](./reaper) for details.
 :::
 
-## Guarantee Summary
+## Guarantee summary
 
 | Guarantee | Mechanism |
 |-----------|----------|
@@ -149,7 +149,7 @@ The reaper also operates within this transaction boundary. When the reaper retir
 | **Safe retries** | Duplicate requests return existing entity with `200 OK` |
 | **Crash recovery** | Uncommitted transactions roll back; committed jobs survive |
 
-## Related Pages
+## Related pages
 
 - [Database-Driven Scheduling](./db-driven-scheduling) — How pg_cron and SKIP LOCKED enable scheduling without a separate process
 - [Worker Pipeline](./worker-pipeline) — The execution pipeline that processes claimed executions

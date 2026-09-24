@@ -132,7 +132,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright ${new Date().getFullYear()} Invokr. Built with Docusaurus.`,
+      copyright: `Copyright ${new Date().getFullYear()} Juspay. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

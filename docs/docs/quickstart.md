@@ -5,7 +5,7 @@ title: Quickstart
 
 # Quickstart
 
-This guide walks you through setting up Invokr locally and firing your first job end-to-end. It uses **service mode** (Invokr as a standalone REST API). To embed Invokr directly in a Rust application, see [Library Mode Setup](./deployment/library-mode).
+This guide gets Invokr running locally and fires your first job end to end. It uses **service mode** — Invokr as a standalone REST API. To embed Invokr directly in a Rust application instead, see [Library Mode Setup](./deployment/library-mode).
 
 ---
 
@@ -15,14 +15,14 @@ This guide walks you through setting up Invokr locally and firing your first job
 - [Docker](https://docs.docker.com/get-docker/) (for PostgreSQL)
 
 :::tip
-If you don't have Nix, you can still run Invokr manually — see the [manual setup](#setup-manual) section below. Nix is recommended as it provides a reproducible development environment with all dependencies pre-installed.
+No Nix? You can still run everything by hand — see [manual setup](#setup-manual) below. We lean on Nix because it pins every dependency for you, so the dev shell comes out the same on every machine.
 :::
 
 ---
 
 ## Setup with `just`
 
-The fastest way to get started is using the `just` task runner within the Nix dev shell:
+The quickest path is the `just` task runner inside the Nix dev shell:
 
 ```bash
 # Enter the dev shell (installs Rust, Node.js, smithy-cli, just, trunk, etc.)
@@ -322,7 +322,7 @@ Response (`201 Created`):
 ```
 
 :::info
-Endpoint types `HTTP`, `KAFKA`, and `REDIS_STREAM` all use the same template resolution, the same retry policy, and the same guarantees — regardless of transport.
+Whatever the transport, `HTTP`, `KAFKA`, and `REDIS_STREAM` endpoints share the same template resolution, retry policy, and delivery guarantees.
 :::
 
 ### 4. Fire an immediate job

@@ -6,7 +6,7 @@ title_meta: Configs API
 
 # Configs
 
-Configs are static, centrally managed variables available in endpoint spec templates via the `{{config.*}}` namespace. They allow you to define values once and reference them across multiple endpoints without duplicating data in each job's input.
+Configs are static, centrally managed variables available in endpoint spec templates via the `{{config.*}}` namespace. Define a value once and reference it from multiple endpoints instead of duplicating it in each job's input.
 
 For example, an API base URL can be stored as a config and referenced in endpoint specs as `{{config.api_base_url}}`. When the config value changes, all endpoints that reference it automatically pick up the new value (after the cache TTL expires).
 
@@ -41,7 +41,7 @@ The `values` field must be a JSON object. Arrays, strings, numbers, and other JS
 
 Configs are cached in the worker using a `DashMap` with a configurable TTL (default: 60 seconds, controlled by `INVOKR_CONFIG_CACHE_TTL_SEC`). After the TTL expires, the next request for that config triggers a fresh database read.
 
-This means config updates may take up to `INVOKR_CONFIG_CACHE_TTL_SEC` seconds to take effect across all workers.
+Config updates can therefore take up to `INVOKR_CONFIG_CACHE_TTL_SEC` seconds to take effect across all workers.
 
 ## Template usage
 

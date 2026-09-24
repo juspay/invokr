@@ -5,7 +5,7 @@ title: Multi-Tenancy
 
 # Multi-Tenancy
 
-Invokr uses **schema-per-tenant** isolation. Each workspace gets its own PostgreSQL schema with isolated tables. Shared tables live in the `public` schema. This provides complete isolation between tenants — jobs, executions, endpoints, and all resources are scoped to the workspace's own database schema.
+Invokr uses **schema-per-tenant** isolation. Each workspace gets its own PostgreSQL schema with isolated tables. Shared tables live in the `public` schema. Each tenant is fully isolated: its jobs, executions, endpoints, and all other resources are scoped to the workspace's own database schema.
 
 ---
 
@@ -120,7 +120,7 @@ When a tenant-scoped request arrives, the API server resolves the workspace's sc
 - **`scoped_connection`** — acquires a connection from the pool and sets `search_path` to the workspace schema
 - **`scoped_transaction`** — acquires a connection, sets `search_path`, and begins a transaction
 
-This ensures that all SQL queries within the scope automatically target the correct tenant schema. There is no risk of cross-tenant data leakage — each query operates within the workspace's schema only.
+All SQL queries within the scope then target the correct tenant schema automatically. Each query operates within the workspace's schema only, so cross-tenant data leakage is not possible.
 
 ```sql
 -- Before any tenant-scoped query:
@@ -135,7 +135,7 @@ The `public` schema is always included in the `search_path` so that shared table
 
 ## Worker iteration over tenant schemas
 
-The worker does not receive tenant headers — instead, it iterates all active workspace schemas:
+The worker does not receive tenant headers. Instead, it iterates all active workspace schemas:
 
 1. The worker queries the `SchemaRegistry` (cached, 30s TTL) for all active workspace schemas
 2. For each poll cycle, the worker iterates all active schemas
@@ -153,7 +153,7 @@ Worker Poll Cycle:
 ```
 
 :::tip
-When scaling workers horizontally, each worker independently iterates all tenant schemas. The `SKIP LOCKED` pattern ensures that no two workers claim the same execution — locked rows are simply skipped.
+When scaling workers horizontally, each worker independently iterates all tenant schemas. With `SKIP LOCKED`, no two workers claim the same execution; locked rows are skipped.
 :::
 
 ---

@@ -8,7 +8,7 @@ title_meta: Secrets API
 
 Secrets are encrypted variables available in endpoint spec templates via the `{{secret.*}}` namespace. Unlike configs, secrets are **write-only** — the plaintext value is never returned in API responses. Secrets are encrypted at rest using AES-256-GCM and decrypted in memory only at execution time.
 
-This makes secrets suitable for storing API keys, passwords, tokens, and other sensitive credentials that endpoints need to authenticate with downstream services.
+Use secrets for API keys, passwords, tokens, and other credentials that endpoints need to authenticate with downstream services.
 
 ## Authentication and headers
 
@@ -56,7 +56,7 @@ Secrets are designed to be **write-only** — the plaintext `value` is accepted 
 | `created_at` | `encrypted_value` (BYTEA stored in DB) |
 | `updated_at` | |
 
-This means:
+In practice:
 - `POST /v1/secrets` accepts `value` in the request body but does not return it in the response
 - `GET /v1/secrets` and `GET /v1/secrets/{name}` return only metadata
 - `PUT /v1/secrets/{name}` accepts a new `value` but does not return it
@@ -350,7 +350,7 @@ You cannot delete a secret that is referenced by any endpoint. The `has_dependen
 | **KMS integration** | `INVOKR_ENCRYPTION_KEY` itself can be KMS-encrypted (see [KMS](../../deployment/kms)) |
 
 :::tip
-For defense in depth, enable [AWS KMS integration](../../deployment/kms) to encrypt `INVOKR_ENCRYPTION_KEY` itself at rest. This means the encryption key is never stored in plaintext in the environment — it's decrypted from KMS ciphertext at startup.
+For defense in depth, enable [AWS KMS integration](../../deployment/kms) to encrypt `INVOKR_ENCRYPTION_KEY` itself at rest. The encryption key is then never stored in plaintext in the environment; it's decrypted from KMS ciphertext at startup.
 :::
 
 ## See also

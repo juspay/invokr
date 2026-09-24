@@ -5,7 +5,7 @@ title: Job Versioning
 
 # Job Versioning
 
-CRON jobs in Invokr are **immutable** — they cannot be modified in place. Instead, updating a CRON job creates a **new version** and retires the old one. This preserves a complete audit trail of all schedule changes while ensuring that in-flight executions are not disrupted.
+CRON jobs in Invokr are **immutable**: they cannot be modified in place. Updating a CRON job instead creates a **new version** and retires the old one. This preserves a full audit trail of schedule changes without disrupting in-flight executions.
 
 ## How versioning works
 

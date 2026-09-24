@@ -144,7 +144,7 @@ Before deploying to production, ensure the following are configured:
 
 ### Horizontal scaling
 
-Workers are stateless and can be scaled horizontally. Simply run multiple worker instances pointing at the same database:
+Workers are stateless and can be scaled horizontally. Run multiple worker instances pointing at the same database:
 
 ```bash
 # Worker instance 1
@@ -158,7 +158,7 @@ INVOKR_METRICS_PORT=9091 \
   ./invokr-worker
 ```
 
-Job distribution is handled by PostgreSQL's `SELECT FOR UPDATE SKIP LOCKED`, which ensures each execution is claimed by exactly one worker — no coordination layer needed.
+Job distribution is handled by PostgreSQL's `SELECT FOR UPDATE SKIP LOCKED`, which ensures each execution is claimed by exactly one worker. No coordination layer is needed.
 
 :::tip
 When running multiple workers behind a load balancer or in Kubernetes, give each worker a unique `INVOKR_METRICS_PORT` (or use a sidecar pattern) so Prometheus can scrape each instance individually.

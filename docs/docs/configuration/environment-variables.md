@@ -23,7 +23,7 @@ The `just` task runner has `set dotenv-load` enabled, so variables defined in a 
 `INVOKR_DATABASE_URL` is a **sensitive** variable. When KMS is enabled (`INVOKR_KMS_ENABLED=true`), this must contain a base64-encoded KMS-encrypted ciphertext, not a plaintext connection string. See [AWS KMS Integration](../deployment/kms).
 :::
 
-## API Server
+## API server
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -152,7 +152,7 @@ If `INVOKR_KMS_ENABLED=true` but the binary was compiled without the `kms` featu
 
 See [AWS KMS Integration](../deployment/kms) for setup instructions.
 
-## CLI / Test Scripts
+## CLI / Test scripts
 
 These variables are used by the TypeScript CLI and test scripts (in `cli/`). They are **not** read by the Rust binaries.
 

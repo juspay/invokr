@@ -9,7 +9,7 @@ Invokr includes a web-based dashboard built with [Leptos 0.7](https://leptos.dev
 
 ## Architecture
 
-The dashboard is a WASM application that runs in the browser. When `INVOKR_MODE=both`, the API server serves both the REST API and the dashboard from the same process — the dashboard's WASM bundle and static assets are served from the `INVOKR_DASHBOARD_DIST_DIR` directory.
+The dashboard is a WASM application that runs in the browser. When `INVOKR_MODE=both`, the API server serves both the REST API and the dashboard from the same process. The dashboard's WASM bundle and static assets are served from the `INVOKR_DASHBOARD_DIST_DIR` directory.
 
 ```
 Browser ──→ API Server (actix-web, INVOKR_MODE=both)
@@ -119,7 +119,7 @@ This serves:
 
 ## Path prefix configuration
 
-The dashboard uses **compile-time** environment variables that are baked into the WASM binary. This means you must rebuild the dashboard if you change the prefix.
+The dashboard uses **compile-time** environment variables that are baked into the WASM binary. Changing the prefix requires rebuilding the dashboard.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

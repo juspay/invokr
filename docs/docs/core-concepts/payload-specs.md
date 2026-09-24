@@ -5,7 +5,7 @@ title: Payload Specs
 
 # Payload Specs
 
-A payload spec is a JSON Schema that defines the input contract for an endpoint. When an endpoint references a payload spec, every job's `input` is validated against the schema at creation time — before any execution is created. This provides type-safety guarantees: invalid input never reaches your downstream services.
+A payload spec is a JSON Schema that defines the input contract for an endpoint. When an endpoint references a payload spec, every job's `input` is validated against the schema at creation time, before any execution is created. Invalid input never reaches your downstream services.
 
 ---
 
@@ -104,7 +104,7 @@ When a job is created (`POST /v1/jobs`), the validation flow is:
 ```
 
 :::note
-For `CRON` jobs, the `input` is validated once at job creation time and then used for every tick. This means CRON job input must be static — you can't vary it per execution.
+For `CRON` jobs, the `input` is validated once at job creation time and then used for every tick. CRON job input must therefore be static; you can't vary it per execution.
 :::
 
 ---

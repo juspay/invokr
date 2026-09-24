@@ -5,7 +5,7 @@ title: Endpoints
 
 # Endpoints
 
-An endpoint is a registered delivery target definition. It tells Invokr **where** to deliver, **how** to build the message, and **what to do on failure**. Endpoints are created once and invoked by many jobs.
+An endpoint is a registered delivery target definition. It specifies where to deliver a message, how to build it, and how to handle failures. Endpoints are created once and invoked by many jobs.
 
 ---
 
@@ -18,7 +18,7 @@ An endpoint defines:
 - **Spec**: transport-specific configuration (URL, method, headers, body template for HTTP; bootstrap servers, topic, key/value templates for Kafka; etc.)
 - **Retry policy**: how failures should be retried
 
-Endpoints reference payload specs and configs by name. These references are validated at registration time — if the referenced payload spec or config doesn't exist, the API returns `422`.
+Endpoints reference payload specs and configs by name. These references are validated at registration time. If the referenced payload spec or config doesn't exist, the API returns `422`.
 
 ---
 

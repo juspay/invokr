@@ -5,7 +5,7 @@ title: The Three-Step Workflow
 
 # The Three-Step Workflow
 
-Invokr organizes work into a three-step model: **Setup**, **Register**, and **Invoke**. Each step builds on the previous one, creating a clean separation between defining contracts, configuring delivery targets, and firing jobs.
+Working with Invokr comes down to three steps: **Setup**, **Register**, and **Invoke**. First you define the contracts and settings your jobs rely on, then you register where those jobs get delivered, and finally you fire the jobs themselves.
 
 ---
 
@@ -81,9 +81,9 @@ See [Endpoints](./endpoints) for details.
 
 A **job** is an invocation of an endpoint. Creating a job triggers execution:
 
-- **IMMEDIATE** — fires now (like `setTimeout(fn, 0)`)
-- **DELAYED** — fires at a specific time (like `setTimeout(fn, delay)`)
-- **CRON** — fires on a recurring schedule (like `setInterval(fn, interval)`)
+- **IMMEDIATE** — fires now
+- **DELAYED** — fires at a specific time
+- **CRON** — fires on a recurring schedule
 
 Each job fire produces an **execution** — a single delivery attempt with a lifecycle: `PENDING → QUEUED → RUNNING → SUCCESS / RETRYING / FAILED / CANCELLED`. Failed attempts retry per the endpoint's retry policy. See [Jobs](./jobs) and [Executions](./executions).
 

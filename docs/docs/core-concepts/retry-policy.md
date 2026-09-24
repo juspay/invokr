@@ -105,7 +105,7 @@ The computed backoff delay (after jitter) is clamped to `max_delay_ms`:
 actual_delay = (base_delay + jitter).clamp(0, max_delay_ms)
 ```
 
-This ensures that even with exponential backoff, the delay never exceeds the configured maximum. Once the base delay exceeds `max_delay_ms`, all subsequent retries wait exactly `max_delay_ms` (±jitter).
+So even with exponential backoff, the delay never exceeds the configured maximum. Once the base delay exceeds `max_delay_ms`, all subsequent retries wait `max_delay_ms` (±jitter).
 
 ---
 

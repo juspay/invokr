@@ -5,7 +5,7 @@ title: Configs
 
 # Configs
 
-Configs are key-value objects holding static variables available in endpoint specs at execution time. They provide a way to centralize configuration (base URLs, topic names, sender addresses) separately from endpoint definitions, so you can update configuration without touching endpoints.
+Configs are key-value objects holding static variables available in endpoint specs at execution time. They keep configuration such as base URLs, topic names, and sender addresses separate from endpoint definitions, so you can update it without touching endpoints.
 
 ---
 
@@ -92,7 +92,7 @@ Configs are cached in the worker process to avoid hitting the database on every 
 | Storage | In-memory per worker process |
 
 :::info
-Config updates take effect for future executions after the cache TTL expires. In-flight executions use the config snapshot from when they started. This means there can be up to a 60-second delay between updating a config and seeing the change reflected in executions.
+Config updates take effect for future executions after the cache TTL expires. In-flight executions use the config snapshot from when they started. There can be up to a 60-second delay between updating a config and the change appearing in executions.
 :::
 
 ---

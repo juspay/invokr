@@ -5,9 +5,9 @@ title: Database-Driven Scheduling
 
 # Database-Driven Scheduling
 
-Invokr eliminates the need for a separate scheduler process by delegating all scheduling concerns to PostgreSQL. This is achieved through two mechanisms: the `pg_cron` extension for CRON materialization and transaction-based pickup for all job types.
+Invokr has no separate scheduler process. PostgreSQL handles scheduling through two mechanisms: the `pg_cron` extension for CRON materialization, and transaction-based pickup for all job types.
 
-## No Separate Scheduler Process
+## No separate scheduler process
 
 Traditional job scheduling systems require a dedicated scheduler process that polls for due jobs, materializes CRON ticks, and promotes delayed jobs. Invokr replaces all of this with database-native mechanisms:
 
@@ -18,9 +18,9 @@ Traditional job scheduling systems require a dedicated scheduler process that po
 | Stuck execution recovery | Reclaimer loop (every 30s) | Not needed (executions are transactional) |
 | Leader election | Required for scheduler HA | Not needed (pg_cron + SKIP LOCKED handle coordination) |
 
-This eliminates an entire class of failure modes: scheduler crashes, missed ticks, double-materialization, and leader election complexity.
+This removes a class of failure modes: scheduler crashes, missed ticks, double-materialization, and leader election complexity.
 
-## pg_cron Extension
+## pg_cron extension
 
 The `pg_cron` extension is a PostgreSQL extension that provides cron-based job scheduling natively within the database. Invokr uses it to materialize CRON job executions.
 
@@ -32,7 +32,7 @@ The extension is installed via the `20260322000001_pg_cron.sql` migration:
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 ```
 
-### CRON Job Registration
+### CRON job registration
 
 When a CRON job is created via `POST /v1/jobs { trigger: CRON }`, the API registers it with pg_cron using `cron.schedule()`:
 
@@ -59,11 +59,11 @@ WHERE j.job_id = '{job_id}' AND j.status = 'ACTIVE'
 ON CONFLICT (job_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING;
 ```
 
-### Idempotency Key for CRON Ticks
+### Idempotency key for CRON ticks
 
-Each CRON tick generates an idempotency key with the format `cron_{job_id}_{epoch_ms}`. This key, combined with the `ON CONFLICT DO NOTHING` clause on the `idx_executions_cron_dedup` unique partial index, ensures that even if pg_cron fires twice in the same millisecond, only one execution is created.
+Each CRON tick generates an idempotency key with the format `cron_{job_id}_{epoch_ms}`. Combined with the `ON CONFLICT DO NOTHING` clause on the `idx_executions_cron_dedup` unique partial index, this key means that even if pg_cron fires twice in the same millisecond, only one execution is created.
 
-### Existing CRON Job Migration
+### Existing CRON job migration
 
 The pg_cron migration also migrates existing active CRON jobs to pg_cron. For each active workspace, it iterates all active CRON jobs and registers them with `cron.schedule()`:
 
@@ -88,13 +88,13 @@ BEGIN
 END $$;
 ```
 
-## Transaction-Based Pickup
+## Transaction-based pickup
 
 All three trigger types flow through the same pickup mechanism. The worker's claim query handles `QUEUED`, `RETRYING`, and `PENDING` statuses in a single index scan.
 
-### The Pickup Index
+### The pickup index
 
-The `idx_executions_pickup` index is the hot-path index for worker claims. It's a partial index that covers only actionable statuses:
+The `idx_executions_pickup` index carries worker claims. It is a partial index that covers only actionable statuses:
 
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_pickup
@@ -108,10 +108,10 @@ Including `PENDING` is what lets workers pick up delayed jobs directly, without 
 
 ### SELECT FOR UPDATE SKIP LOCKED
 
-Workers claim executions using `SELECT FOR UPDATE SKIP LOCKED` within a scoped transaction. This ensures:
+Workers claim executions using `SELECT FOR UPDATE SKIP LOCKED` within a scoped transaction. This gives three properties:
 
 1. **No double-execution**: Once a worker claims an execution, the row is locked until the transaction commits. Other workers skip it.
-2. **No blocking**: `SKIP LOCKED` means workers don't wait for locks — they immediately try the next available row.
+2. **No blocking**: With `SKIP LOCKED`, workers don't wait for locks; they immediately try the next available row.
 3. **Atomicity**: The execution state change (`PENDING/QUEUED/RETRYING` → `RUNNING`) and all subsequent pipeline operations (attempt recording, finalization) happen within the same transaction.
 
 ```sql
@@ -132,24 +132,24 @@ WHERE execution_id = (
 RETURNING execution_id, job_id, endpoint, endpoint_type, input, attempt_count, max_attempts;
 ```
 
-## Trigger Type Flow
+## Trigger type flow
 
 All three trigger types converge on the same pickup mechanism:
 
-### IMMEDIATE Jobs
+### IMMEDIATE jobs
 
 1. API creates job + execution as `QUEUED` with `run_at = now()` in a single transaction
 2. Worker picks it up immediately (next poll cycle, ~200ms)
-3. No scheduling involved — the execution is immediately actionable
+3. No scheduling is involved; the execution is immediately actionable
 
-### DELAYED Jobs
+### DELAYED jobs
 
 1. API creates job + execution as `PENDING` with `run_at = {specified_time}`
 2. Worker's claim query includes `PENDING` status with `run_at <= now()` condition
 3. When `run_at` arrives, the execution becomes claimable — no promoter needed
 4. The worker effectively "promotes" the job by claiming it directly from `PENDING` to `RUNNING`
 
-### CRON Jobs
+### CRON jobs
 
 1. API creates job (`ACTIVE`) and registers with pg_cron via `cron.schedule()`
 2. On each CRON tick, pg_cron inserts a new `QUEUED` execution with idempotency key `cron_{job_id}_{epoch_ms}`
@@ -162,7 +162,7 @@ DELAYED:    API → PENDING execution (run_at) → Worker claims when run_at <= 
 CRON:       API → pg_cron schedule → pg_cron tick → QUEUED execution → Worker claims → RUNNING
 ```
 
-## Multi-Instance Safety
+## Multi-instance safety
 
 Multiple worker instances can run simultaneously without coordination:
 
@@ -172,13 +172,13 @@ Multiple worker instances can run simultaneously without coordination:
 | pg_cron + `ON CONFLICT DO NOTHING` | Only one execution per CRON tick, even if pg_cron fires twice |
 | Transactional state changes | Execution status changes are atomic — no partial states |
 
-No leader election, no distributed locks, no coordination service required. The database handles all concurrency concerns.
+No leader election, distributed locks, or coordination service is required. The database handles concurrency.
 
 :::tip
-The `FOR UPDATE SKIP LOCKED` pattern is the gold standard for work-queue patterns in PostgreSQL. It provides correctness without contention — workers never block each other, they simply skip locked rows and try the next one.
+`FOR UPDATE SKIP LOCKED` is a well-established approach for work queues in PostgreSQL. Workers never block each other: they skip locked rows and try the next one.
 :::
 
-## Related Pages
+## Related pages
 
 - [Worker Pipeline](./worker-pipeline) — How the poller claims and processes executions
 - [Exactly-Once Guarantees](./exactly-once) — How idempotency keys and unique constraints prevent duplicates

@@ -5,7 +5,7 @@ title: CRON Jobs
 
 # CRON Jobs
 
-CRON jobs are recurring schedules — the `setInterval` of Invokr. When you create a CRON job, Invokr registers it with PostgreSQL's `pg_cron` extension. On each scheduled tick, pg_cron inserts a new `QUEUED` execution directly into the database, which workers pick up and dispatch. No external scheduler process is required.
+CRON jobs run on a recurring schedule. When you create a CRON job, Invokr registers it with PostgreSQL's `pg_cron` extension. On each scheduled tick, pg_cron inserts a new `QUEUED` execution directly into the database, which workers pick up and dispatch. No external scheduler process is required.
 
 ## Creating a CRON job
 
@@ -286,7 +286,7 @@ The reaper is a background process that cleans up expired CRON jobs. When a CRON
 2. Sets the job status to `RETIRED`.
 3. Waits for any in-flight executions to complete.
 
-This ensures that CRON jobs with an `ends_at` boundary are properly cleaned up even if the cancel API is never called.
+CRON jobs with an `ends_at` boundary are cleaned up this way even if the cancel API is never called.
 
 ## CRON catch-up behavior
 

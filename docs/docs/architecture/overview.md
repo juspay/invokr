@@ -5,9 +5,9 @@ title: Architecture Overview
 
 # Architecture Overview
 
-Invokr is a distributed job scheduling and execution engine built in Rust. It provides durable, exactly-once, retriable delivery of jobs to HTTP endpoints, Kafka topics, and Redis Streams — with type-safety guarantees.
+Invokr is a distributed job scheduling and execution engine built in Rust. It delivers jobs to HTTP endpoints, Kafka topics, and Redis Streams with durable, exactly-once, retriable semantics and type-safety guarantees.
 
-## System Architecture
+## System architecture
 
 ```
                               ┌─────────────────────────┐
@@ -46,7 +46,7 @@ Invokr is a distributed job scheduling and execution engine built in Rust. It pr
                 └──────────────────────┘
 ```
 
-## Process Topology
+## Process topology
 
 Invokr consists of four primary components:
 
@@ -57,23 +57,23 @@ Invokr consists of four primary components:
 | **PostgreSQL + pg_cron** | PostgreSQL | 5432 | Source of truth for all state; pg_cron extension handles CRON scheduling natively |
 | **Dashboard** | Leptos/WASM | 3000 | Web UI showing jobs, executions, attempts, and execution logs |
 
-### API Server
+### API server
 
-The API server is built with [actix-web](https://actix.rs/). It handles all REST endpoints for organizations, workspaces, payload specs, configs, secrets, endpoints, jobs, and executions. On job creation, the API inserts both the job and its initial execution in a single database transaction — ensuring atomicity. The server also exposes Prometheus metrics at `GET /metrics`.
+The API server is built with [actix-web](https://actix.rs/). It handles all REST endpoints for organizations, workspaces, payload specs, configs, secrets, endpoints, jobs, and executions. On job creation, the API inserts both the job and its initial execution in a single, atomic database transaction. The server also exposes Prometheus metrics at `GET /metrics`.
 
-### Worker Pool
+### Worker pool
 
 The worker is a tokio-based async process. It uses a semaphore to limit concurrency (default 50 concurrent jobs). Each poll iteration claims an execution via `SELECT FOR UPDATE SKIP LOCKED`, spawns a tokio task for the execution pipeline, and releases the permit on completion. The worker supports three dispatch types: HTTP (via reqwest), Kafka (via rdkafka), and Redis Streams (via redis-rs).
 
 ### PostgreSQL + pg_cron
 
-PostgreSQL is the single source of truth for all state — jobs, executions, attempts, execution logs, configs, secrets, and endpoints. The `pg_cron` extension handles CRON job materialization natively: when a CRON job is created, it's registered with `cron.schedule()`. Each CRON tick inserts a new `QUEUED` execution directly into the database. No separate scheduler process is needed.
+PostgreSQL is the source of truth for all state: jobs, executions, attempts, execution logs, configs, secrets, and endpoints. The `pg_cron` extension handles CRON job materialization natively. When a CRON job is created, it is registered with `cron.schedule()`, and each CRON tick inserts a new `QUEUED` execution directly into the database. No separate scheduler process is needed.
 
 ### Dashboard
 
 The dashboard is a single-page application built with [Leptos](https://leptos.rs/) compiled to WebAssembly. It provides a visual interface for monitoring jobs, executions, attempts, and execution logs. The dashboard is excluded from the workspace build and compiled separately via Trunk.
 
-## Crate Dependency Graph
+## Crate dependency graph
 
 ```
                     ┌─────────────────┐
@@ -105,7 +105,7 @@ The dashboard is a single-page application built with [Leptos](https://leptos.rs
 
 Both `invokr-api` and `invokr-worker` depend on `invokr-common`. The dashboard and SDK are standalone — they communicate with Invokr exclusively through the REST API.
 
-## Data Flow
+## Data flow
 
 The end-to-end flow for a job is:
 
@@ -121,7 +121,7 @@ Resolve templates → Inject body → Dispatch (HTTP/Kafka/Redis) → Record att
 Finalize: SUCCESS / RETRYING (backoff) / FAILED → Commit transaction
 ```
 
-### Immediate Job Flow
+### Immediate job flow
 
 1. Client sends `POST /v1/jobs { trigger: IMMEDIATE }`
 2. API inserts job + execution (`QUEUED`) in a single transaction, returns `201`
@@ -130,7 +130,7 @@ Finalize: SUCCESS / RETRYING (backoff) / FAILED → Commit transaction
 5. Finalize: mark execution `SUCCESS`, commit transaction
 6. Total latency: ~300ms
 
-### Delayed Job Flow
+### Delayed job flow
 
 1. Client sends `POST /v1/jobs { trigger: DELAYED, run_at: "..." }`
 2. API inserts job + execution (`PENDING` with `run_at`) in a transaction
@@ -138,7 +138,7 @@ Finalize: SUCCESS / RETRYING (backoff) / FAILED → Commit transaction
 4. Pipeline executes as normal
 5. Fires within ~200ms of `run_at` (worker poll interval)
 
-### CRON Job Flow
+### CRON job flow
 
 1. Client sends `POST /v1/jobs { trigger: CRON, cron: "..." }`
 2. API inserts job (`ACTIVE`, `cron_next_run_at` set) and registers with `cron.schedule()`
@@ -146,7 +146,7 @@ Finalize: SUCCESS / RETRYING (backoff) / FAILED → Commit transaction
 4. Worker picks up the execution via normal `SKIP LOCKED` path
 5. Repeats until the job is cancelled or its `cron_ends_at` window expires
 
-## How Scheduling Works
+## How scheduling works
 
 Invokr uses **PostgreSQL pg_cron** for CRON materialization and **transaction-based pickup** for all job types. There is no separate scheduler process:
 
@@ -162,7 +162,7 @@ WHERE status IN ('QUEUED', 'RETRYING', 'PENDING') AND run_at <= now()
 
 See [Database-Driven Scheduling](./db-driven-scheduling) for details.
 
-## Multi-Tenancy Architecture
+## Multi-tenancy architecture
 
 Invokr uses **schema-per-tenant** isolation. Each workspace gets its own PostgreSQL schema with isolated tables. Shared tables live in the `public` schema:
 
@@ -184,7 +184,7 @@ pub fn build_schema_name(org_id: &str, workspace_slug: &str) -> String {
 
 See [Database Schema](./database-schema) for the full schema layout.
 
-## Feature Flags
+## Feature flags
 
 The worker crate supports optional features that can be enabled at compile time:
 

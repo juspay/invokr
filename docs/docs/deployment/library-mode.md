@@ -5,7 +5,7 @@ title: Library Mode Setup
 
 # Library Mode Setup
 
-Library mode (also called **embedded mode**) embeds Invokr directly into your Rust application process. Your code holds a `PgPool` and accesses the database directly — no HTTP overhead, no separate API server. A background worker task runs inside your process via `start_worker()`.
+Library mode (also called **embedded mode**) embeds Invokr directly into your Rust application process. Your code holds a `PgPool` and accesses the database directly, with no HTTP overhead and no separate API server. A background worker task runs inside your process via `start_worker()`.
 
 This is the fastest way to add durable job scheduling to a single Rust application. For the conceptual model and a comparison with service mode, see [Dual Deployment Modes](../architecture/dual-deployment).
 

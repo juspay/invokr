@@ -5,7 +5,7 @@ title: Pagination
 
 # Pagination
 
-All list endpoints in Invokr use **cursor-based pagination**. This provides stable, consistent results even as new records are inserted concurrently — unlike offset-based pagination, which can skip or duplicate records when data changes between page fetches.
+All list endpoints in Invokr use **cursor-based pagination**. It returns stable results even as new records are inserted concurrently, unlike offset-based pagination, which can skip or duplicate records when data changes between page fetches.
 
 ## Query parameters
 

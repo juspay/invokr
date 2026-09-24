@@ -13,7 +13,7 @@ The Haskell SDK is generated from Smithy IDL models via the `in.juspay.smithy.ha
 - **Smithy plugin**: `haskell-client-codegen`
 - **Example project**: `haskell-example/`
 
-### smithy-build.json Configuration
+### smithy-build.json configuration
 
 ```json
 {
@@ -26,7 +26,7 @@ The Haskell SDK is generated from Smithy IDL models via the `in.juspay.smithy.ha
 }
 ```
 
-## Building and Running
+## Building and running
 
 The Haskell SDK example is built and run via the justfile:
 
@@ -35,7 +35,7 @@ The Haskell SDK example is built and run via the justfile:
 just test-haskell
 ```
 
-### Nix-Shell Based Build
+### Nix-shell based build
 
 The build uses a Nix-shell environment with GHC 9.6 and the required Haskell packages:
 
@@ -44,7 +44,7 @@ nix-shell -p ghc haskellPackages.aeson haskellPackages.text \
   haskellPackages.http-client haskellPackages.network-uri
 ```
 
-### Manual Build
+### Manual build
 
 ```bash
 cd haskell-example/
@@ -52,9 +52,9 @@ cabal build
 cabal run haskell-example
 ```
 
-## Example Client
+## Example client
 
-The example at `haskell-example/app/Main.hs` mirrors the TypeScript CLI test (`test-immediate.ts`) and demonstrates the full lifecycle of a Invokr job:
+The example at `haskell-example/app/Main.hs` mirrors the TypeScript CLI test (`test-immediate.ts`) and walks through the full lifecycle of an Invokr job:
 
 1. Build a `InvokrServiceClient`
 2. Create an HTTP endpoint pointing at the mock server
@@ -63,7 +63,7 @@ The example at `haskell-example/app/Main.hs` mirrors the TypeScript CLI test (`t
 5. Print the final execution status
 6. Clean up: cancel the job and delete the endpoint
 
-### Client Setup
+### Client setup
 
 ```haskell
 import qualified Com.Invokr.InvokrServiceClient as Client
@@ -84,7 +84,7 @@ main = do
         Right c  -> return c
 ```
 
-### Creating an Endpoint
+### Creating an endpoint
 
 ```haskell
 import qualified Com.Invokr.Command.CreateEndpoint as CreateEndpoint
@@ -100,7 +100,7 @@ endpointResult <- CreateEndpoint.createEndpoint client $ do
     CreateEndpointInput.setSpec endpointSpec
 ```
 
-### Creating a Job
+### Creating a job
 
 ```haskell
 import qualified Com.Invokr.Command.CreateJob as CreateJob
@@ -120,7 +120,7 @@ jobResult <- CreateJob.createJob client $ do
     CreateJobInput.setInput     (Just jobPayload)
 ```
 
-### Polling for Execution
+### Polling for execution
 
 ```haskell
 import qualified Com.Invokr.Command.ListJobExecutions as ListJobExecutions
@@ -169,7 +169,7 @@ cleanup client mJobId epName = do
     -- ...
 ```
 
-## SDK Module Structure
+## SDK module structure
 
 The generated Haskell SDK organizes modules by concern:
 
@@ -214,7 +214,7 @@ cargo run -p invokr-mock-server   # Mock server (port 9999)
 The Haskell SDK uses the `Network.HTTP.Client` package for HTTP transport and `Data.Aeson` for JSON serialization. The builder pattern (using `set*` functions in a `do` block) mirrors the approach used by the AWS SDK for Haskell.
 :::
 
-## Related Pages
+## Related pages
 
 - [SDK Overview](./overview) — All SDKs and the Smithy codegen pipeline
 - [TypeScript SDK](./typescript) — TypeScript SDK for JS/TS consumers

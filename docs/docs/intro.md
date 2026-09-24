@@ -5,24 +5,22 @@ title: Introduction
 
 # Introduction
 
-**Invokr is `setTimeout` and `setInterval` as a service.**
+Invokr runs jobs for you and makes sure they actually happen. You hand it a job — send this HTTP request, publish to this Kafka topic, push to this Redis Stream — and Invokr delivers it: right now, at a set time, or on a repeating schedule.
 
-It is a distributed, durable, retriable, and observable delivery engine for jobs sent to HTTP endpoints, Kafka topics, and Redis Streams — with type-safety guarantees. Built in Rust on top of PostgreSQL with the `pg_cron` extension, Invokr survives crashes, retries on failure, never fires the same job twice, and makes every execution observable.
+The hard parts are handled for you. A job that has been accepted survives a process crash, because it is written to PostgreSQL before Invokr acknowledges it. A job that fails is retried with backoff. A job never runs twice, even if two workers reach for it at once. And every attempt is recorded, so you can always see what ran, when, and what came back.
+
+Invokr is written in Rust and uses PostgreSQL — with the `pg_cron` extension — as its source of truth. There is no separate scheduler process or message broker to run alongside it.
 
 ---
 
-## The mental model
+## What you can do
 
-If you've written JavaScript, you already know the API.
-
-| What you want | JavaScript | Invokr |
-|---|---|---|
-| Fire now | `setTimeout(fn, 0)` | `POST /v1/jobs { trigger: IMMEDIATE }` |
-| Fire later | `setTimeout(fn, 5000)` | `POST /v1/jobs { trigger: DELAYED, run_at: "..." }` |
-| Fire repeatedly | `setInterval(fn, 60000)` | `POST /v1/jobs { trigger: CRON, cron: "* * * * *" }` |
-| Cancel | `clearTimeout(id)` | `POST /v1/jobs/{id}/cancel` |
-
-Except: it survives crashes, retries on failure, never fires twice, and every execution is observable.
+| You want to… | The call |
+|---|---|
+| Fire a job now | `POST /v1/jobs` with `trigger: IMMEDIATE` |
+| Fire one at a set time | `POST /v1/jobs` with `trigger: DELAYED` and a `run_at` |
+| Fire one on a repeating schedule | `POST /v1/jobs` with `trigger: CRON` and a cron expression |
+| Cancel one | `POST /v1/jobs/{id}/cancel` |
 
 ---
 
@@ -131,6 +129,12 @@ Invokr runs in two deployment modes:
 | **Service mode** (standalone) | Invokr runs as a standalone REST API. Multiple apps share one deployment. | Multiple apps, or decoupled operational lifecycle |
 
 Both modes expose the same API through the `InvokrClient` trait. The [Quickstart](./quickstart) uses service mode. For library mode setup, see [Library Mode Setup](./deployment/library-mode). For the conceptual comparison, see [Dual Deployment Modes](./architecture/dual-deployment).
+
+---
+
+## Inspiration
+
+The shape of the API owes a lot to JavaScript's `setTimeout` and `setInterval`: fire something now, fire it after a delay, or fire it over and over on a schedule. If you have reached for those, Invokr's three triggers — `IMMEDIATE`, `DELAYED`, and `CRON` — should feel familiar. What is different is everything underneath. A browser forgets its timers the moment the tab closes; an Invokr job is written down, retried when it fails, and kept as a record of what happened.
 
 ---
 

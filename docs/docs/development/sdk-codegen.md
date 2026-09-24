@@ -5,7 +5,7 @@ title: SDK Code Generation
 
 # SDK Code Generation
 
-Invokr generates client SDKs from [Smithy](https://smithy.io/) IDL models. This ensures that all SDKs (TypeScript, Rust, Haskell) and the OpenAPI spec are always in sync with the API definition. This page covers the code generation workflow.
+Invokr generates client SDKs from [Smithy](https://smithy.io/) IDL models, which keeps the TypeScript, Rust, and Haskell SDKs and the OpenAPI spec in sync with the API definition. This page covers the code generation workflow.
 
 ## Smithy models
 
@@ -110,7 +110,7 @@ After modifying Smithy models, run a full refresh to regenerate all SDKs and rei
 just sdk-refresh
 ```
 
-This is equivalent to `just build-sdk && just cli-install` and ensures everything is up to date.
+This is equivalent to `just build-sdk && just cli-install`.
 
 ## Adding new API operations
 
@@ -179,7 +179,7 @@ git commit -m "Add CreateMyResource operation"
 ```
 
 :::important
-Always commit the Smithy model changes and the generated SDK code (`crates/client/`) in the same PR. This ensures reviewers can see both the model change and its effect on the generated code.
+Always commit the Smithy model changes and the generated SDK code (`crates/client/`) in the same PR, so reviewers can see both the model change and its effect on the generated code.
 :::
 
 ## Generated artifacts

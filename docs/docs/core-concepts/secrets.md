@@ -11,7 +11,7 @@ Secrets are sensitive values (API keys, credentials, tokens) that are encrypted 
 
 ## What are secrets?
 
-A secret is a named sensitive value stored encrypted in the database. Secrets provide a secure way to reference credentials in endpoint specs without hardcoding them:
+A secret is a named sensitive value stored encrypted in the database. Secrets let you reference credentials in endpoint specs without hardcoding them:
 
 - **Encrypted at rest** using AES-256-GCM
 - **Write-only** — the `value` is never returned in any API response
@@ -125,7 +125,7 @@ Secrets are referenced in endpoint specs using `{{secret.*}}` templates. The wor
 | `{{secret.stripe_secret}}` | `stripe_secret` | Decrypted value |
 
 :::tip
-Secrets can appear in URL strings, header values, and body template fields — anywhere templates are supported. The template engine walks the entire JSON tree. If a secret is unresolvable (e.g. the secret was deleted), the execution fails immediately with `TEMPLATE_RESOLUTION_FAILED` — no retry, since it would fail the same way.
+Secrets can appear in URL strings, header values, and body template fields — anywhere templates are supported. The template engine walks the entire JSON tree. If a secret is unresolvable (e.g. the secret was deleted), the execution fails immediately with `TEMPLATE_RESOLUTION_FAILED`. There is no retry, since it would fail the same way.
 :::
 
 ---

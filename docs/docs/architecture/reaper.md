@@ -7,13 +7,13 @@ title: Reaper
 
 The reaper is Invokr's internal garbage collector for expired CRON jobs. It retires CRON jobs whose `cron_ends_at` window has passed and unschedules their pg_cron entries, preventing them from firing no-op inserts forever.
 
-## What Is the Reaper?
+## What is the reaper?
 
-pg_cron drives CRON execution materialization, but it has no concept of a job's `cron_ends_at` window — left alone it fires forever. While the `cron_ends_at` guard in the pg_cron command stops *new executions* past the window (the `WHERE j.status = 'ACTIVE'` clause in the insert command returns no rows), the reaper handles the *lifecycle*: it periodically flips expired CRON jobs to `RETIRED` and removes their pg_cron entry so they stop firing no-op inserts entirely.
+pg_cron drives CRON execution materialization, but it has no concept of a job's `cron_ends_at` window and, left alone, fires forever. The `cron_ends_at` guard in the pg_cron command stops *new executions* past the window (the `WHERE j.status = 'ACTIVE'` clause in the insert command returns no rows), but the reaper handles the *lifecycle*: it periodically flips expired CRON jobs to `RETIRED` and removes their pg_cron entry so they stop firing no-op inserts entirely.
 
-## Dogfooded as a Invokr INTERNAL CRON Job
+## Dogfooded as an Invokr INTERNAL CRON job
 
-The reaper is itself a Invokr job. Instead of running as a hidden tokio interval task inside each worker pod, it runs through the same execution pipeline as any user-created job:
+The reaper is itself an Invokr job. Instead of running as a hidden tokio interval task inside each worker pod, it runs through the same execution pipeline as any user-created job:
 
 1. Each workspace is provisioned at creation time with an `INTERNAL` endpoint named `invokr.reaper` and a CRON job
 2. The CRON schedule is controlled by `INVOKR_REAPER_CRON_EXPRESSION` (default: `*/15 * * * *`)
@@ -21,7 +21,7 @@ The reaper is itself a Invokr job. Instead of running as a hidden tokio interval
 4. The worker claims it via the normal `SKIP LOCKED` path
 5. The `INTERNAL` dispatcher's `reaper` task calls `reap_schema()`
 
-This means the reaper gets for free:
+Running through the normal pipeline gives the reaper:
 
 - **Attempts**: Every sweep is recorded as an attempt with status, duration, and output
 - **Retries**: Failed sweeps retry per the endpoint's retry policy
@@ -41,7 +41,7 @@ The reaper's schedule is read from `INVOKR_REAPER_CRON_EXPRESSION` at workspace 
 Changing `INVOKR_REAPER_CRON_EXPRESSION` only affects workspaces created **after** the change. Existing workspaces keep their original reaper schedule. To update an existing workspace's reaper schedule, you would need to unschedule and reschedule the pg_cron entry manually.
 :::
 
-## Baked into Workspace Creation
+## Baked into workspace creation
 
 When a workspace is provisioned, the reaper's `INTERNAL` endpoint and CRON job are created as part of the workspace setup. This is done by `db::workspaces::provision_reaper()`, which:
 
@@ -49,11 +49,11 @@ When a workspace is provisioned, the reaper's `INTERNAL` endpoint and CRON job a
 2. Creates a `CRON` job targeting that endpoint with the configured schedule
 3. Registers the job with pg_cron via `cron.schedule()`
 
-The reaper is therefore always present in every workspace — no manual setup required.
+The reaper is therefore always present in every workspace, with no manual setup required.
 
-## Runs Inside the Scoped Transaction
+## Runs inside the scoped transaction
 
-The reaper's `reap_schema()` function runs on the caller's database connection — the same scoped transaction that the execution pipeline uses for the reaper execution's outcome. This means:
+The reaper's `reap_schema()` function runs on the caller's database connection: the same scoped transaction that the execution pipeline uses for the reaper execution's outcome. Within that one transaction, the reaper can:
 
 - Retire expired CRON jobs
 - Unschedule their pg_cron entries
@@ -85,7 +85,7 @@ pub async fn reap_schema(
 
 The unschedule is existence-guarded — an already-removed pg_cron entry is a no-op rather than an error.
 
-## INTERNAL Endpoint Type
+## INTERNAL endpoint type
 
 The reaper uses a special `INTERNAL` endpoint type. This type is distinct from `HTTP`, `KAFKA`, and `REDIS_STREAM`:
 
@@ -98,7 +98,7 @@ CONSTRAINT chk_{p}endpoint_type CHECK (endpoint_type IN ('HTTP', 'KAFKA', 'REDIS
 The initial migration (`20260317000000_initial.sql`) only allows `HTTP`, `KAFKA`, and `REDIS_STREAM`. The `INTERNAL` type was added in the workspace schema template (`workspace_v1.sql`) for per-workspace schemas.
 :::
 
-### The `task` Discriminator
+### The `task` discriminator
 
 `INTERNAL` endpoints carry a `task` field in their spec that selects which in-process routine to run. The dispatcher matches on this field:
 
@@ -119,13 +119,13 @@ match task {
 }
 ```
 
-Today, `"reaper"` is the only `INTERNAL` task. The architecture is extensible — new internal tasks can be added by implementing a new function and adding a match arm.
+Today, `"reaper"` is the only `INTERNAL` task. New internal tasks can be added by implementing a new function and adding a match arm.
 
-### API Guards
+### API guards
 
 User-created jobs cannot target `INTERNAL` endpoints. The API rejects requests that specify an `INTERNAL` endpoint type with a `422` error. This prevents users from invoking internal routines directly.
 
-## Coordination Across Worker Pods
+## Coordination across worker pods
 
 Multiple worker pods can run simultaneously. Coordination is implicit:
 
@@ -133,7 +133,7 @@ Multiple worker pods can run simultaneously. Coordination is implicit:
 2. `claim()` uses `FOR UPDATE SKIP LOCKED`, so exactly one pod claims each reaper execution
 3. The reaper runs within the claimed execution's transaction
 
-No advisory locks or leader election needed. The previous implementation used a tokio interval task with an advisory lock in each worker pod — this was replaced by the dogfooded approach for better observability and simplicity.
+No advisory locks or leader election needed. The previous implementation used a tokio interval task with an advisory lock in each worker pod; the dogfooded approach replaced it for better observability and simplicity.
 
 ## Metrics
 
@@ -143,7 +143,7 @@ No advisory locks or leader election needed. The previous implementation used a 
 
 Each reaper execution also emits the standard execution metrics (`invokr_executions_claimed_total`, `invokr_executions_completed_total`, `invokr_execution_duration_seconds`).
 
-## Related Pages
+## Related pages
 
 - [Database-Driven Scheduling](./db-driven-scheduling) — How pg_cron drives CRON job materialization
 - [Worker Pipeline](./worker-pipeline) — The pipeline through which reaper executions flow

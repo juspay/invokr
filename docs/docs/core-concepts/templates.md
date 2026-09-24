@@ -5,7 +5,7 @@ title: Templates
 
 # Templates
 
-The template resolution engine is the mechanism by which Invokr dynamically constructs endpoint specs at execution time. Template variables — enclosed in `{{ }}` — are resolved from four namespaces, allowing endpoint definitions to reference job input, configs, secrets, and execution metadata.
+The template resolution engine builds endpoint specs at execution time. Template variables, enclosed in `{{ }}`, are resolved from four namespaces, so endpoint definitions can reference job input, configs, secrets, and execution metadata.
 
 ---
 
@@ -22,7 +22,7 @@ When a worker claims an execution, it resolves all template variables in the end
 7. Replaces every `{{namespace.key}}` occurrence
 
 :::danger
-If any variable is unresolvable, the execution fails immediately with `TEMPLATE_RESOLUTION_FAILED`. **No retry** — the same template would fail identically on every attempt. This fail-fast behavior prevents wasted retries on configuration errors.
+If any variable is unresolvable, the execution fails immediately with `TEMPLATE_RESOLUTION_FAILED`. It is not retried, since the same template would fail identically on every attempt. Failing fast this way avoids wasted retries on configuration errors.
 :::
 
 ---
@@ -208,7 +208,7 @@ The worker resolves templates in a specific order:
 3. **`{{input.*}}`** — resolved from the execution's input payload
 4. **`{{execution.*}}`** — resolved from execution metadata
 
-This order ensures that config and secret values are available before input resolution, in case input templates reference config or secret values (though this is uncommon).
+With this order, config and secret values are available before input resolution, in case input templates reference them (uncommon, but possible).
 
 ---
 
@@ -227,7 +227,7 @@ If you already set a header named `x-invokr-idempotency-key` (case-insensitive) 
 
 ## Fallback behavior
 
-If an endpoint's HTTP spec has no `body_template` and no `body` field, the worker injects the job's `input` object as the JSON request body. This allows you to fire jobs with arbitrary input without pre-defining a body template — useful for generic webhook-style endpoints.
+If an endpoint's HTTP spec has no `body_template` and no `body` field, the worker injects the job's `input` object as the JSON request body. You can then fire jobs with arbitrary input without pre-defining a body template, which suits generic webhook-style endpoints.
 
 ---
 
