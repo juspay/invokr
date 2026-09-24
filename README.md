@@ -733,3 +733,12 @@ Instead of a separate scheduler process, Invokr delegates scheduling to PostgreS
 - **pg_cron extension** handles CRON job materialization. When a CRON job is created, it's registered with `cron.schedule()`. pg_cron inserts a new `QUEUED` execution row on each tick with an idempotency key (`cron_{job_id}_{epoch_ms}`) to prevent duplicates.
 - **Transaction-based pickup** handles DELAYED jobs. The worker's claim query includes `PENDING` status with `run_at <= now()`, so delayed jobs are picked up directly when their time arrives — no promoter loop needed.
 - The pickup index covers all three statuses: `WHERE status IN ('QUEUED', 'RETRYING', 'PENDING')`.
+
+---
+
+## Copyright and License
+
+Copyright 2026 Juspay Technologies Private Limited.
+
+This product is licensed under the [Apache 2.0 License](LICENSE). See [NOTICE](NOTICE)
+for the attribution that downstream redistributions must carry forward.

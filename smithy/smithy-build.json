@@ -41,7 +41,8 @@
       "moduleDescription": "Rust SDK for Invokr job scheduling service",
       "moduleAuthors": [
         "invokr@example.com"
-      ]
+      ],
+      "license": "Apache-2.0"
     },
     "openapi": {
       "service": "com.invokr#InvokrService",

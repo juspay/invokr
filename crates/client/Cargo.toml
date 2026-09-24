@@ -6,6 +6,7 @@ authors = ["invokr@example.com"]
 description = "Rust SDK for Invokr job scheduling service"
 edition = "2021"
 rust-version = "1.82.0"
+license = "Apache-2.0"
 
 [package.metadata.smithy]
 codegen-version = "18e06e0a61e4ce792a2b17271d25a1f524d90ed4"

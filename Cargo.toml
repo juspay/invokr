@@ -19,6 +19,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
+license = "Apache-2.0"
 
 [workspace.dependencies]
 # Async runtime
