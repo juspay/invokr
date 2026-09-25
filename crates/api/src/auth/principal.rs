@@ -100,3 +100,85 @@ impl AuthProfile for InvokrProfile {
     /// then drives both the credential cache and the policy lookup.
     type Scope = InvokrScope;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_id_token_authenticates_as_its_email() {
+        let claims = IdentityClaims::new(ClaimSource::IdToken)
+            .with_subject("110248495921238986420")
+            .with_email("someone@juspay.in");
+
+        let caller = Caller::try_from(claims).expect("id token yields a caller");
+        assert_eq!(caller.principal, "someone@juspay.in");
+        assert!(!caller.legacy);
+    }
+
+    #[test]
+    fn preferred_username_wins_over_email() {
+        let claims = IdentityClaims::new(ClaimSource::IdToken)
+            .with_preferred_username("someone")
+            .with_email("someone@juspay.in");
+
+        assert_eq!(Caller::try_from(claims).unwrap().principal, "someone");
+    }
+
+    #[test]
+    fn an_issuer_supplying_only_a_subject_still_authenticates() {
+        // Requiring `email` would quietly make Invokr single-provider: not
+        // every issuer supplies one, and `preferred_username` is a Keycloak
+        // convention.
+        let claims = IdentityClaims::new(ClaimSource::IdToken).with_subject("opaque-subject-id");
+
+        assert_eq!(
+            Caller::try_from(claims).unwrap().principal,
+            "opaque-subject-id"
+        );
+    }
+
+    #[test]
+    fn a_machine_grant_is_named_after_its_client() {
+        // `client_credentials` carries no human identity at all, so demanding
+        // an email would reject every machine caller.
+        let claims =
+            IdentityClaims::new(ClaimSource::ClientCredentials).with_client_id("reporting-svc");
+
+        let caller = Caller::try_from(claims).unwrap();
+        assert_eq!(caller.principal, "service-account-reporting-svc");
+        assert_eq!(caller.source, ClaimSource::ClientCredentials);
+    }
+
+    #[test]
+    fn a_machine_grant_without_a_client_id_is_rejected() {
+        let claims = IdentityClaims::new(ClaimSource::ClientCredentials);
+        assert!(Caller::try_from(claims).is_err());
+    }
+
+    #[test]
+    fn a_static_token_authenticates_as_its_configured_principal() {
+        let claims =
+            IdentityClaims::new(ClaimSource::StaticToken).with_preferred_username("aarokya");
+
+        let caller = Caller::try_from(claims).unwrap();
+        assert_eq!(caller.principal, "aarokya");
+        assert!(!caller.legacy);
+    }
+
+    #[test]
+    fn claims_carrying_no_identity_at_all_are_rejected() {
+        let claims = IdentityClaims::new(ClaimSource::IdToken);
+        assert!(Caller::try_from(claims).is_err());
+    }
+
+    #[test]
+    fn the_legacy_key_is_identifiable_in_logs() {
+        // While the shared key is being retired, every request still using it
+        // must be greppable, so the cutover can be verified rather than
+        // assumed.
+        let caller = Caller::legacy_api_key();
+        assert!(caller.legacy);
+        assert_eq!(caller.principal, "legacy-api-key");
+    }
+}

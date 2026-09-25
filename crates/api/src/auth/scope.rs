@@ -97,3 +97,107 @@ impl ScopeResolver for InvokrScopes {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(path: &str) -> AuthRequest {
+        AuthRequest::builder().method("GET").path(path).build()
+    }
+
+    #[test]
+    fn health_and_metrics_are_public_under_a_path_prefix() {
+        let scopes = InvokrScopes::new("/invokr", "/dashboard");
+
+        assert!(scopes.resolve(&request("/invokr/health")).is_public());
+        // `/metrics` is mounted *inside* the API prefix. Testing a bare
+        // "/metrics" would pass against an unprefixed deployment and leave a
+        // prefixed one serving 401s to Prometheus, which reports as missing
+        // data rather than an error.
+        assert!(scopes.resolve(&request("/invokr/metrics")).is_public());
+    }
+
+    #[test]
+    fn health_and_metrics_are_public_without_a_path_prefix() {
+        let scopes = InvokrScopes::new("", "");
+
+        assert!(scopes.resolve(&request("/health")).is_public());
+        assert!(scopes.resolve(&request("/metrics")).is_public());
+    }
+
+    #[test]
+    fn the_oidc_callback_is_public() {
+        // If the callback required authentication, the session authenticator
+        // would redirect it into the login flow it is trying to complete — an
+        // infinite loop that only appears once a real provider is configured.
+        let scopes = InvokrScopes::new("/invokr", "/dashboard");
+        assert!(scopes.resolve(&request("/invokr/oidc/login")).is_public());
+    }
+
+    #[test]
+    fn the_callback_path_matches_the_registered_redirect_uri() {
+        // `setup::build` derives the redirect URI it registers with the
+        // provider from the same prefix. If these two ever diverge, the
+        // provider redirects to a path that requires authentication.
+        assert_eq!(InvokrScopes::callback_path("/invokr"), "/invokr/oidc/login");
+        assert_eq!(InvokrScopes::callback_path(""), "/oidc/login");
+    }
+
+    #[test]
+    fn dashboard_assets_are_public() {
+        // Fetched by the browser before any login can have happened.
+        let scopes = InvokrScopes::new("/invokr", "/dashboard");
+        assert!(scopes
+            .resolve(&request("/dashboard/pkg/invokr_dashboard.js"))
+            .is_public());
+        assert!(scopes
+            .resolve(&request("/dashboard/pkg/invokr_dashboard_bg.wasm"))
+            .is_public());
+    }
+
+    #[test]
+    fn api_and_dashboard_routes_are_protected() {
+        let scopes = InvokrScopes::new("/invokr", "/dashboard");
+
+        for path in [
+            "/invokr/v1/jobs",
+            "/invokr/v1/orgs",
+            "/invokr/v1/endpoints",
+            "/dashboard/jobs",
+            "/dashboard/",
+        ] {
+            assert_eq!(
+                scopes.resolve(&request(path)),
+                InvokrScope::Protected,
+                "{path} must require a credential"
+            );
+        }
+    }
+
+    #[test]
+    fn a_path_merely_containing_health_is_not_public() {
+        // Substring matching here would expose any route whose name happens to
+        // contain an infrastructure path.
+        let scopes = InvokrScopes::new("/invokr", "/dashboard");
+        assert_eq!(
+            scopes.resolve(&request("/invokr/v1/jobs/health-check")),
+            InvokrScope::Protected
+        );
+        assert_eq!(
+            scopes.resolve(&request("/invokr/v1/endpoints/metrics")),
+            InvokrScope::Protected
+        );
+    }
+
+    #[test]
+    fn the_session_cookie_name_does_not_vary_by_scope() {
+        // `SessionAuthenticator` reads the cookie named by the *scope*, while
+        // `LoginFlow` writes the one named in `CookieSettings`. If the name
+        // varied per scope, a session established on one route would be
+        // invisible on another — login would appear to succeed and every
+        // request stay anonymous.
+        assert_eq!(InvokrScope::Public.session_cookie_name(), SESSION_COOKIE);
+        assert_eq!(InvokrScope::Protected.session_cookie_name(), SESSION_COOKIE);
+    }
+}
