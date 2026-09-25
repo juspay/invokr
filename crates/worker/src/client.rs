@@ -11,8 +11,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+use crate::health::WorkerHealth;
 use crate::pipeline::PipelineContext;
 use crate::poller;
 
@@ -371,9 +373,16 @@ impl InvokrLibraryClient {
         let config = build_app_config(&ctx, &worker_config);
 
         let cancel = CancellationToken::new();
+        let health = Arc::new(WorkerHealth::new(
+            config.worker.max_concurrent,
+            Duration::from_millis(config.worker.poll_interval_ms),
+            Duration::from_millis(config.health.stale_after_floor_ms),
+        ));
         let join = {
             let cancel = cancel.clone();
-            tokio::spawn(async move { poller::run(pool, config, schema_provider, cancel).await })
+            tokio::spawn(
+                async move { poller::run(pool, config, schema_provider, cancel, health).await },
+            )
         };
         WorkerHandle { cancel, join }
     }
@@ -403,6 +412,7 @@ impl WorkerHandle {
 fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::config::AppConfig {
     use invokr_common::config::{
         AppConfig, CryptoEnv, DbEnv, MetricsEnv, ReaperEnv, ServerEnv, ServerMode, WorkerEnv,
+        WorkerHealthEnv,
     };
 
     AppConfig {
@@ -419,6 +429,7 @@ fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::
             dashboard_prefix: String::new(),
             dashboard_dist_dir: String::new(),
         },
+        health: WorkerHealthEnv::new(),
         worker: WorkerEnv {
             max_concurrent: wc.max_concurrent,
             poll_interval_ms: wc.poll_interval_ms,

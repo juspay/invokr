@@ -56,7 +56,9 @@ Except: it survives crashes, retries on failure, never fires twice, and every ex
               │  │ Kafka (rdkafka)│  │
               │  │ Redis (redis)  │  │
               │  └────────────────┘  │
-              │  metrics on :9090    │
+              │  ops on :9090        │
+              │  /health /ready      │
+              │  /metrics            │
               └──────────────────────┘
 ```
 
@@ -76,7 +78,7 @@ No separate scheduler process is needed. The database handles all scheduling con
 |-------|-------------|
 | `invokr-common` | Shared library — models, DB layer, config, tenant management, caching, metrics |
 | `invokr-api` | REST API server (actix-web). CRUD for all resources, job invocation, Prometheus metrics at `/metrics` |
-| `invokr-worker` | Execution engine. Polls DB for QUEUED/RETRYING/PENDING executions, resolves templates, dispatches to endpoints. Exposes metrics via HTTP listener |
+| `invokr-worker` | Execution engine. Polls DB for QUEUED/RETRYING/PENDING executions, resolves templates, dispatches to endpoints. Serves `/health`, `/ready` and `/metrics` on its ops port |
 | `invokr-mock-server` | Test fixture — HTTP server on port 9999 for integration tests |
 | `invokr-dashboard` | Web UI — Leptos/WASM, shows jobs, executions, attempts. Excluded from workspace build |
 
@@ -446,7 +448,7 @@ curl http://localhost:8080/v1/jobs/{job_id}/versions $HEADERS
 
 ## Monitoring
 
-Invokr exposes Prometheus metrics. The API serves metrics at `GET /metrics`, the worker exposes metrics via a separate HTTP listener (default port 9090).
+Invokr exposes Prometheus metrics. The API serves metrics at `GET /metrics`; the worker serves them from its own ops server (default port 9090), alongside its health probes.
 
 ```bash
 # Start Prometheus + Grafana
@@ -473,6 +475,30 @@ A pre-built Grafana dashboard is included at `monitoring/grafana/dashboards/invo
 | `invokr_cron_jobs_reaped_total` | Counter | Expired CRON jobs retired by the reaper, by schema |
 | `invokr_kafka_messages_produced_total` | Counter | Kafka messages produced, by status |
 | `invokr_redis_stream_messages_sent_total` | Counter | Redis Stream messages sent, by status |
+
+### Health probes
+
+Both services expose probes. The API serves `GET /health` on its own port (subject to `INVOKR_PATH_PREFIX`). The worker serves two on its ops port (`INVOKR_METRICS_PORT`, default 9090), always unprefixed:
+
+| Route | Meaning | Use as |
+|-------|---------|--------|
+| `GET /health` | Process is up and the runtime is scheduling. Deliberately dumb — it does not check dependencies, because a probe that fails for reasons a restart won't fix causes restart loops. | Liveness probe |
+| `GET /ready` | Database answers *and* the poll loop is still ticking. | Readiness probe |
+
+```bash
+curl -s localhost:9090/health   # OK
+curl -s localhost:9090/ready    # {"status":"ready","db":"ok","poller":"ok","last_tick_ago_ms":42}
+```
+
+`/ready` returns `503` with the same body shape (`"status":"not_ready"`) when a check fails, naming the failing dependency:
+
+```json
+{"status":"not_ready","db":"pool timed out","poller":"ok","last_tick_ago_ms":18}
+```
+
+The poll loop is considered stale after `max(INVOKR_HEALTH_STALE_AFTER_FLOOR_MS, 10 x INVOKR_WORKER_POLL_INTERVAL_MS)`. A worker holding all `INVOKR_WORKER_MAX_CONCURRENT` permits is reported alive regardless: it parks inside the semaphore and stops ticking, but it is saturated rather than wedged, and pulling it from rotation under exactly that load would be backwards.
+
+On shutdown the poll loop stops ticking and the process exits once in-flight work drains (up to `INVOKR_WORKER_SHUTDOWN_TIMEOUT_SEC`). The ops port keeps serving throughout the drain, so probes stay answerable while it happens. An idle worker exits within a second, so `/ready` will not usually observe the drain; only a long drain outlasts the staleness threshold and reports `not_ready`.
 
 ---
 
@@ -545,7 +571,10 @@ All configuration is via environment variables prefixed with `INVOKR_`:
 | `INVOKR_WORKER_SHUTDOWN_TIMEOUT_SEC` | `30` | Graceful shutdown timeout for in-flight work |
 | `INVOKR_CONFIG_CACHE_TTL_SEC` | `60` | Config cache TTL in worker |
 | `INVOKR_SECRET_CACHE_TTL_SEC` | `300` | Secret cache TTL in worker |
-| `INVOKR_METRICS_PORT` | `9090` | Prometheus metrics HTTP listener port (worker) |
+| `INVOKR_METRICS_PORT` | `9090` | Worker ops server port — serves `/health`, `/ready` and `/metrics` |
+| `INVOKR_HEALTH_DB_PROBE_TIMEOUT_MS` | `2000` | How long `/ready`'s `SELECT 1` may take before it reports failure |
+| `INVOKR_HEALTH_STALE_AFTER_FLOOR_MS` | `5000` | Lower bound on the poll-loop staleness threshold |
+| `INVOKR_HEALTH_SERVER_WORKERS` | `1` | Worker threads for the ops server |
 | `INVOKR_PATH_PREFIX` | *(empty)* | URL path prefix for the API server (e.g. `/invokr`) |
 
 ### Path prefix
@@ -592,7 +621,7 @@ Without these variables, everything works at the root path as before.
 **Note:** When using a path prefix, update monitoring and healthcheck configs to match:
 
 - **Prometheus** (`monitoring/prometheus.yml`): change `metrics_path` from `/metrics` to `/{prefix}/metrics` (e.g. `/invokr/metrics`)
-- **Docker healthchecks** (`docker-compose.prod.yml`): change healthcheck URLs from `http://localhost:8080/health` to `http://localhost:8080/{prefix}/health` (e.g. `http://localhost:8080/invokr/health`)
+- **Docker healthchecks** (`docker-compose.prod.yml`): change the *API* healthcheck URL from `http://localhost:8080/health` to `http://localhost:8080/{prefix}/health` (e.g. `http://localhost:8080/invokr/health`). The worker's healthcheck needs no change — its ops routes are never prefixed
 
 ---
 

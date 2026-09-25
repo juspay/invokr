@@ -1,6 +1,7 @@
 pub mod backoff;
 pub mod client;
 pub mod dispatcher;
+pub mod health;
 pub mod pipeline;
 pub mod poller;
 pub mod reaper;
