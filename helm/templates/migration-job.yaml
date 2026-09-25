@@ -72,12 +72,18 @@ spec:
                  `none`, and only this Job should ever migrate. */}}
             - name: INVOKR_DB_MIGRATION_MODE
               value: {{ .Values.migration.mode | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{/* Hook-scoped copies, for the same reason as the ServiceAccount. */}}
           envFrom:
             - configMapRef:
                 name: {{ include "invokr.fullname" . }}-migrate-cm
             - secretRef:
                 name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "invokr.fullname" . }}-migrate-secrets{{ end }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.migration.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

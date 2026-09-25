@@ -76,6 +76,30 @@ workerConfigs:
   # unconditionally, so an unsupported name becomes an env var the app silently
   # ignores -- it looks tunable but changes nothing.
 
+# ─── Extra environment ──────────────────────────────────────────────────────
+# Everything in `configs` and `secrets` is rendered as INVOKR_<KEY>, which is a
+# deliberate guarantee rather than a convenience -- it is what makes a stray key
+# obviously wrong. Variables the process needs under some OTHER name therefore
+# have no home there, so they go here.
+#
+# The motivating case is `kms.enabled`: the AWS SDK reads AWS_REGION, and
+# aws_config falls back to us-east-1 when it is unset, so a key in any other
+# region fails to decrypt and every pod crash-loops on startup.
+#
+# Applied to the api, the worker AND the migration Job -- the Job runs the same
+# image with the same INVOKR_KMS_ENABLED, so it must decrypt too.
+
+# -- Extra environment variables, in Kubernetes `env` form.
+extraEnv: []
+#  - name: AWS_REGION
+#    value: eu-central-1
+
+# -- Extra `envFrom` sources. Rendered after the chart's own ConfigMaps and
+# Secret, so a key set here wins on collision.
+extraEnvFrom: []
+#  - secretRef:
+#      name: my-aws-credentials
+
 # ─── Secrets ────────────────────────────────────────────────────────────────
 # Rendered into a Secret as INVOKR_<KEY_UPPERCASED>. With `kms.enabled`, these
 # are expected to be base64 KMS ciphertext rather than plaintext.
@@ -95,7 +119,9 @@ secrets:
 existingSecret: ""
 
 # -- Selects the `-kms` image variants, which expect `secrets` to hold base64
-# KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`.
+# KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`, and
+# set AWS_REGION via `extraEnv` -- the SDK defaults to us-east-1, not to the
+# cluster's region.
 kms:
   enabled: false
 
