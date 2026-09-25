@@ -299,7 +299,10 @@ kms-dev:
         echo "Error: .env.kms not found. Run 'just kms-init' first." >&2
         exit 1
     fi
-    # cp .env.kms .env
+    # Export .env.kms into the environment rather than copying it over .env:
+    # dotenvy::dotenv() does not override variables already set, so these win
+    # without clobbering the developer's own .env.
+    set -a && . ./.env.kms && set +a
     trap 'kill 0' EXIT
     echo "Starting KMS-enabled dev services..."
     cargo run --features kms -p invokr-api &
