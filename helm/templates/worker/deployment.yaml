@@ -59,6 +59,13 @@ spec:
                 name: {{ include "invokr.fullname" . }}-worker-cm
             - secretRef:
                 name: {{ include "invokr.secretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           livenessProbe:
             {{/* Dependency-free, so a database outage cannot cause a restart loop. */}}
             httpGet:
