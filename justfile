@@ -34,16 +34,25 @@ db-up:
 db-down:
     docker compose down
 
-# Uses INVOKR_DATABASE_URL as the single source of connection details — the
-# host-published port differs between the dev and prod compose files, so
-# spelling out -h/-U/-d here would drift from whichever one you are running.
+# Deliberately the same code path the deployment runs, rather than a shell loop
+# over migrations/*.sql — otherwise developers exercise a different mechanism
+# from production, which is how a migration passes locally and fails on deploy.
 
-# Run SQL migrations
+# Run pending migrations
 db-migrate:
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260317000000_initial.sql
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260318000000_multi_tenancy.sql
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260322000000_txn_based_pickup.sql
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260322000001_pg_cron.sql
+    INVOKR_DB_MIGRATION_MODE=run cargo run --quiet -p invokr-api -- migrate
+
+# Print the SQL a migration run would execute, without applying it. Also how an
+# existing database is baselined: keep the _sqlx_migrations INSERTs for
+# migrations already applied by hand, discard the DDL.
+
+# Show pending migrations without applying them
+db-migrate-dry-run:
+    INVOKR_DB_MIGRATION_MODE=dry-run cargo run --quiet -p invokr-api -- migrate
+
+# Create a new migration with a correctly formatted, ordered filename
+migrate-new name:
+    sqlx migrate add --source migrations {{name}}
 
 # Reset database (drop + recreate + migrate)
 db-reset:

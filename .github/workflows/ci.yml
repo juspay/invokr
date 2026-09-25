@@ -195,14 +195,39 @@ jobs:
               psql -v ON_ERROR_STOP=1 -U invokr -d invokr_db < "$f"
           done
 
-      - name: Verify schema
+      # `public` holds the control plane only. Data tables (executions, jobs,
+      # endpoints, ...) live in per-workspace schemas created at runtime from
+      # crates/common/migrations/workspace_v1.sql, so any of them appearing here
+      # means a migration is writing to the wrong plane.
+      - name: Verify public schema holds exactly the control-plane tables
+        run: |
+          # _sqlx_migrations is excluded so the assertion holds whether the set
+          # was applied by psql (this job) or by the migrator (e2e, deployments).
+          actual=$(docker compose exec -T postgres \
+            psql -tAX -v ON_ERROR_STOP=1 -U invokr -d invokr_db \
+            -c "SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public' AND tablename <> '_sqlx_migrations'
+                ORDER BY 1;")
+          expected=$(printf 'organizations\nregion_heartbeats\nregion_status\nworkspaces')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::public schema does not match the expected control-plane tables"
+            echo "expected:"; echo "$expected"
+            echo "actual:";   echo "$actual"
+            exit 1
+          fi
+          echo "public schema OK"
+
+      # CREATE EXTENSION succeeds even when pg_cron is not in
+      # shared_preload_libraries; querying cron.job proves it is actually loaded.
+      - name: Verify pg_cron is loaded
         run: |
           docker compose exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U invokr -d invokr_db -c "\dt public.*"
+            psql -tAX -v ON_ERROR_STOP=1 -U invokr -d invokr_db \
+            -c "SELECT count(*) FROM cron.job;"
           docker compose exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U invokr -d invokr_db \
+            psql -tAX -v ON_ERROR_STOP=1 -U invokr -d invokr_db \
             -c "SELECT extname FROM pg_extension WHERE extname IN ('pg_cron','pgcrypto');" \
-            | grep -q pg_cron
+            | sort | tr '\n' ' '
 
       - name: PostgreSQL logs
         if: failure()

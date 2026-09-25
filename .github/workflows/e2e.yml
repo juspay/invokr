@@ -130,15 +130,19 @@ jobs:
           done
           echo "postgres failed to start"; docker compose logs postgres; exit 1
 
+      # Through the binary, not a psql loop: this is the code path the Helm
+      # migration Job runs, so e2e exercises the real migrator -- ordering,
+      # advisory locking and the _sqlx_migrations bookkeeping included.
       - name: Apply migrations
+        env:
+          INVOKR_DB_MIGRATION_MODE: run
+        run: cargo run --quiet -p invokr-api -- migrate
+
+      - name: Verify migrations were recorded
         run: |
-          # Glob order is lexicographic, which matches the datestamped
-          # filename order the justfile applies them in.
-          for f in migrations/*.sql; do
-            echo "==> $f"
-            docker compose exec -T postgres \
-              psql -v ON_ERROR_STOP=1 -U invokr -d invokr_db < "$f"
-          done
+          docker compose exec -T postgres \
+            psql -tAX -v ON_ERROR_STOP=1 -U invokr -d invokr_db \
+            -c "SELECT version, description FROM _sqlx_migrations ORDER BY version;"
 
       # ── Services ─────────────────────────────────────────────────────
 

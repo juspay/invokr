@@ -46,6 +46,34 @@ pub struct DbEnv {
     /// Prefix for all per-workspace Invokr tables. Default empty (tables stay `jobs`, etc.).
     /// Set to e.g. `sched` to get `sched_jobs`, `sched_executions`, etc.
     pub table_prefix: String,
+    /// What the `migrate` subcommand does. Defaults to `None` so no deployment
+    /// gains migration behaviour it did not previously have.
+    pub migration_mode: MigrationMode,
+}
+
+/// How schema migrations are handled, from `INVOKR_DB_MIGRATION_MODE`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationMode {
+    /// Do nothing.
+    None,
+    /// Apply pending migrations.
+    Run,
+    /// Print the SQL a real run would execute, without touching the database.
+    DryRun,
+}
+
+impl MigrationMode {
+    fn from_env() -> Result<Self, String> {
+        let raw = get_from_env_or_default("INVOKR_DB_MIGRATION_MODE", "none".to_string());
+        match raw.to_lowercase().as_str() {
+            "none" => Ok(Self::None),
+            "run" => Ok(Self::Run),
+            "dry-run" | "dry_run" | "dryrun" => Ok(Self::DryRun),
+            other => Err(format!(
+                "INVOKR_DB_MIGRATION_MODE '{other}' is invalid: expected none, run or dry-run"
+            )),
+        }
+    }
 }
 
 impl DbEnv {
@@ -59,10 +87,12 @@ impl DbEnv {
                 table_prefix
             ));
         }
+        let migration_mode = MigrationMode::from_env()?;
         Ok(Self {
             url,
             pool_size,
             table_prefix,
+            migration_mode,
         })
     }
 }

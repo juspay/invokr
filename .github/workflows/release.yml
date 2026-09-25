@@ -74,17 +74,24 @@ jobs:
           git push origin main
           git push origin "v${{ steps.bump.outputs.version }}"
 
+  # Each architecture builds on a native runner and pushes an arch-suffixed tag;
+  # create-manifest then joins them into one multi-arch tag. Deliberately not
+  # `platforms: linux/amd64,linux/arm64` on a single runner -- that cross-builds
+  # arm64 under QEMU, which for a Rust release build is punishingly slow.
   docker:
-    name: ${{ matrix.image_name || matrix.binary }}
+    name: ${{ matrix.image.image_name || matrix.image.binary }} (${{ matrix.arch }})
     needs: tag-release
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
+      # Two real dimensions -- arch x image -- so this expands to the full 2x4
+      # cross-product. `include` only attaches the runner for each arch.
       matrix:
-        include:
+        arch: [amd64, arm64]
+        image:
           - binary: invokr-api
             features: ""
             include_dashboard: "true"
@@ -99,6 +106,11 @@ jobs:
             features: "kms"
             image_name: "invokr-worker-kms"
             include_dashboard: "false"
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with:
@@ -112,32 +124,71 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Labels only -- the per-arch tag is set explicitly below, because
+      # metadata-action has no notion of the arch suffix.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.image_name || matrix.binary }}
-          tags: |
-            type=raw,value=${{ needs.tag-release.outputs.version }}
-            type=raw,value=latest
+          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.image.image_name || matrix.image.binary }}
+          tags: type=raw,value=${{ needs.tag-release.outputs.version }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.image.image_name || matrix.image.binary }}:${{ needs.tag-release.outputs.version }}-linux-${{ matrix.arch }}
           build-args: |
-            BINARY=${{ matrix.binary }}
-            FEATURES=${{ matrix.features }}
-            INCLUDE_DASHBOARD=${{ matrix.include_dashboard }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            BINARY=${{ matrix.image.binary }}
+            FEATURES=${{ matrix.image.features }}
+            INCLUDE_DASHBOARD=${{ matrix.image.include_dashboard }}
+          # Per-arch cache scope: one shared scope would have each architecture
+          # evicting the other's layers on every release.
+          cache-from: type=gha,scope=${{ matrix.image.image_name || matrix.image.binary }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.image_name || matrix.image.binary }}-${{ matrix.arch }}
+
+  create-manifest:
+    name: Multi-arch manifest for ${{ matrix.image_name || matrix.binary }}
+    needs: [tag-release, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - binary: invokr-api
+          - binary: invokr-api
+            image_name: "invokr-api-kms"
+          - binary: invokr-worker
+          - binary: invokr-worker
+            image_name: "invokr-worker-kms"
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Join the per-arch tags
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.image_name || matrix.binary }}
+          VERSION: ${{ needs.tag-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          for tag in "$VERSION" latest; do
+            docker buildx imagetools create --tag "$IMAGE:$tag" \
+              "$IMAGE:$VERSION-linux-amd64" \
+              "$IMAGE:$VERSION-linux-arm64"
+          done
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
 
   github-release:
     name: Publish GitHub release
-    needs: [tag-release, docker]
+    needs: [tag-release, create-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write

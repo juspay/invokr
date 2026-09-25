@@ -12,6 +12,7 @@ pub mod error;
 #[cfg(feature = "kms")]
 pub mod kms;
 pub mod metrics;
+pub mod migrate;
 pub mod models;
 pub mod pagination;
 pub mod template;

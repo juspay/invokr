@@ -402,7 +402,8 @@ impl WorkerHandle {
 /// Build an AppConfig from the PipelineContext and WorkerConfig for the poller.
 fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::config::AppConfig {
     use invokr_common::config::{
-        AppConfig, CryptoEnv, DbEnv, MetricsEnv, ReaperEnv, ServerEnv, ServerMode, WorkerEnv,
+        AppConfig, CryptoEnv, DbEnv, MetricsEnv, MigrationMode, ReaperEnv, ServerEnv, ServerMode,
+        WorkerEnv,
     };
 
     AppConfig {
@@ -410,6 +411,7 @@ fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::
             url: String::new(), // pool already created by caller
             pool_size: 0,
             table_prefix: ctx.table_prefix.clone(),
+            migration_mode: MigrationMode::None,
         },
         server: ServerEnv {
             listen_addr: String::new(),
