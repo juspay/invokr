@@ -413,7 +413,6 @@ fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::
         },
         server: ServerEnv {
             listen_addr: String::new(),
-            api_key: String::new(),
             path_prefix: String::new(),
             mode: ServerMode::Api,
             dashboard_prefix: String::new(),

@@ -41,8 +41,8 @@ pub fn shell(app: impl IntoView) -> impl IntoView {
     let config_script = use_context::<DashboardConfig>()
         .map(|c| {
             format!(
-                r#"window.__INVOKR_CONFIG__={{apiBaseUrl:"{}",apiPrefix:"{}",dashboardPrefix:"{}",apiKey:"{}"}};"#,
-                c.api_base_url, c.api_prefix, c.dashboard_prefix, c.api_key
+                r#"window.__INVOKR_CONFIG__={{apiBaseUrl:"{}",apiPrefix:"{}",dashboardPrefix:"{}"}};"#,
+                c.api_base_url, c.api_prefix, c.dashboard_prefix
             )
         })
         .unwrap_or_default();
@@ -95,7 +95,6 @@ pub fn App() -> impl IntoView {
                 api_base_url: get("apiBaseUrl"),
                 api_prefix: get("apiPrefix"),
                 dashboard_prefix: get("dashboardPrefix"),
-                api_key: get("apiKey"),
             });
         }
     }
