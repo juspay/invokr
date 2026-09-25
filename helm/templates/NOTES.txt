@@ -29,8 +29,15 @@ jobs only on the writer; a reader gives you a working API and zero executions.
 {{- if .Values.api.ingress.enabled }}
 {{- range .Values.api.ingress.hosts }}
 {{- $host := .host }}
+{{- /* Mirrors ingress.yaml: a host with no explicit `paths` has them derived
+       from `configs.path_prefix`, so the URL must be derived here too. Without
+       this branch the default configuration prints no URL at all. */}}
+{{- if .paths }}
 {{- range .paths }}
   http{{ if $.Values.api.ingress.tls }}s{{ end }}://{{ $host }}{{ .path }}/health
+{{- end }}
+{{- else }}
+  http{{ if $.Values.api.ingress.tls }}s{{ end }}://{{ $host }}{{ include "invokr.pathPrefix" $ }}/health
 {{- end }}
 {{- end }}
 {{- else if and .Values.istio.enabled .Values.istio.virtualService.enabled }}
@@ -51,12 +58,12 @@ until this is done -- it is not automated by this chart.
   curl -X POST "$INVOKR_URL{{ include "invokr.pathPrefix" . }}/v1/orgs" \
     -H "Authorization: Bearer $INVOKR_API_KEY" \
     -H 'Content-Type: application/json' \
-    -d '{"name": "your-org"}'
+    -d '{"name": "Your Org", "slug": "your-org"}'
 
   curl -X POST "$INVOKR_URL{{ include "invokr.pathPrefix" . }}/v1/orgs/<org_id>/workspaces" \
     -H "Authorization: Bearer $INVOKR_API_KEY" \
     -H 'Content-Type: application/json' \
-    -d '{"name": "your-workspace"}'
+    -d '{"name": "Your Workspace", "slug": "your-workspace"}'
 
 Creating a workspace provisions its schema, so give it a moment to complete.
 

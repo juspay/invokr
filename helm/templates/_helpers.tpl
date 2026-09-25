@@ -159,6 +159,19 @@ affinity:
 {{- if and .Values.migration.enabled (not .Values.database.host) -}}
   {{- fail "invokr: migration.enabled is true, so database.host must be set for the Job's pg_isready check." -}}
 {{- end -}}
+{{/* An HPA computes utilization as a percentage of the CPU REQUEST. With no
+     request there is no denominator, so it reports <unknown> and never scales --
+     a healthy-looking HPA that does nothing. */}}
+{{- if and .Values.api.autoscaling.enabled .Values.api.autoscaling.targetCPUUtilizationPercentage -}}
+  {{- if not (dig "requests" "cpu" "" (.Values.api.resources | default dict)) -}}
+    {{- fail "invokr: api.autoscaling.enabled targets CPU, so api.resources.requests.cpu must be set. Without a request the HPA reports <unknown> utilization and never scales." -}}
+  {{- end -}}
+{{- end -}}
+{{- if and .Values.worker.autoscaling.enabled .Values.worker.autoscaling.targetCPUUtilizationPercentage -}}
+  {{- if not (dig "requests" "cpu" "" (.Values.worker.resources | default dict)) -}}
+    {{- fail "invokr: worker.autoscaling.enabled targets CPU, so worker.resources.requests.cpu must be set. Without a request the HPA reports <unknown> utilization and never scales." -}}
+  {{- end -}}
+{{- end -}}
 {{- if and .Values.api.podDisruptionBudget.enabled (not .Values.api.autoscaling.enabled) -}}
   {{- if ge (int .Values.api.podDisruptionBudget.minAvailable) (int .Values.api.replicaCount) -}}
     {{- fail "invokr: api.podDisruptionBudget.minAvailable must be less than api.replicaCount, or nodes running the API can never be drained." -}}
