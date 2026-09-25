@@ -1,0 +1,37 @@
+{{- include "invokr.validateValues" . -}}
+{{/* Shared settings, plus one map per workload. Each Deployment mounts the
+     shared map and its own, so worker settings never reach an API pod. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "invokr.fullname" . }}-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.labels" . | nindent 4 }}
+data:
+  {{- include "invokr.configsToData" .Values.configs | nindent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "invokr.fullname" . }}-api-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+data:
+  {{- include "invokr.configsToData" .Values.apiConfigs | nindent 2 }}
+  {{/* Derived so the bind port cannot drift from the Service and probes. */}}
+  INVOKR_LISTEN_ADDR: "0.0.0.0:{{ .Values.api.service.targetPort }}"
+  {{- if .Values.dashboard.enabled }}
+  INVOKR_DASHBOARD_PATH_PREFIX: {{ .Values.dashboard.pathPrefix | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "invokr.fullname" . }}-worker-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+data:
+  {{- include "invokr.configsToData" .Values.workerConfigs | nindent 2 }}

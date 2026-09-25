@@ -1,0 +1,16 @@
+{{- if and .Values.istio.enabled .Values.istio.destinationRule.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "invokr.fullname" . }}-dr
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: istio-destination-rule
+spec:
+  host: {{ include "invokr.fullname" . }}-api
+  {{- with .Values.istio.destinationRule.trafficPolicy }}
+  trafficPolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

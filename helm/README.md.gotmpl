@@ -1,0 +1,103 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+Invokr runs as **two workloads** sharing one PostgreSQL database:
+
+| Workload | Port | Purpose |
+|---|---|---|
+| `api` | 8080 | REST API, and the dashboard when `apiConfigs.mode` is `both` |
+| `worker` | 9090 | Polls the database and delivers jobs. Metrics only — no inbound traffic |
+
+## Requirements before installing
+
+**The database must have `pg_cron` enabled at the server level.** Invokr does not
+schedule CRON jobs itself — it delegates to the extension. Without it everything
+installs cleanly and CRON jobs silently never fire.
+
+1. `shared_preload_libraries = pg_cron` — a *static* parameter, so it needs a
+   database restart before it takes effect
+2. `cron.database_name = invokr_db`
+3. `CREATE EXTENSION pg_cron` — requires superuser (`rds_superuser` on RDS/Aurora)
+
+Point `secrets.database_url` at the **writer** endpoint. pg_cron runs jobs only
+on the writer.
+
+## Installing
+
+Four values must be set; everything else has a working default. The image tag
+defaults to the chart's `appVersion`, which the release workflow keeps equal to
+the released version, so it only needs setting to pin a different build.
+
+```bash
+helm install invokr ./helm \
+  --namespace invokr --create-namespace \
+  --set secrets.database_url='postgresql://user:pass@writer-host:5432/invokr_db' \
+  --set secrets.api_key='<api key>' \
+  --set secrets.encryption_key='<64 hex chars>' \
+  --set database.host=writer-host
+```
+
+Released charts are published alongside the images:
+
+```bash
+helm install invokr oci://ghcr.io/juspay/helm-charts/invokr --version <version>
+```
+
+The chart refuses to render if a required value is missing, naming which one —
+so there is nothing to memorise.
+
+## Migrations
+
+Migrations are compiled into the api image, so the chart runs that same image as
+a `pre-install,pre-upgrade` hook Job. Helm blocks on hook Jobs, so a failed
+migration aborts the release **before any pod is replaced** — the failure mode is
+"nothing changed", not "half changed".
+
+Set `migration.mode: dry-run` to have the Job print the SQL it would apply
+instead of applying it, or `migration.enabled: false` to hand migrations to a DBA
+entirely. App pods never migrate under any setting.
+
+In clusters running external-secrets, leave `secrets` empty and point
+`existingSecret` at the Secret your ExternalSecret produces. It must contain
+`INVOKR_DATABASE_URL`, `INVOKR_API_KEY` and `INVOKR_ENCRYPTION_KEY`.
+
+## Configuration model
+
+Every key under `configs`, `apiConfigs` and `workerConfigs` is rendered into a
+ConfigMap as `INVOKR_<KEY_UPPERCASED>` and injected via `envFrom`. **Adding a new
+setting is a one-line change in `values.yaml`** — no template edit. Set a key to
+`null` to omit it and fall back to the application default.
+
+`configs.path_prefix` is the single source of truth for the URL prefix: it feeds
+the probes, the ingress paths, the ServiceMonitor's metrics path and the
+dashboard's config. Change it in one place.
+
+## Pulling from a mirror
+
+`global.imageRegistry` overrides the registry for every image, so mirroring into
+ECR needs one value rather than a chart fork:
+
+```yaml
+global:
+  imageRegistry: <account>.dkr.ecr.<region>.amazonaws.com
+```
+
+## Before exposing the dashboard
+
+The dashboard is served by the API pods and renders `INVOKR_API_KEY` into the
+page. That key is not scoped — it authorises every workspace on the install — so
+anyone who can load the dashboard has full API access. Keep it off the public
+internet until per-user authentication ships.
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

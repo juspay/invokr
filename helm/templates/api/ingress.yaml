@@ -1,0 +1,64 @@
+{{- if .Values.api.ingress.enabled -}}
+{{/* Leave disabled when routing through Istio. Note this Service also serves
+     the dashboard, which renders the API key into its HTML.
+
+     The dashboard is mounted at `dashboard.pathPrefix`, a SIBLING of the API
+     prefix rather than a child of it, so routing only the API prefix leaves the
+     dashboard returning 404 through the ingress. When a host lists no explicit
+     `paths`, both prefixes are derived here so they cannot drift from
+     `configs.path_prefix` and `dashboard.pathPrefix`. */}}
+{{- $pathPrefix := include "invokr.pathPrefix" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "invokr.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+  {{- with .Values.api.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.api.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.api.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.api.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- if .paths }}
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "invokr.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+          {{- end }}
+          {{- else }}
+          - path: {{ $pathPrefix | default "/" }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "invokr.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+          {{- if and $.Values.dashboard.enabled $pathPrefix $.Values.dashboard.pathPrefix }}
+          - path: {{ $.Values.dashboard.pathPrefix }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "invokr.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+          {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end }}

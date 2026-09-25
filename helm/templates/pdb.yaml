@@ -1,0 +1,29 @@
+{{- if .Values.api.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "invokr.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.api.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "invokr.componentSelectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+{{- end }}
+{{- if .Values.worker.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "invokr.fullname" . }}-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.worker.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "invokr.componentSelectorLabels" (dict "root" . "component" "worker") | nindent 6 }}
+{{- end }}
