@@ -27,8 +27,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # If main gets branch protection, add a PAT secret and uncomment:
-          # token: ${{ secrets.KRONOS_RELEASE_TOKEN }}
+          # main's ruleset requires every change to go through a pull request and
+          # has no bypass actors, so github-actions[bot] cannot push the version
+          # bump this job creates. This token's owner must be on the ruleset's
+          # bypass list -- the token changes who is pushing, not whether that
+          # identity is allowed to.
+          token: ${{ secrets.INVOKR_RELEASE_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
 
