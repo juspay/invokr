@@ -29,7 +29,7 @@ on the writer.
 
 ## Installing
 
-Four values must be set; everything else has a working default. The image tag
+Three values must be set; everything else has a working default. The image tag
 defaults to the chart's `appVersion`, which the release workflow keeps equal to
 the released version, so it only needs setting to pin a different build.
 
@@ -38,9 +38,12 @@ helm install invokr ./helm \
   --namespace invokr --create-namespace \
   --set secrets.database_url='postgresql://user:pass@writer-host:5432/invokr_db' \
   --set secrets.api_key='<api key>' \
-  --set secrets.encryption_key='<64 hex chars>' \
-  --set database.host=writer-host
+  --set secrets.encryption_key='<64 hex chars>'
 ```
+
+`database.host` becomes required too if you enable `migration.enabled` — the
+Job's `pg_isready` check needs a host, and it cannot be parsed out of the
+connection string.
 
 Released charts are published alongside the images:
 
@@ -53,14 +56,18 @@ so there is nothing to memorise.
 
 ## Migrations
 
-Migrations are compiled into the api image, so the chart runs that same image as
-a `pre-install,pre-upgrade` hook Job. Helm blocks on hook Jobs, so a failed
-migration aborts the release **before any pod is replaced** — the failure mode is
-"nothing changed", not "half changed".
+**`migration.enabled` is `false`, and schema migrations are a manual step today.**
+The api image has no migrate-and-exit path, so the Job would start an API server
+that never exits and the pre-install hook would hang until Helm's timeout. Apply
+the SQL from the repository's `migrations/` directory in filename order before
+serving traffic.
 
-Set `migration.mode: dry-run` to have the Job print the SQL it would apply
-instead of applying it, or `migration.enabled: false` to hand migrations to a DBA
-entirely. App pods never migrate under any setting.
+The Job itself is complete and ships disabled. Once the image supports
+`migrate`, set `migration.enabled: true` and the chart runs it as a
+`pre-install,pre-upgrade` hook — Helm blocks on hook Jobs, so a failed migration
+aborts the release **before any pod is replaced**, making the failure mode
+"nothing changed" rather than "half changed". `migration.mode: dry-run` will then
+print the SQL instead of applying it. App pods never migrate under any setting.
 
 In clusters running external-secrets, leave `secrets` empty and point
 `existingSecret` at the Secret your ExternalSecret produces. It must contain

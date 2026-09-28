@@ -143,7 +143,12 @@ database:
 migration:
   # -- Run migrations as a pre-install/pre-upgrade hook. Helm blocks on hook
   # Jobs, so a failed migration aborts the release before any pod is replaced.
-  enabled: true
+  #
+  # OFF by default: the api image has no migrate-and-exit path yet, so the Job
+  # would start an API server that never exits and the hook would hang until
+  # Helm's timeout. Apply migrations/*.sql by hand until that lands, then set
+  # this to true.
+  enabled: false
   # -- Arguments passed to the api image to run migrations and exit.
   args: ["migrate"]
   # -- INVOKR_DB_MIGRATION_MODE for the Job. `run` applies pending migrations;

@@ -70,14 +70,21 @@ Creating a workspace provisions its schema, so give it a moment to complete.
 {{- if not .Values.migration.enabled }}
 
 ────────────────────────────────────────────────────────────────────────
-!! MIGRATIONS ARE DISABLED
+!! APPLY SCHEMA MIGRATIONS BEFORE SERVING TRAFFIC
 ────────────────────────────────────────────────────────────────────────
-migration.enabled is false, so no schema migrations ran. The API will fail on
-every request against an empty database.
+No schema migrations ran. Against an empty database the API fails on every
+request, and the org/workspace steps above will not work.
 
-Apply them before serving traffic, using the api image:
+The api image has no migrate-and-exit path yet, so this is a manual step for
+now. Apply the SQL from the repository's migrations/ directory, in filename
+order:
 
-  INVOKR_DB_MIGRATION_MODE=run <api-image> migrate
+  for f in migrations/*.sql; do
+    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+  done
+
+Once the image supports it, set migration.enabled=true and the chart runs this
+as a pre-install hook instead.
 {{- end }}
 {{- if and (not .Values.existingSecret) (not .Values.secrets.database_url) }}
 

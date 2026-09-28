@@ -175,9 +175,9 @@ jobs:
 
   helm-chart:
     name: Package and publish the Helm chart
-    # After create-manifest, so the chart is never published pointing at a
-    # version whose multi-arch tag does not exist yet.
-    needs: [tag-release, create-manifest]
+    # After docker, so the chart is never published pointing at a version whose
+    # images do not exist yet.
+    needs: [tag-release, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: read

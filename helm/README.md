@@ -27,7 +27,7 @@ on the writer.
 
 ## Installing
 
-Four values must be set; everything else has a working default. The image tag
+Three values must be set; everything else has a working default. The image tag
 defaults to the chart's `appVersion`, which the release workflow keeps equal to
 the released version, so it only needs setting to pin a different build.
 
@@ -36,9 +36,12 @@ helm install invokr ./helm \
   --namespace invokr --create-namespace \
   --set secrets.database_url='postgresql://user:pass@writer-host:5432/invokr_db' \
   --set secrets.api_key='<api key>' \
-  --set secrets.encryption_key='<64 hex chars>' \
-  --set database.host=writer-host
+  --set secrets.encryption_key='<64 hex chars>'
 ```
+
+`database.host` becomes required too if you enable `migration.enabled` — the
+Job's `pg_isready` check needs a host, and it cannot be parsed out of the
+connection string.
 
 Released charts are published alongside the images:
 
@@ -51,14 +54,18 @@ so there is nothing to memorise.
 
 ## Migrations
 
-Migrations are compiled into the api image, so the chart runs that same image as
-a `pre-install,pre-upgrade` hook Job. Helm blocks on hook Jobs, so a failed
-migration aborts the release **before any pod is replaced** — the failure mode is
-"nothing changed", not "half changed".
+**`migration.enabled` is `false`, and schema migrations are a manual step today.**
+The api image has no migrate-and-exit path, so the Job would start an API server
+that never exits and the pre-install hook would hang until Helm's timeout. Apply
+the SQL from the repository's `migrations/` directory in filename order before
+serving traffic.
 
-Set `migration.mode: dry-run` to have the Job print the SQL it would apply
-instead of applying it, or `migration.enabled: false` to hand migrations to a DBA
-entirely. App pods never migrate under any setting.
+The Job itself is complete and ships disabled. Once the image supports
+`migrate`, set `migration.enabled: true` and the chart runs it as a
+`pre-install,pre-upgrade` hook — Helm blocks on hook Jobs, so a failed migration
+aborts the release **before any pod is replaced**, making the failure mode
+"nothing changed" rather than "half changed". `migration.mode: dry-run` will then
+print the SQL instead of applying it. App pods never migrate under any setting.
 
 In clusters running external-secrets, leave `secrets` empty and point
 `existingSecret` at the Secret your ExternalSecret produces. It must contain
@@ -131,6 +138,8 @@ internet until per-user authentication ships.
 | database.port | int | `5432` | Database port. |
 | database.user | string | `"invokr"` | Database user. |
 | existingSecret | string | `""` | Use an existing Secret instead of rendering one. Must contain INVOKR_DATABASE_URL, INVOKR_API_KEY and INVOKR_ENCRYPTION_KEY. |
+| extraEnv | list | `[]` | Extra environment variables, in Kubernetes `env` form. |
+| extraEnvFrom | list | `[]` | Extra `envFrom` sources. Rendered after the chart's own ConfigMaps and Secret, so a key set here wins on collision. |
 | fullnameOverride | string | `""` | Override the generated fullname. |
 | global | object | `{"affinity":{},"imageRegistry":null,"nodeSelector":{},"tolerations":[]}` | Global values, shared with any parent chart. |
 | global.affinity | object | `{}` | Affinity applied to every workload unless overridden. |
@@ -148,9 +157,9 @@ internet until per-user authentication ships.
 | istio.virtualService.gateways | list | `[]` | Gateways the VirtualService attaches to. |
 | istio.virtualService.hosts | list | `[]` | Hosts the VirtualService matches. |
 | istio.virtualService.http | list | `[]` | Routing rules. The destination is set to the API service automatically. |
-| kms | object | `{"enabled":false}` | Selects the `-kms` image variants, which expect `secrets` to hold base64 KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`. |
+| kms | object | `{"enabled":false}` | Selects the `-kms` image variants, which expect `secrets` to hold base64 KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`, and set AWS_REGION via `extraEnv` -- the SDK defaults to us-east-1, not to the cluster's region. |
 | migration.args | list | `["migrate"]` | Arguments passed to the api image to run migrations and exit. |
-| migration.enabled | bool | `true` | Run migrations as a pre-install/pre-upgrade hook. Helm blocks on hook Jobs, so a failed migration aborts the release before any pod is replaced. |
+| migration.enabled | bool | `false` | Run migrations as a pre-install/pre-upgrade hook. Helm blocks on hook Jobs, so a failed migration aborts the release before any pod is replaced.  OFF by default: the api image has no migrate-and-exit path yet, so the Job would start an API server that never exits and the hook would hang until Helm's timeout. Apply migrations/*.sql by hand until that lands, then set this to true. |
 | migration.mode | string | `"run"` | INVOKR_DB_MIGRATION_MODE for the Job. `run` applies pending migrations; `dry-run` prints the SQL without applying it, for review or for baselining a database whose schema was applied by hand. App pods never migrate. |
 | migration.resources | object | `{}` | Resources for the migration Job. |
 | migration.waitForDb | object | `{"image":"postgres:16-alpine","maxAttempts":30,"registry":"docker.io","sleepSeconds":5}` | Init container that waits for PostgreSQL. |
