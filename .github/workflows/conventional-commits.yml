@@ -23,6 +23,15 @@ jobs:
           crate: cocogitto
           version: "6.2.0"
 
+      # `cog verify` reads user.name and user.email to build the author of the
+      # commit it validates, and *panics* (exit 134) when either is unset rather
+      # than reporting a usable error. actions/checkout configures no identity,
+      # so without this every run failed no matter what the message said.
+      - name: Configure a git identity for cog
+        run: |
+          git config --global user.name "invokr-ci"
+          git config --global user.email "invokr-ci@juspay.in"
+
       # PRs here are squash-merged, so every commit below collapses into one
       # commit whose subject is the PR title. That title — not the commit list —
       # is what `cog bump --auto` reads on main to choose the next version, so a
@@ -48,9 +57,14 @@ jobs:
             exit 1
           fi
 
-          if cog verify "$PR_TITLE" >/dev/null 2>&1; then
+          # Output is captured, not discarded: cog's own diagnostic is the only
+          # thing distinguishing "this message is malformed" from "cog itself
+          # failed", and discarding it made an environment bug look for weeks
+          # like a wall of bad PR titles.
+          if output=$(cog verify "$PR_TITLE" 2>&1); then
             echo "ok    PR title: $PR_TITLE"
           else
+            echo "$output"
             echo "::error::PR title is not a conventional commit: $PR_TITLE"
             echo "This repository squash-merges, so the PR title becomes the commit on main."
             exit 1
@@ -72,9 +86,10 @@ jobs:
           while IFS= read -r sha; do
             [ -n "$sha" ] || continue
             subject=$(git log -1 --format=%s "$sha")
-            if cog verify "$(git log -1 --format=%B "$sha")" >/dev/null 2>&1; then
+            if output=$(cog verify "$(git log -1 --format=%B "$sha")" 2>&1); then
               echo "ok    ${sha:0:8}  $subject"
             else
+              echo "$output"
               echo "::error::${sha:0:8} is not a conventional commit: $subject"
               failed=1
             fi
