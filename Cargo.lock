@@ -2536,12 +2536,14 @@ dependencies = [
 name = "invokr-worker"
 version = "0.1.0"
 dependencies = [
+ "actix-web",
  "anyhow",
  "async-trait",
  "chrono",
  "dotenvy",
  "invokr-common",
  "metrics",
+ "metrics-exporter-prometheus",
  "rand 0.8.5",
  "rdkafka",
  "redis",

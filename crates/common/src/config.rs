@@ -181,6 +181,35 @@ impl MetricsEnv {
 }
 
 #[derive(Debug, Clone)]
+pub struct WorkerHealthEnv {
+    /// How long `/ready`'s `SELECT 1` may take before it is reported as failed.
+    pub db_probe_timeout_ms: u64,
+    /// Lower bound on the poll-loop staleness threshold. The threshold itself is
+    /// `max(this, 10 x INVOKR_WORKER_POLL_INTERVAL_MS)`.
+    pub stale_after_floor_ms: u64,
+    pub server_workers: usize,
+}
+
+impl WorkerHealthEnv {
+    pub fn new() -> Self {
+        Self {
+            db_probe_timeout_ms: get_from_env_or_default("INVOKR_HEALTH_DB_PROBE_TIMEOUT_MS", 2000),
+            stale_after_floor_ms: get_from_env_or_default(
+                "INVOKR_HEALTH_STALE_AFTER_FLOOR_MS",
+                5000,
+            ),
+            server_workers: get_from_env_or_default("INVOKR_HEALTH_SERVER_WORKERS", 1),
+        }
+    }
+}
+
+impl Default for WorkerHealthEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ReaperEnv {
     /// pg_cron expression controlling how often invokr's own dogfooded reaper
     /// fires per workspace. Read at workspace creation, baked into the
@@ -215,6 +244,7 @@ pub struct AppConfig {
     pub worker: WorkerEnv,
     pub crypto: CryptoEnv,
     pub metrics: MetricsEnv,
+    pub health: WorkerHealthEnv,
     pub reaper: ReaperEnv,
 }
 
@@ -248,6 +278,7 @@ impl AppConfig {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
         let metrics = MetricsEnv::new();
+        let health = WorkerHealthEnv::new();
         let reaper = ReaperEnv::new().map_err(|e| anyhow::anyhow!(e))?;
 
         Ok(Self {
@@ -256,6 +287,7 @@ impl AppConfig {
             worker,
             crypto,
             metrics,
+            health,
             reaper,
         })
     }

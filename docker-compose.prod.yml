@@ -115,6 +115,13 @@ services:
         condition: service_healthy
       invokr-mock-server:
         condition: service_healthy
+    healthcheck:
+      # Liveness. The worker's ops routes are unprefixed — INVOKR_PATH_PREFIX
+      # only moves the API's mount point, not the worker's ops port.
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
 
 networks:
   invokr-net:

@@ -10,10 +10,10 @@ use sqlx::PgPool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::health::WorkerHealth;
 use crate::pipeline::{self, PipelineContext};
 
 pub async fn run<S: SchemaProvider>(
@@ -21,9 +21,10 @@ pub async fn run<S: SchemaProvider>(
     config: AppConfig,
     schema_provider: S,
     cancel: CancellationToken,
+    health: Arc<WorkerHealth>,
 ) -> anyhow::Result<()> {
     let worker_id = format!("worker_{}", Uuid::new_v4().simple());
-    let semaphore = Arc::new(Semaphore::new(config.worker.max_concurrent));
+    let semaphore = health.semaphore();
     let poll_interval = Duration::from_millis(config.worker.poll_interval_ms);
     let schema_provider = Arc::new(schema_provider);
 
@@ -46,6 +47,9 @@ pub async fn run<S: SchemaProvider>(
     // previous iteration found no work (idle backoff). Each spawned task holds a
     // permit and releases it on completion, unblocking the next iteration.
     loop {
+        // TODO(LATER): handle incase if long-running task in future
+        health.tick();
+
         if idle.load(Ordering::Relaxed) {
             tokio::select! {
                 _ = tokio::time::sleep(poll_interval) => {
@@ -196,4 +200,98 @@ async fn claim_and_process(
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::health::WorkerHealth;
+    use invokr_common::config::{
+        AppConfig, CryptoEnv, DbEnv, MetricsEnv, ReaperEnv, ServerEnv, ServerMode, WorkerEnv,
+        WorkerHealthEnv,
+    };
+    use invokr_common::tenant::SchemaProvider;
+    use sqlx::postgres::PgPoolOptions;
+
+    /// Fails every fetch, which drives the loop down its schema-error branch —
+    /// the one iteration path that never touches the database, letting the tick
+    /// be observed without one.
+    struct FailingSchemas;
+
+    impl SchemaProvider for FailingSchemas {
+        async fn get_active_schemas(&self) -> Result<Vec<String>, sqlx::Error> {
+            Err(sqlx::Error::PoolClosed)
+        }
+    }
+
+    fn test_config(poll_interval_ms: u64) -> AppConfig {
+        AppConfig {
+            db: DbEnv {
+                url: "postgres://invokr:invokr@127.0.0.1:1/invokr_db".into(),
+                pool_size: 1,
+                table_prefix: String::new(),
+            },
+            server: ServerEnv {
+                listen_addr: "0.0.0.0:0".into(),
+                api_key: "test".into(),
+                path_prefix: String::new(),
+                mode: ServerMode::Api,
+                dashboard_prefix: String::new(),
+                dashboard_dist_dir: String::new(),
+            },
+            worker: WorkerEnv {
+                max_concurrent: 4,
+                poll_interval_ms,
+                config_cache_ttl_sec: 60,
+                secret_cache_ttl_sec: 300,
+                shutdown_timeout_sec: 1,
+            },
+            crypto: CryptoEnv {
+                encryption_key: "0".repeat(64),
+            },
+            metrics: MetricsEnv { port: 0 },
+            health: WorkerHealthEnv {
+                db_probe_timeout_ms: 200,
+                stale_after_floor_ms: 5000,
+                server_workers: 1,
+            },
+            reaper: ReaperEnv {
+                cron_expression: "* * * * *".into(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_loop_keeps_ticking_health() {
+        let health = Arc::new(WorkerHealth::new(
+            4,
+            Duration::from_millis(20),
+            Duration::from_secs(5),
+        ));
+        let cancel = CancellationToken::new();
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
+            .connect_lazy("postgres://invokr:invokr@127.0.0.1:1/invokr_db")
+            .unwrap();
+
+        let handle = tokio::spawn(run(
+            pool,
+            test_config(20),
+            FailingSchemas,
+            cancel.clone(),
+            health.clone(),
+        ));
+
+        // Long enough that a loop which only ticked at startup has gone stale.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let ago = health.last_tick_ago();
+
+        cancel.cancel();
+        handle.await.unwrap().unwrap();
+
+        assert!(
+            ago < Duration::from_millis(150),
+            "poll loop stopped ticking: last tick was {ago:?} ago"
+        );
+    }
 }

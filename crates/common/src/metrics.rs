@@ -20,18 +20,8 @@ pub const DISPATCH_DURATION_SECONDS: &str = "invokr_dispatch_duration_seconds";
 pub const WORKER_INFLIGHT: &str = "invokr_worker_inflight_executions";
 
 /// Install the Prometheus recorder and return a handle for rendering metrics.
-/// Use this for services that already have an HTTP server (e.g. the API).
 pub fn install_recorder() -> PrometheusHandle {
     metrics_exporter_prometheus::PrometheusBuilder::new()
         .install_recorder()
         .expect("failed to install Prometheus recorder")
-}
-
-/// Install the Prometheus recorder with a built-in HTTP listener.
-/// Use this for services without an HTTP server (worker, scheduler).
-pub fn install_recorder_with_listener(port: u16) {
-    metrics_exporter_prometheus::PrometheusBuilder::new()
-        .with_http_listener(([0, 0, 0, 0], port))
-        .install()
-        .expect("failed to install Prometheus recorder with HTTP listener");
 }
