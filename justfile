@@ -10,6 +10,9 @@ default:
 
 export INVOKR_DATABASE_URL := env("INVOKR_DATABASE_URL", "postgresql://invokr:invokr@localhost:5434/invokr_db")
 export INVOKR_API_KEY := env("INVOKR_API_KEY", "dev-api-key")
+# Local development authenticates nothing. Never set this to `disabled` in a
+# deployed environment: every request resolves to a fixed identity.
+export INVOKR_AUTH_MODE := env("INVOKR_AUTH_MODE", "disabled")
 export INVOKR_ENCRYPTION_KEY := env("INVOKR_ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000")
 
 # ─── Setup ────────────────────────────────────────────────────

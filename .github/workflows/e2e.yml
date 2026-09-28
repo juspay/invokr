@@ -19,6 +19,11 @@ env:
   # Matches docker-compose.yml, which publishes postgres on 5434.
   INVOKR_DATABASE_URL: postgresql://invokr:invokr@localhost:5434/invokr_db
   INVOKR_API_KEY: dev-api-key
+  # Required with no default: the API aborts at startup rather than choosing an
+  # auth posture for itself. `disabled` authenticates every request as a
+  # development identity, which is what these suites exercise -- they test job
+  # orchestration, not auth.
+  INVOKR_AUTH_MODE: disabled
   INVOKR_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
   INVOKR_LISTEN_ADDR: 0.0.0.0:8080
   INVOKR_URL: http://localhost:8080

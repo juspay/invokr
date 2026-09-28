@@ -1,7 +1,20 @@
+//! The dashboard's API client.
+//!
+//! Every request authenticates with the browser's `HttpOnly` session cookie,
+//! never a token this code can read. The API and dashboard are served from the
+//! same origin, so `SameOrigin` credentials are sent on each call and no
+//! `Authorization` header is built here at all.
+//!
+//! This replaced a `Bearer` header carrying the service-wide `INVOKR_API_KEY`,
+//! which the server rendered into the page for this code to read back — meaning
+//! anyone who could load the dashboard held full API access to every workspace.
+
 use super::models::*;
 
 #[cfg(feature = "hydrate")]
 use gloo_net::http::Request;
+#[cfg(feature = "hydrate")]
+use web_sys::RequestCredentials;
 
 #[cfg(feature = "hydrate")]
 use crate::config::DashboardConfig;
@@ -25,7 +38,6 @@ fn get_config() -> DashboardConfig {
         api_base_url: get("apiBaseUrl"),
         api_prefix: get("apiPrefix"),
         dashboard_prefix: get("dashboardPrefix"),
-        api_key: get("apiKey"),
     }
 }
 
@@ -41,7 +53,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/orgs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -60,7 +72,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/orgs/{org_id}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -79,7 +91,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/orgs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .json(&body)
             .map_err(|e| e.to_string())?
             .send()
@@ -103,7 +115,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::put(&format!("{base}/v1/orgs/{org_id}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .json(&body)
             .map_err(|e| e.to_string())?
             .send()
@@ -126,7 +138,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/orgs/{org_id}/workspaces"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -148,7 +160,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/orgs/{org_id}/workspaces"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .json(&body)
             .map_err(|e| e.to_string())?
             .send()
@@ -225,7 +237,7 @@ mod inner {
             push_query_param(&mut qs, "created_before", before);
         }
         let resp = Request::get(&format!("{base}/v1/jobs{qs}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -250,7 +262,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/jobs/{job_id}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -275,7 +287,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/jobs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -302,7 +314,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/jobs/{job_id}/cancel"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .header("Content-Type", "application/json")
@@ -328,7 +340,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/jobs/{job_id}/status"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -353,7 +365,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/jobs/{job_id}/versions"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -379,7 +391,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/endpoints"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -404,7 +416,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/endpoints"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -432,7 +444,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::put(&format!("{base}/v1/endpoints/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -459,7 +471,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::delete(&format!("{base}/v1/endpoints/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -485,7 +497,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/jobs/{job_id}/executions"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -510,7 +522,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/executions/{execution_id}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -535,7 +547,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/executions/{execution_id}/cancel"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .header("Content-Type", "application/json")
@@ -561,7 +573,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/executions/{execution_id}/attempts"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -586,7 +598,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/executions/{execution_id}/logs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -609,7 +621,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/configs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -634,7 +646,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/configs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -662,7 +674,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::put(&format!("{base}/v1/configs/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -689,7 +701,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::delete(&format!("{base}/v1/configs/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -714,7 +726,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/payload-specs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -739,7 +751,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/payload-specs"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -767,7 +779,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::put(&format!("{base}/v1/payload-specs/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -794,7 +806,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::delete(&format!("{base}/v1/payload-specs/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -816,7 +828,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::get(&format!("{base}/v1/secrets"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()
@@ -841,7 +853,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::post(&format!("{base}/v1/secrets"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -869,7 +881,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::put(&format!("{base}/v1/secrets/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .json(&body)
@@ -896,7 +908,7 @@ mod inner {
         let config = get_config();
         let base = config.api_base();
         let resp = Request::delete(&format!("{base}/v1/secrets/{name}"))
-            .header("Authorization", &format!("Bearer {}", config.api_key))
+            .credentials(RequestCredentials::SameOrigin)
             .header("X-Org-Id", &org_id)
             .header("X-Workspace-Id", &workspace_id)
             .send()

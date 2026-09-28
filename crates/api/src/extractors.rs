@@ -14,45 +14,61 @@ use std::{
     pin::Pin,
 };
 
-use crate::router::AppState;
+use crate::{auth::Caller, router::AppState};
 
-pub struct AuthenticatedRequest;
+/// Proof that the request carried a valid credential, and who presented it.
+///
+/// The middleware does the authenticating; this only reads the [`Caller`] it
+/// resolved. Keeping it as an extractor means a handler that forgets it is a
+/// handler that does not compile against an authenticated route — the same
+/// ergonomics as before, now carrying an identity rather than asserting a
+/// string comparison succeeded.
+///
+/// **This is not authorization.** Invokr has no policy layer: any authenticated
+/// caller reaches every org and workspace.
+//
+// The caller is carried rather than discarded so that audit logging, and any
+// future authorization check, have an identity to work with. Handlers take it
+// as `_auth` today and read nothing from it, hence the allow.
+pub struct AuthenticatedRequest(#[allow(dead_code)] pub Caller);
 
 impl FromRequest for AuthenticatedRequest {
     type Error = Error;
     type Future = future::Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        let state = req.app_data::<web::Data<AppState>>();
-
-        let auth_header = req
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok());
-
-        let result = match (state, auth_header) {
-            (Some(state), Some(header)) if header.starts_with("Bearer ") => {
-                let token = &header[7..];
-                if token == state.config.server.api_key {
-                    Ok(AuthenticatedRequest)
-                } else {
-                    Err(actix_web::error::InternalError::from_response(
-                        "Invalid API key",
-                        HttpResponse::Unauthorized().json(serde_json::json!({
-                            "error": { "code": "UNAUTHORIZED", "message": "Invalid API key" }
-                        })),
-                    )
-                    .into())
-                }
-            }
-            _ => Err(actix_web::error::InternalError::from_response(
-                "Missing Authorization header",
-                HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": { "code": "UNAUTHORIZED", "message": "Missing Authorization header" }
-                })),
-            )
-            .into()),
-        };
+        // Absent means the route resolved to a public scope, or the middleware
+        // was not mounted. Either way the handler must not run: it is only
+        // reachable here because it asked for proof of authentication.
+        let result = req
+            .extensions()
+            .get::<Caller>()
+            .cloned()
+            .map(|caller| {
+                // The audit breadcrumb: which credential acted, on what. The
+                // access log records the request; this records the identity
+                // behind it, including whether the retiring shared key was used.
+                tracing::debug!(
+                    principal = %caller.principal,
+                    source = ?caller.source,
+                    legacy = caller.legacy,
+                    path = %req.path(),
+                    "authenticated request"
+                );
+                AuthenticatedRequest(caller)
+            })
+            .ok_or_else(|| {
+                actix_web::error::InternalError::from_response(
+                    "Unauthenticated",
+                    HttpResponse::Unauthorized().json(serde_json::json!({
+                        "error": {
+                            "code": "UNAUTHORIZED",
+                            "message": "Authentication required"
+                        }
+                    })),
+                )
+                .into()
+            });
 
         future::ready(result)
     }
