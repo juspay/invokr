@@ -58,6 +58,19 @@ pub async fn create(
         .filter(|&n| n > 0)
         .unwrap_or(retry_policy.max_attempts);
 
+    let endpoint_async = ep.get_async_config().map(|c| (c.max_wait_ms, c.max_polls));
+    let bounds = match invokr_common::models::job::resolve_async_bounds(
+        body.async_overrides.as_ref(),
+        endpoint_async,
+    ) {
+        Ok(b) => b,
+        Err(msg) => return Err(AppError::InvalidRequest(msg)),
+    };
+    let (async_max_wait_ms, async_max_polls) = match bounds {
+        Some((w, p)) => (Some(w), Some(p)),
+        None => (None, None),
+    };
+
     if let Some(ref ps_name) = ep.payload_spec_ref {
         if let Some(ref input) = body.input {
             let spec = db::payload_specs::get(&mut db, ps_name)
@@ -103,6 +116,8 @@ pub async fn create(
                 key,
                 body.input.as_ref(),
                 max_attempts,
+                async_max_wait_ms,
+                async_max_polls,
             )
             .await
             .map_err(|e| match e {
@@ -161,6 +176,8 @@ pub async fn create(
                 body.input.as_ref(),
                 run_at,
                 max_attempts,
+                async_max_wait_ms,
+                async_max_polls,
             )
             .await?;
 
@@ -229,6 +246,8 @@ pub async fn create(
                 Some(starts_at),
                 body.ends_at,
                 next_run,
+                async_max_wait_ms,
+                async_max_polls,
             )
             .await
             .map_err(|e| match e {
@@ -489,9 +508,11 @@ pub async fn cancel(
         ));
     }
 
-    if job.trigger_type != "CRON" {
-        db::executions::cancel_pending_for_job(&mut db, &job_id).await?;
-    }
+    let cancelled_executions = if job.trigger_type != "CRON" {
+        db::executions::cancel_pending_for_job(&mut db, &job_id).await?
+    } else {
+        vec![]
+    };
 
     let cancelled = db::jobs::cancel(&mut db, &job_id)
         .await?
@@ -499,9 +520,37 @@ pub async fn cancel(
 
     drop(db);
 
-    // Unregister from pg_cron if this was a CRON job. Run it on the same tx as
-    // the status flip so the cancel and the pg_cron unschedule commit (or roll
-    // back) atomically — no more RETIRED rows left with a live pg_cron entry.
+    // Best-effort DELETE notification for any WAITING executions that were cancelled
+    for c in &cancelled_executions {
+        if c.previous_status == "WAITING" {
+            if let Some(poll_url) = c.poll_url.clone() {
+                let endpoint_name = c.endpoint.clone();
+                let pool = state.pool.clone();
+                let prefix = state.config.db.table_prefix.clone();
+                let schema = ws.0.schema_name.clone();
+                let key = state.config.crypto.encryption_key.clone();
+                let client = reqwest::Client::new();
+                let exec_id = c.execution_id.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = crate::handlers::executions::send_cancel_delete(
+                        pool,
+                        prefix,
+                        schema,
+                        key,
+                        client,
+                        endpoint_name,
+                        poll_url,
+                        exec_id,
+                    )
+                    .await
+                    {
+                        tracing::warn!("cancel DELETE failed: {e}");
+                    }
+                });
+            }
+        }
+    }
+
     if job.trigger_type == "CRON" {
         db::jobs::unregister_pg_cron_conn(&mut tx, &ws.0.schema_name, &job_id).await?;
     }

@@ -13,6 +13,7 @@ pub struct CreateJobResult {
     pub execution_created_at: DateTime<Utc>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_immediate(
     db: &mut DbContext<'_>,
     endpoint: &str,
@@ -20,25 +21,29 @@ pub async fn create_immediate(
     idempotency_key: &str,
     input: Option<&serde_json::Value>,
     max_attempts: i64,
+    async_max_wait_ms: Option<i64>,
+    async_max_polls: Option<i32>,
 ) -> Result<CreateJobResult, sqlx::Error> {
     let tj = tbl(db.prefix, "jobs");
     let te = tbl(db.prefix, "executions");
 
     let job = sqlx::query_as::<_, Job>(&format!(
-        "INSERT INTO {tj} (endpoint, endpoint_type, trigger_type, idempotency_key, input)
-         VALUES ($1, $2, 'IMMEDIATE', $3, $4)
+        "INSERT INTO {tj} (endpoint, endpoint_type, trigger_type, idempotency_key, input, async_max_wait_ms, async_max_polls)
+         VALUES ($1, $2, 'IMMEDIATE', $3, $4, $5, $6)
          RETURNING *"
     ))
     .bind(endpoint)
     .bind(endpoint_type)
     .bind(idempotency_key)
     .bind(input)
+    .bind(async_max_wait_ms)
+    .bind(async_max_polls)
     .fetch_one(&mut *db.conn)
     .await?;
 
     let exec_row: (String, String, DateTime<Utc>) = sqlx::query_as(&format!(
-        "INSERT INTO {te} (job_id, endpoint, endpoint_type, idempotency_key, status, run_at, input, max_attempts)
-         VALUES ($1, $2, $3, $4, 'QUEUED', now(), $5, $6)
+        "INSERT INTO {te} (job_id, endpoint, endpoint_type, idempotency_key, status, run_at, input, max_attempts, max_wait_ms, max_polls)
+         VALUES ($1, $2, $3, $4, 'QUEUED', now(), $5, $6, $7, $8)
          RETURNING execution_id, status, created_at"
     ))
     .bind(&job.job_id)
@@ -47,6 +52,8 @@ pub async fn create_immediate(
     .bind(idempotency_key)
     .bind(input)
     .bind(max_attempts)
+    .bind(async_max_wait_ms)
+    .bind(async_max_polls)
     .fetch_one(&mut *db.conn)
     .await?;
 
@@ -58,6 +65,7 @@ pub async fn create_immediate(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_delayed(
     db: &mut DbContext<'_>,
     endpoint: &str,
@@ -66,13 +74,15 @@ pub async fn create_delayed(
     input: Option<&serde_json::Value>,
     run_at: DateTime<Utc>,
     max_attempts: i64,
+    async_max_wait_ms: Option<i64>,
+    async_max_polls: Option<i32>,
 ) -> Result<CreateJobResult, sqlx::Error> {
     let tj = tbl(db.prefix, "jobs");
     let te = tbl(db.prefix, "executions");
 
     let job = sqlx::query_as::<_, Job>(&format!(
-        "INSERT INTO {tj} (endpoint, endpoint_type, trigger_type, idempotency_key, input, run_at)
-         VALUES ($1, $2, 'DELAYED', $3, $4, $5)
+        "INSERT INTO {tj} (endpoint, endpoint_type, trigger_type, idempotency_key, input, run_at, async_max_wait_ms, async_max_polls)
+         VALUES ($1, $2, 'DELAYED', $3, $4, $5, $6, $7)
          RETURNING *"
     ))
     .bind(endpoint)
@@ -80,12 +90,14 @@ pub async fn create_delayed(
     .bind(idempotency_key)
     .bind(input)
     .bind(run_at)
+    .bind(async_max_wait_ms)
+    .bind(async_max_polls)
     .fetch_one(&mut *db.conn)
     .await?;
 
     let exec_row: (String, String, DateTime<Utc>) = sqlx::query_as(&format!(
-        "INSERT INTO {te} (job_id, endpoint, endpoint_type, idempotency_key, status, run_at, input, max_attempts)
-         VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7)
+        "INSERT INTO {te} (job_id, endpoint, endpoint_type, idempotency_key, status, run_at, input, max_attempts, max_wait_ms, max_polls)
+         VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9)
          RETURNING execution_id, status, created_at"
     ))
     .bind(&job.job_id)
@@ -95,6 +107,8 @@ pub async fn create_delayed(
     .bind(run_at)
     .bind(input)
     .bind(max_attempts)
+    .bind(async_max_wait_ms)
+    .bind(async_max_polls)
     .fetch_one(&mut *db.conn)
     .await?;
 
@@ -120,11 +134,13 @@ pub async fn create_cron(
     starts_at: Option<DateTime<Utc>>,
     ends_at: Option<DateTime<Utc>>,
     next_run_at: DateTime<Utc>,
+    async_max_wait_ms: Option<i64>,
+    async_max_polls: Option<i32>,
 ) -> Result<Job, sqlx::Error> {
     let tj = tbl(db.prefix, "jobs");
     sqlx::query_as::<_, Job>(&format!(
-        "INSERT INTO {tj} (endpoint, endpoint_type, trigger_type, idempotency_key, input, cron_expression, cron_timezone, cron_starts_at, cron_ends_at, cron_next_run_at)
-         VALUES ($1, $2, 'CRON', $3, $4, $5, $6, $7, $8, $9)
+        "INSERT INTO {tj} (endpoint, endpoint_type, trigger_type, idempotency_key, input, cron_expression, cron_timezone, cron_starts_at, cron_ends_at, cron_next_run_at, async_max_wait_ms, async_max_polls)
+         VALUES ($1, $2, 'CRON', $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *"
     ))
     .bind(endpoint)
@@ -136,6 +152,8 @@ pub async fn create_cron(
     .bind(starts_at)
     .bind(ends_at)
     .bind(next_run_at)
+    .bind(async_max_wait_ms)
+    .bind(async_max_polls)
     .fetch_one(&mut *db.conn)
     .await
 }
@@ -325,8 +343,8 @@ pub async fn retire_and_replace(
     .await?;
 
     let new = sqlx::query_as::<_, Job>(&format!(
-        "INSERT INTO {t} (endpoint, endpoint_type, trigger_type, input, cron_expression, cron_timezone, cron_starts_at, cron_ends_at, cron_next_run_at, version, previous_version_id)
-         VALUES ($1, $2, 'CRON', $3, $4, $5, $6, $7, $8, $9, $10)
+        "INSERT INTO {t} (endpoint, endpoint_type, trigger_type, input, cron_expression, cron_timezone, cron_starts_at, cron_ends_at, cron_next_run_at, version, previous_version_id, async_max_wait_ms, async_max_polls)
+         VALUES ($1, $2, 'CRON', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *"
     ))
     .bind(&new_job.endpoint)
@@ -339,6 +357,8 @@ pub async fn retire_and_replace(
     .bind(new_job.cron_next_run_at)
     .bind(new_job.version)
     .bind(old_job_id)
+    .bind(new_job.async_max_wait_ms)
+    .bind(new_job.async_max_polls)
     .fetch_one(&mut *db.conn)
     .await?;
 
@@ -401,11 +421,12 @@ fn build_cron_command(prefix: &str, schema_name: &str, job_id: &str) -> String {
     let tend = tbl(prefix, "endpoints");
     format!(
         "INSERT INTO \"{schema}\".\"{te}\" \
-            (job_id, endpoint, endpoint_type, idempotency_key, status, input, run_at, max_attempts) \
+            (job_id, endpoint, endpoint_type, idempotency_key, status, input, run_at, max_attempts, max_wait_ms, max_polls) \
          SELECT j.job_id, j.endpoint, j.endpoint_type, \
                 'cron_' || j.job_id || '_' || (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT, \
                 'QUEUED', j.input, now(), \
-                COALESCE((e.retry_policy->>'max_attempts')::BIGINT, 1) \
+                COALESCE((e.retry_policy->>'max_attempts')::BIGINT, 1), \
+                j.async_max_wait_ms, j.async_max_polls \
          FROM \"{schema}\".\"{tj}\" j \
          JOIN \"{schema}\".\"{tend}\" e ON e.name = j.endpoint \
          WHERE j.job_id = '{job_id}' AND j.status = 'ACTIVE' \

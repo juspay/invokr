@@ -26,9 +26,21 @@ init-env:
 
 # Start PostgreSQL
 db-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
     docker compose up -d postgres
-    @echo "Waiting for PostgreSQL to be ready..."
-    @sleep 3
+    echo "Waiting for PostgreSQL to be ready..."
+    for _ in $(seq 1 60); do
+        if docker compose exec -T -e PGPASSWORD=invokr postgres \
+             psql -h 127.0.0.1 -U invokr -d invokr_db -c 'SELECT 1' > /dev/null 2>&1; then
+            echo "postgres ready"
+            exit 0
+        fi
+        sleep 1
+    done
+    echo "postgres failed to start" >&2
+    docker compose logs postgres
+    exit 1
 
 # Stop PostgreSQL
 db-down:
@@ -38,12 +50,85 @@ db-down:
 # host-published port differs between the dev and prod compose files, so
 # spelling out -h/-U/-d here would drift from whichever one you are running.
 
-# Run SQL migrations
+# Every file in migrations/ is a normal `sqlx migrate add` file —
+# <timestamp>_<name>.sql. What differs is scope, declared by a marker line
+# inside the file:
+#
+#   (no marker)               public — applied once to `public` by db-migrate
+#   -- invokr:scope=tenant    tenant — applied per workspace schema by
+#                             db-migrate-tenant, with `{p}` substituted
+#
+# The marker lives in the file rather than the filename because `sqlx migrate
+# add` validates every name in the directory and refuses to run if any lacks an
+# integer version prefix. Absent marker means public, so a file created by plain
+# `sqlx migrate add` is already correct.
+
+# Apply public migrations (skips tenant-scoped files)
 db-migrate:
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260317000000_initial.sql
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260318000000_multi_tenancy.sql
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260322000000_txn_based_pickup.sql
-    psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260322000001_pg_cron.sql
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for m in migrations/*.sql; do
+        grep -q '^-- invokr:scope=tenant' "$m" && continue
+        echo "==> $m"
+        psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$m"
+    done
+
+# Create a new migration. SCOPE is "public" (default) or "tenant"
+migrate-add NAME SCOPE="public":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{SCOPE}}" in
+        public|tenant) ;;
+        *) echo "error: SCOPE must be 'public' or 'tenant', got '{{SCOPE}}'" >&2; exit 1 ;;
+    esac
+
+    # Let sqlx mint the file so the timestamp format never drifts from it.
+    created=$(sqlx migrate add "{{NAME}}" | sed -n 's/^Creating //p')
+    if [ -z "$created" ] || [ ! -f "$created" ]; then
+        echo "error: could not determine the file sqlx created" >&2
+        exit 1
+    fi
+
+    if [ "{{SCOPE}}" = "public" ]; then
+        echo "$created  (public — applied to 'public' by just db-migrate)"
+        exit 0
+    fi
+
+    cat > "$created" <<'TEMPLATE'
+    -- invokr:scope=tenant
+    --
+    -- Applies to ONE workspace schema, with `{p}` replaced by that workspace's
+    -- table prefix (the same substitution crates/common/migrations/workspace_v1.sql
+    -- gets in db/workspaces.rs). The scope marker above keeps it out of the
+    -- `public` run, which would apply it verbatim with `{p}` unsubstituted.
+    -- Apply it with `just db-migrate-tenant <schema> [prefix]`.
+    --
+    -- Make it idempotent (ADD COLUMN IF NOT EXISTS, DROP CONSTRAINT IF EXISTS
+    -- before ADD CONSTRAINT, CREATE TABLE/INDEX IF NOT EXISTS) so it is safe to
+    -- run against a workspace that already has the change.
+    --
+    -- Mirror the same change into crates/common/migrations/workspace_v1.sql: new
+    -- workspaces are built from v1 alone and never replay this file.
+
+    -- Add migration script here, using {p} before every table and constraint name.
+    TEMPLATE
+    echo "$created  (tenant — applied per workspace by just db-migrate-tenant)"
+
+# Not needed for new workspaces: provisioning applies workspace_v1.sql, which
+# already includes everything. This is for schemas provisioned by an older
+# release. PREFIX must match the prefix the workspace was provisioned with
+# ("" or e.g. "sched_").
+
+# Upgrade one already-provisioned workspace schema to the current tenant schema
+db-migrate-tenant SCHEMA PREFIX="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for m in migrations/*.sql; do
+        grep -q '^-- invokr:scope=tenant' "$m" || continue
+        echo "==> $m"
+        { echo "SET search_path TO {{SCHEMA}};"; sed "s/{p}/{{PREFIX}}/g" "$m"; } \
+            | psql "$INVOKR_DATABASE_URL" -v ON_ERROR_STOP=1
+    done
 
 # Reset database (drop + recreate + migrate)
 db-reset:

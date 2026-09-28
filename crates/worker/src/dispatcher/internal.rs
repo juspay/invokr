@@ -14,6 +14,7 @@
 
 use serde_json::Value;
 use sqlx::PgConnection;
+use std::collections::HashMap;
 
 use crate::dispatcher::DispatchResult;
 use crate::reaper;
@@ -49,6 +50,8 @@ pub async fn dispatch(
                     "retired_count": retired.len(),
                     "retired_job_ids": retired,
                 }),
+                headers: HashMap::new(),
+                status_code: 0,
             },
             Err(e) => DispatchResult::Failure {
                 error: serde_json::json!({

@@ -3,6 +3,7 @@
 // and a separately pinned sqlx version would not type-check against them.
 pub use sqlx;
 
+pub mod backoff;
 pub mod cache;
 pub mod config;
 pub mod crypto;
@@ -14,5 +15,6 @@ pub mod kms;
 pub mod metrics;
 pub mod models;
 pub mod pagination;
+pub mod secrets;
 pub mod template;
 pub mod tenant;

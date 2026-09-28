@@ -2462,6 +2462,7 @@ dependencies = [
  "leptos_router",
  "metrics",
  "metrics-exporter-prometheus",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",
@@ -2555,6 +2556,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

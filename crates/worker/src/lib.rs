@@ -3,6 +3,7 @@ pub mod client;
 pub mod dispatcher;
 pub mod health;
 pub mod pipeline;
+pub mod poll;
 pub mod poller;
 pub mod reaper;
 

@@ -18,6 +18,9 @@ use std::time::Duration;
 const DEFAULT_DATABASE_URL: &str = "postgresql://invokr:invokr@localhost:5434/invokr_db";
 const SCHEMA_NAME: &str = "library_example";
 
+const ORG_ID: &str = "library";
+const WORKSPACE_ID: &str = "example";
+
 // 64 hex chars = 32 bytes = AES-256. Zeros are fine for dev (no real secrets).
 // In production: `openssl rand -hex 32`.
 const ENCRYPTION_KEY: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -34,6 +37,10 @@ struct StaticSchemaProvider;
 impl SchemaProvider for StaticSchemaProvider {
     async fn get_active_schemas(&self) -> Result<Vec<String>, sqlx::Error> {
         Ok(vec![SCHEMA_NAME.to_string()])
+    }
+
+    async fn get_org_ws(&self, schema_name: &str) -> Option<(String, String)> {
+        (schema_name == SCHEMA_NAME).then(|| (ORG_ID.to_string(), WORKSPACE_ID.to_string()))
     }
 }
 

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use invokr_common::{
     cache::{ConfigCache, SecretCache},
-    crypto, db,
+    db,
     db::DbContext,
     metrics as m, template,
 };
@@ -19,6 +19,14 @@ pub struct PipelineContext {
     pub secret_cache: SecretCache,
     pub encryption_key: String,
     pub table_prefix: String,
+    /// Base URL for the Invokr API (e.g. "https://invokr.example"). Used to
+    /// construct callback URLs embedded in long-running-job dispatch bodies.
+    /// Empty string means callback URLs will also be empty (template resolves
+    /// to empty strings, which is debuggable).
+    pub api_base_url: String,
+    /// URL path prefix for the API (e.g. "" or "/invokr"). Matches
+    /// `AppConfig::server::path_prefix`.
+    pub path_prefix: String,
 }
 
 // The execution row and its job/endpoint columns are passed through
@@ -37,6 +45,12 @@ pub async fn process_execution(
     input: Option<&serde_json::Value>,
     attempt_count: i64,
     max_attempts: i64,
+    org_id: &str,
+    workspace_id: &str,
+    // Per-job async override: max wait ms from the job row; None = use endpoint default.
+    async_max_wait_ms: Option<i64>,
+    // Per-job async override: max polls from the job row; None = use endpoint default.
+    async_max_polls: Option<i32>,
 ) {
     let started_at = Utc::now();
 
@@ -99,7 +113,14 @@ pub async fn process_execution(
         HashMap::new()
     };
 
-    let secret_values = match load_secrets(ctx, db, &endpoint.spec).await {
+    let secret_values = match invokr_common::secrets::load(
+        db,
+        &ctx.encryption_key,
+        &endpoint.spec,
+        Some(&ctx.secret_cache),
+    )
+    .await
+    {
         Ok(vals) => vals,
         Err(e) => {
             tracing::error!(execution_id, "Secret resolution failed: {}", e);
@@ -132,16 +153,32 @@ pub async fn process_execution(
         .unwrap_or_default();
 
     let mut execution_map: HashMap<String, serde_json::Value> = HashMap::new();
-    execution_map.insert(
-        "idempotency_key".to_string(),
-        serde_json::json!(idempotency_key),
+    execution_map.insert("idempotency_key".into(), serde_json::json!(idempotency_key));
+    execution_map.insert("attempt_count".into(), serde_json::json!(attempt_count));
+    execution_map.insert("execution_id".into(), serde_json::json!(execution_id));
+    execution_map.insert("job_id".into(), serde_json::json!(job_id));
+    execution_map.insert("org_id".into(), serde_json::json!(org_id));
+    execution_map.insert("workspace_id".into(), serde_json::json!(workspace_id));
+    let cb_base = format!(
+        "{base}{prefix}/v1/callbacks/{org}/{ws}/executions/{exec}",
+        base = ctx.api_base_url.trim_end_matches('/'),
+        prefix = ctx.path_prefix,
+        org = org_id,
+        ws = workspace_id,
+        exec = execution_id,
     );
     execution_map.insert(
-        "attempt_count".to_string(),
-        serde_json::json!(attempt_count),
+        "callback_url".into(),
+        serde_json::json!(format!("{cb_base}/complete")),
     );
-    execution_map.insert("execution_id".to_string(), serde_json::json!(execution_id));
-    execution_map.insert("job_id".to_string(), serde_json::json!(job_id));
+    execution_map.insert(
+        "callback_url_success".into(),
+        serde_json::json!(format!("{cb_base}/complete")),
+    );
+    execution_map.insert(
+        "callback_url_failure".into(),
+        serde_json::json!(format!("{cb_base}/fail")),
+    );
 
     let resolved_spec = match template::resolve(
         &endpoint.spec,
@@ -196,9 +233,24 @@ pub async fn process_execution(
     )
     .await;
 
+    // Resolved once and reused below: the dispatcher needs the async status codes
+    // to classify an "accepted, still working" response as a successful dispatch,
+    // and the Success arm needs the rest of the config to set up polling.
+    let async_cfg = endpoint.get_async_config();
+    let async_status_codes: &[u16] = async_cfg
+        .as_ref()
+        .map(|c| c.status_codes.as_slice())
+        .unwrap_or(&[]);
+
     let result = match endpoint_type {
         "HTTP" => {
-            dispatcher::http::dispatch(&ctx.http_client, &dispatch_spec, idempotency_key).await
+            dispatcher::http::dispatch(
+                &ctx.http_client,
+                &dispatch_spec,
+                idempotency_key,
+                async_status_codes,
+            )
+            .await
         }
         "INTERNAL" => {
             dispatcher::internal::dispatch(&mut *db.conn, db.prefix, schema_name, &dispatch_spec)
@@ -222,7 +274,105 @@ pub async fn process_execution(
 
     // 5. Record attempt + finalize
     match result {
-        DispatchResult::Success { output } => {
+        DispatchResult::Success {
+            output,
+            headers,
+            status_code,
+        } => {
+            if let Some(async_cfg) = &async_cfg {
+                if async_cfg.status_codes.contains(&status_code) {
+                    // Long-running mode: extract Location, transition to WAITING.
+                    // Use per-job overrides (async_max_wait_ms / async_max_polls) when provided,
+                    // falling back to the live endpoint spec defaults.
+                    match headers.get("location") {
+                        None => {
+                            let err = serde_json::json!({"type": "MISSING_POLL_URL"});
+                            let _ = db::executions::complete_failed(db, execution_id).await;
+                            record_attempt(
+                                db,
+                                execution_id,
+                                attempt_count,
+                                "FAILED",
+                                started_at,
+                                None,
+                                Some(&err),
+                            )
+                            .await;
+                            log_execution(
+                                db,
+                                execution_id,
+                                attempt_count,
+                                "ERROR",
+                                "Destination returned async status but no Location header",
+                            )
+                            .await;
+                            return;
+                        }
+                        Some(loc) => {
+                            let initial_url = dispatch_spec["url"].as_str().unwrap_or_default();
+                            let poll_url = crate::poll::resolve_relative_url(initial_url, loc);
+                            let now = chrono::Utc::now();
+                            // Resolve effective limits: per-job snapshot wins over endpoint default.
+                            let effective_max_wait_ms =
+                                async_max_wait_ms.unwrap_or(async_cfg.max_wait_ms);
+                            let effective_max_polls =
+                                async_max_polls.unwrap_or(async_cfg.max_polls);
+                            let deadline =
+                                now + chrono::Duration::milliseconds(effective_max_wait_ms);
+                            // For callback-only endpoints (no poll config), skip wakeup until
+                            // deadline to avoid claiming every second and finding nothing to do.
+                            let next_run_at = if async_cfg.poll.as_ref().is_none() {
+                                deadline
+                            } else {
+                                let initial_delay = crate::poll::parse_retry_after(
+                                    headers.get("retry-after").map(|s| s.as_str()),
+                                )
+                                .unwrap_or_else(|| {
+                                    async_cfg
+                                        .poll
+                                        .as_ref()
+                                        .map(|p| p.initial_delay_ms)
+                                        .unwrap_or(1000)
+                                });
+                                std::cmp::min(
+                                    deadline,
+                                    now + chrono::Duration::milliseconds(initial_delay),
+                                )
+                            };
+                            let _ = db::executions::transition_to_waiting(
+                                db,
+                                execution_id,
+                                &poll_url,
+                                now,
+                                deadline,
+                                next_run_at,
+                                effective_max_wait_ms,
+                                effective_max_polls,
+                            )
+                            .await;
+                            metrics::gauge!(invokr_common::metrics::EXECUTIONS_WAITING,
+                                "schema" => schema_name.to_string(),
+                            )
+                            .increment(1.0);
+                            let initial_delay_for_log = (next_run_at - now).num_milliseconds();
+                            record_attempt(
+                                db,
+                                execution_id,
+                                attempt_count,
+                                "WAITING",
+                                started_at,
+                                Some(&output),
+                                None,
+                            )
+                            .await;
+                            log_execution(db, execution_id, attempt_count, "INFO",
+                                &format!("Entered WAITING; will poll {poll_url} in {initial_delay_for_log}ms")).await;
+                            return;
+                        }
+                    }
+                }
+            }
+
             metrics::counter!(m::EXECUTIONS_COMPLETED_TOTAL,
                 "status" => "SUCCESS",
                 "schema" => schema_name.to_string(),
@@ -330,54 +480,6 @@ async fn load_config(
     ctx.config_cache
         .set(name.to_string(), config.values_json.clone());
     flatten_json_object(&config.values_json)
-}
-
-async fn load_secrets(
-    ctx: &PipelineContext,
-    db: &mut DbContext<'_>,
-    spec: &serde_json::Value,
-) -> Result<HashMap<String, String>, String> {
-    let spec_str = spec.to_string();
-    let mut secrets = HashMap::new();
-
-    let mut start = 0;
-    while let Some(pos) = spec_str[start..].find("{{secret.") {
-        let abs_pos = start + pos + 9; // skip "{{secret."
-        if let Some(end) = spec_str[abs_pos..].find("}}") {
-            let secret_name = &spec_str[abs_pos..abs_pos + end];
-
-            if !secrets.contains_key(secret_name) {
-                let value = load_single_secret(ctx, db, secret_name).await?;
-                secrets.insert(secret_name.to_string(), value);
-            }
-            start = abs_pos + end + 2;
-        } else {
-            break;
-        }
-    }
-
-    Ok(secrets)
-}
-
-async fn load_single_secret(
-    ctx: &PipelineContext,
-    db: &mut DbContext<'_>,
-    name: &str,
-) -> Result<String, String> {
-    if let Some(cached) = ctx.secret_cache.get(name) {
-        return Ok(cached);
-    }
-
-    let secret = db::secrets::get(db, name)
-        .await
-        .map_err(|e| format!("Failed to load secret '{}': {}", name, e))?
-        .ok_or_else(|| format!("Secret '{}' not found", name))?;
-
-    let decrypted = crypto::decrypt(&secret.encrypted_value, &ctx.encryption_key)
-        .map_err(|e| format!("Failed to decrypt secret '{}': {}", name, e))?;
-
-    ctx.secret_cache.set(name.to_string(), decrypted.clone());
-    Ok(decrypted)
 }
 
 fn flatten_json_object(
