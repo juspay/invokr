@@ -44,14 +44,17 @@ jobs:
           crate: cocogitto
           version: "6.2.0"
 
+      # Into RUNNER_TEMP, not GITHUB_WORKSPACE: the workspace IS the checkout, so
+      # installing there leaves an untracked bin/ and `cog bump` refuses to run
+      # against a dirty tree.
       - name: Install yq
         run: |
           set -euo pipefail
-          mkdir -p "${{ github.workspace }}/bin"
-          curl -fsSL -o "${{ github.workspace }}/bin/yq" \
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/yq" \
             https://github.com/mikefarah/yq/releases/download/v4.44.2/yq_linux_amd64
-          chmod +x "${{ github.workspace }}/bin/yq"
-          echo "${{ github.workspace }}/bin" >> "$GITHUB_PATH"
+          chmod +x "$RUNNER_TEMP/bin/yq"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Bump version, write changelog, tag
         id: bump
