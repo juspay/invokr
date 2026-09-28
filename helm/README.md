@@ -1,6 +1,6 @@
 # invokr
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 A Helm chart for Invokr — a multi-tenant job scheduling and delivery service
 
@@ -148,7 +148,7 @@ internet until per-user authentication ships.
 | global.nodeSelector | object | `{}` | Node selector applied to every workload unless overridden. |
 | global.tolerations | list | `[]` | Tolerations applied to every workload unless overridden. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
-| image.registry | string | `"ghcr.io/juspay"` | Registry hosting the Invokr images. |
+| image.registry | string | `"ghcr.io/juspay/invokr"` | Registry and path hosting the Invokr images, everything before the image name. The release workflow publishes under `ghcr.io/<owner>/invokr`, so the `/invokr` segment is part of this value, not of `repository`. A mirror must keep that shape: `<account>.dkr.ecr.<region>.amazonaws.com/juspay/invokr`. |
 | image.tag | string | `""` | Image tag. Defaults to `.Chart.AppVersion`, which the release workflow keeps equal to the released semver. Set it only to pin a different build. |
 | imagePullSecrets | list | `[]` | Secrets for pulling from a private registry. |
 | istio.destinationRule.enabled | bool | `false` | Create a DestinationRule for the API service. |
