@@ -19,8 +19,11 @@ global:
   nodeSelector: {}
 
 image:
-  # -- Registry hosting the Invokr images.
-  registry: ghcr.io/juspay
+  # -- Registry and path hosting the Invokr images, everything before the image
+  # name. The release workflow publishes under `ghcr.io/<owner>/invokr`, so the
+  # `/invokr` segment is part of this value, not of `repository`. A mirror must
+  # keep that shape: `<account>.dkr.ecr.<region>.amazonaws.com/juspay/invokr`.
+  registry: ghcr.io/juspay/invokr
   # -- Image pull policy.
   pullPolicy: IfNotPresent
   # -- Image tag. Defaults to `.Chart.AppVersion`, which the release workflow
