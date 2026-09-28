@@ -1,0 +1,50 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{/* Two targets: the API serves /metrics UNDER the path prefix, the worker
+     serves it unprefixed on its ops port. `serviceMonitor.labels` must match
+     the operator's serviceMonitorSelector or nothing is ever scraped. */}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "invokr.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "invokr.componentSelectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: http
+      path: {{ include "invokr.pathPrefix" . }}/metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "invokr.fullname" . }}-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "invokr.componentSelectorLabels" (dict "root" . "component" "worker") | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: ops
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+{{- end }}

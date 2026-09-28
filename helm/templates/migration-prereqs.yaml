@@ -1,0 +1,61 @@
+{{- if .Values.migration.enabled }}
+{{/* The migration Job runs as a pre-install hook, so it cannot reference the
+     release's ServiceAccount, ConfigMap or Secret: Helm creates those only
+     AFTER every pre-install hook has completed, and the Job would sit in
+     CreateContainerConfigError until the hook timed out.
+
+     These are hook-scoped copies at a lower weight, so they exist before the
+     Job starts. `hook-succeeded` deletes them once the migration passes, so
+     nothing outlives the hook or is orphaned on uninstall. */}}
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "invokr.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "migrate") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{/* Carries the IRSA role ARN when `kms.enabled`, same as the main SA. */}}
+    {{- with .Values.serviceAccount.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "invokr.fullname" . }}-migrate-cm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "migrate") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  {{- include "invokr.configsToData" .Values.configs | nindent 2 }}
+{{- if not .Values.existingSecret }}
+---
+{{/* Skipped when `existingSecret` is set -- that Secret is not managed by this
+     release, so it already exists by the time the hook runs. */}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "invokr.fullname" . }}-migrate-secrets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "invokr.componentLabels" (dict "root" . "component" "migrate") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+type: Opaque
+data:
+  {{- include "invokr.secretsToData" .Values.secrets | nindent 2 }}
+{{- end }}
+{{- end }}
