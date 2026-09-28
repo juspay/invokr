@@ -54,6 +54,14 @@ configs:
 apiConfigs:
   # -- `api`, `dashboard` or `both`.
   mode: both
+  # -- `disabled` or `oidc`. Has no default in the API, which refuses to start
+  # without it rather than pick an auth posture for itself; the chart supplies
+  # one so a default install boots. `disabled` authenticates every request as a
+  # development identity -- combine it with `api.ingress.enabled: false`.
+  # For `oidc`, add `oidc_issuer_url`, `oidc_client_id` and `oidc_redirect_host`
+  # here, and `oidc_client_secret` under `secrets`; any key in these maps is
+  # rendered as `INVOKR_<KEY>`.
+  auth_mode: disabled
 
 # -- Settings for the worker workload.
 workerConfigs:

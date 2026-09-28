@@ -125,7 +125,8 @@ internet until per-user authentication ships.
 | api.service.targetPort | int | `8080` | Container port the API listens on. |
 | api.service.type | string | `"ClusterIP"` | Service type. |
 | api.terminationGracePeriodSeconds | int | `30` | Grace period for in-flight HTTP requests on shutdown. |
-| apiConfigs | object | `{"mode":"both"}` | Settings for the api workload. INVOKR_LISTEN_ADDR is derived from `api.service.targetPort`, not set here. |
+| apiConfigs | object | `{"auth_mode":"disabled","mode":"both"}` | Settings for the api workload. INVOKR_LISTEN_ADDR is derived from `api.service.targetPort`, not set here. |
+| apiConfigs.auth_mode | string | `"disabled"` | `disabled` or `oidc`. Has no default in the API, which refuses to start without it rather than pick an auth posture for itself; the chart supplies one so a default install boots. `disabled` authenticates every request as a development identity -- combine it with `api.ingress.enabled: false`. For `oidc`, add `oidc_issuer_url`, `oidc_client_id` and `oidc_redirect_host` here, and `oidc_client_secret` under `secrets`; any key in these maps is rendered as `INVOKR_<KEY>`. |
 | apiConfigs.mode | string | `"both"` | `api`, `dashboard` or `both`. |
 | configs | object | `{"db_pool_size":20,"kms_enabled":false,"path_prefix":"/invokr"}` | Non-secret settings shared by both workloads. |
 | configs.db_pool_size | int | `20` | Connection pool size, PER POD. Multiply by total replicas and compare against the database's max_connections before scaling. |
