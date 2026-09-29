@@ -119,14 +119,18 @@ secrets:
   # -- PostgreSQL connection string. MUST be the writer endpoint -- pg_cron runs
   # jobs only on the writer.
   database_url: ""
-  # -- Bearer token for the REST API. Also served to the dashboard in the
-  # browser, so anyone who can load the dashboard holds full API access.
+  # -- DEPRECATED, and optional. The pre-OIDC shared key. Ignored entirely when
+  # `apiConfigs.auth_mode` is `disabled`; under `oidc` it installs an additional
+  # authenticator that bypasses per-user identity, and the API logs a warning at
+  # every startup while it is set. Leave empty unless callers still present it --
+  # clearing it is how the mechanism is switched off.
   api_key: ""
   # -- 32-byte hex key encrypting stored secrets at rest.
   encryption_key: ""
 
 # -- Use an existing Secret instead of rendering one. Must contain
-# INVOKR_DATABASE_URL, INVOKR_API_KEY and INVOKR_ENCRYPTION_KEY.
+# INVOKR_DATABASE_URL and INVOKR_ENCRYPTION_KEY, and may contain INVOKR_API_KEY
+# to keep the deprecated shared key accepted.
 existingSecret: ""
 
 # -- Selects the `-kms` image variants, which expect `secrets` to hold base64

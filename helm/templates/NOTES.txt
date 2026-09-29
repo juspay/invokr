@@ -55,13 +55,27 @@ jobs only on the writer; a reader gives you a working API and zero executions.
 Invokr is multi-tenant and has no tenants until you create one. Nothing works
 until this is done -- it is not automated by this chart.
 
+
+{{- $oidc := eq (.Values.apiConfigs.auth_mode | default "disabled") "oidc" }}
+{{- if $oidc }}
+These calls need a credential: an OIDC access token, or a scoped API token if
+you set `api_token_prefix` and `api_static_tokens` in apiConfigs/secrets.
+{{- else }}
+auth_mode is `disabled`, so these calls carry no credential -- and neither does
+anything else that can reach the API.
+{{- end }}
+
   curl -X POST "$INVOKR_URL{{ include "invokr.pathPrefix" . }}/v1/orgs" \
-    -H "Authorization: Bearer $INVOKR_API_KEY" \
+{{- if $oidc }}
+    -H "Authorization: Bearer $TOKEN" \
+{{- end }}
     -H 'Content-Type: application/json' \
     -d '{"name": "Your Org", "slug": "your-org"}'
 
   curl -X POST "$INVOKR_URL{{ include "invokr.pathPrefix" . }}/v1/orgs/<org_id>/workspaces" \
-    -H "Authorization: Bearer $INVOKR_API_KEY" \
+{{- if $oidc }}
+    -H "Authorization: Bearer $TOKEN" \
+{{- end }}
     -H 'Content-Type: application/json' \
     -d '{"name": "Your Workspace", "slug": "your-workspace"}'
 
@@ -94,14 +108,32 @@ as a pre-install hook instead.
 Neither secrets.database_url nor existingSecret is set. Pods will crash-loop on
 startup. Set one of them and upgrade.
 {{- end }}
+{{- if not (eq (.Values.apiConfigs.auth_mode | default "disabled") "oidc") }}
+
+────────────────────────────────────────────────────────────────────────
+!! THIS INSTALL IS UNAUTHENTICATED
+────────────────────────────────────────────────────────────────────────
+apiConfigs.auth_mode is `disabled`, so every request is served as a development
+identity and no credential is required or checked. Anyone who can reach these
+pods has full access to every workspace on this install.
+
+api.ingress.enabled is {{ .Values.api.ingress.enabled }}. Keep the API off the public
+internet until you set apiConfigs.auth_mode=oidc and point it at an IdP:
+
+  apiConfigs:
+    auth_mode: oidc
+    oidc_issuer_url: https://your-idp/
+    oidc_client_id: invokr
+    oidc_redirect_host: https://invokr.your-domain
+  secrets:
+    oidc_client_secret: <secret>
+{{- end }}
 {{- if .Values.dashboard.enabled }}
 
 ────────────────────────────────────────────────────────────────────────
-!! DASHBOARD EXPOSURE
+DASHBOARD
 ────────────────────────────────────────────────────────────────────────
-The dashboard is served at {{ .Values.dashboard.pathPrefix }} by the API pods.
-
-It renders INVOKR_API_KEY into the page it serves, so anyone who can load the
-dashboard holds full API access to every workspace on this install. Keep it off
-the public internet until per-user auth ships.
+Served at {{ .Values.dashboard.pathPrefix }} by the API pods. It authenticates with a
+same-origin session cookie and carries no service-wide key, so its exposure is
+governed by auth_mode like every other route.
 {{- end }}
