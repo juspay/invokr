@@ -149,9 +149,6 @@ affinity:
   {{- if not .Values.secrets.database_url -}}
     {{- fail "invokr: set secrets.database_url (or existingSecret). Pods crash-loop without a database connection string. It must be the WRITER endpoint -- pg_cron runs jobs only on the writer." -}}
   {{- end -}}
-  {{- if not .Values.secrets.api_key -}}
-    {{- fail "invokr: set secrets.api_key (or existingSecret). It is the bearer token for every REST API call." -}}
-  {{- end -}}
   {{- if not .Values.secrets.encryption_key -}}
     {{- fail "invokr: set secrets.encryption_key (or existingSecret). 32 bytes of hex; it encrypts stored secrets at rest." -}}
   {{- end -}}

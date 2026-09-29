@@ -119,14 +119,11 @@ secrets:
   # -- PostgreSQL connection string. MUST be the writer endpoint -- pg_cron runs
   # jobs only on the writer.
   database_url: ""
-  # -- Bearer token for the REST API. Also served to the dashboard in the
-  # browser, so anyone who can load the dashboard holds full API access.
-  api_key: ""
   # -- 32-byte hex key encrypting stored secrets at rest.
   encryption_key: ""
 
 # -- Use an existing Secret instead of rendering one. Must contain
-# INVOKR_DATABASE_URL, INVOKR_API_KEY and INVOKR_ENCRYPTION_KEY.
+# INVOKR_DATABASE_URL and INVOKR_ENCRYPTION_KEY.
 existingSecret: ""
 
 # -- Selects the `-kms` image variants, which expect `secrets` to hold base64

@@ -1,6 +1,7 @@
 {{- if .Values.api.ingress.enabled -}}
 {{/* Leave disabled when routing through Istio. Note this Service also serves
-     the dashboard, which renders the API key into its HTML.
+     the dashboard, and that `apiConfigs.auth_mode` decides whether anything
+     behind it is authenticated at all.
 
      The dashboard is mounted at `dashboard.pathPrefix`, a SIBLING of the API
      prefix rather than a child of it, so routing only the API prefix leaves the

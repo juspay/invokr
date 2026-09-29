@@ -27,7 +27,7 @@ on the writer.
 
 ## Installing
 
-Three values must be set; everything else has a working default. The image tag
+Two values must be set; everything else has a working default. The image tag
 defaults to the chart's `appVersion`, which the release workflow keeps equal to
 the released version, so it only needs setting to pin a different build.
 
@@ -35,9 +35,15 @@ the released version, so it only needs setting to pin a different build.
 helm install invokr ./helm \
   --namespace invokr --create-namespace \
   --set secrets.database_url='postgresql://user:pass@writer-host:5432/invokr_db' \
-  --set secrets.api_key='<api key>' \
   --set secrets.encryption_key='<64 hex chars>'
 ```
+
+The chart ships no `secrets.api_key`. `INVOKR_API_KEY` is the pre-OIDC shared
+key, kept in the API only so existing installs can migrate off it; under `oidc`
+it installs an extra authenticator that bypasses per-user identity, and the API
+warns at every startup while it is set. A new deployment has nothing to migrate,
+so the chart does not offer it. `secrets` is a free-form map, so an install that
+genuinely still needs it can set `secrets.api_key` and it will render.
 
 `database.host` becomes required too if you enable `migration.enabled` — the
 Job's `pg_isready` check needs a host, and it cannot be parsed out of the
@@ -69,7 +75,7 @@ print the SQL instead of applying it. App pods never migrate under any setting.
 
 In clusters running external-secrets, leave `secrets` empty and point
 `existingSecret` at the Secret your ExternalSecret produces. It must contain
-`INVOKR_DATABASE_URL`, `INVOKR_API_KEY` and `INVOKR_ENCRYPTION_KEY`.
+`INVOKR_DATABASE_URL` and `INVOKR_ENCRYPTION_KEY`.
 
 ## Configuration model
 
@@ -92,12 +98,28 @@ global:
   imageRegistry: <account>.dkr.ecr.<region>.amazonaws.com
 ```
 
-## Before exposing the dashboard
+## Before exposing the API
 
-The dashboard is served by the API pods and renders `INVOKR_API_KEY` into the
-page. That key is not scoped — it authorises every workspace on the install — so
-anyone who can load the dashboard has full API access. Keep it off the public
-internet until per-user authentication ships.
+`apiConfigs.auth_mode` decides whether anything is authenticated, and it defaults
+to `disabled` — every request is served as a development identity, with no
+credential required or checked. Anyone who can reach the pods has full access to
+every workspace, which is why `api.ingress.enabled` defaults to `false`.
+
+Set `auth_mode: oidc` and register a client with your IdP before exposing it:
+
+```yaml
+apiConfigs:
+  auth_mode: oidc
+  oidc_issuer_url: https://your-idp/
+  oidc_client_id: invokr
+  oidc_redirect_host: https://invokr.your-domain
+secrets:
+  oidc_client_secret: <secret>
+```
+
+The dashboard is served by the same pods and authenticates with a same-origin
+session cookie, so it is covered by the same setting — it no longer carries a
+service-wide key.
 
 ## Values
 
@@ -138,7 +160,7 @@ internet until per-user authentication ships.
 | database.name | string | `"invokr_db"` | Database name. |
 | database.port | int | `5432` | Database port. |
 | database.user | string | `"invokr"` | Database user. |
-| existingSecret | string | `""` | Use an existing Secret instead of rendering one. Must contain INVOKR_DATABASE_URL, INVOKR_API_KEY and INVOKR_ENCRYPTION_KEY. |
+| existingSecret | string | `""` | Use an existing Secret instead of rendering one. Must contain INVOKR_DATABASE_URL and INVOKR_ENCRYPTION_KEY. |
 | extraEnv | list | `[]` | Extra environment variables, in Kubernetes `env` form. |
 | extraEnvFrom | list | `[]` | Extra `envFrom` sources. Rendered after the chart's own ConfigMaps and Secret, so a key set here wins on collision. |
 | fullnameOverride | string | `""` | Override the generated fullname. |
@@ -167,7 +189,6 @@ internet until per-user authentication ships.
 | nameOverride | string | `""` | Override the chart name. |
 | nodeSelector | object | `{}` | Node selector for all workloads. Overrides `global.nodeSelector`. |
 | podSecurityContext | object | `{}` | Pod-level security context. Empty because the published images do not declare a non-root USER, so `runAsNonRoot` would stop every pod starting. |
-| secrets.api_key | string | `""` | Bearer token for the REST API. Also served to the dashboard in the browser, so anyone who can load the dashboard holds full API access. |
 | secrets.database_url | string | `""` |  |
 | secrets.encryption_key | string | `""` | 32-byte hex key encrypting stored secrets at rest. |
 | securityContext | object | `{}` | Container-level security context. |
