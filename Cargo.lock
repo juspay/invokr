@@ -2753,7 +2753,7 @@ dependencies = [
 
 [[package]]
 name = "invokr-api"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "invokr-common"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "actix-web",
  "aes-gcm",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "invokr-dashboard"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "gloo-net",
@@ -2832,7 +2832,7 @@ dependencies = [
 
 [[package]]
 name = "invokr-mock-server"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "actix-rt",
  "actix-web",
@@ -2847,7 +2847,7 @@ dependencies = [
 
 [[package]]
 name = "invokr-worker"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3298,7 +3298,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "library-mode-example"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "invokr-common",
