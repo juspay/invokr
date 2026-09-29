@@ -40,10 +40,12 @@ helm install invokr ./helm \
   --set secrets.encryption_key='<64 hex chars>'
 ```
 
-`secrets.api_key` is **not** required. It is the deprecated pre-OIDC shared key:
-ignored when `apiConfigs.auth_mode` is `disabled`, and under `oidc` it installs
-an extra authenticator that bypasses per-user identity. Clearing it is how the
-mechanism is switched off.
+The chart ships no `secrets.api_key`. `INVOKR_API_KEY` is the pre-OIDC shared
+key, kept in the API only so existing installs can migrate off it; under `oidc`
+it installs an extra authenticator that bypasses per-user identity, and the API
+warns at every startup while it is set. A new deployment has nothing to migrate,
+so the chart does not offer it. `secrets` is a free-form map, so an install that
+genuinely still needs it can set `secrets.api_key` and it will render.
 
 `database.host` becomes required too if you enable `migration.enabled` — the
 Job's `pg_isready` check needs a host, and it cannot be parsed out of the
@@ -75,8 +77,7 @@ print the SQL instead of applying it. App pods never migrate under any setting.
 
 In clusters running external-secrets, leave `secrets` empty and point
 `existingSecret` at the Secret your ExternalSecret produces. It must contain
-`INVOKR_DATABASE_URL` and `INVOKR_ENCRYPTION_KEY`. `INVOKR_API_KEY` is optional
-and keeps the deprecated shared key accepted.
+`INVOKR_DATABASE_URL` and `INVOKR_ENCRYPTION_KEY`.
 
 ## Configuration model
 

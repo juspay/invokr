@@ -38,10 +38,12 @@ helm install invokr ./helm \
   --set secrets.encryption_key='<64 hex chars>'
 ```
 
-`secrets.api_key` is **not** required. It is the deprecated pre-OIDC shared key:
-ignored when `apiConfigs.auth_mode` is `disabled`, and under `oidc` it installs
-an extra authenticator that bypasses per-user identity. Clearing it is how the
-mechanism is switched off.
+The chart ships no `secrets.api_key`. `INVOKR_API_KEY` is the pre-OIDC shared
+key, kept in the API only so existing installs can migrate off it; under `oidc`
+it installs an extra authenticator that bypasses per-user identity, and the API
+warns at every startup while it is set. A new deployment has nothing to migrate,
+so the chart does not offer it. `secrets` is a free-form map, so an install that
+genuinely still needs it can set `secrets.api_key` and it will render.
 
 `database.host` becomes required too if you enable `migration.enabled` — the
 Job's `pg_isready` check needs a host, and it cannot be parsed out of the
@@ -73,8 +75,7 @@ print the SQL instead of applying it. App pods never migrate under any setting.
 
 In clusters running external-secrets, leave `secrets` empty and point
 `existingSecret` at the Secret your ExternalSecret produces. It must contain
-`INVOKR_DATABASE_URL` and `INVOKR_ENCRYPTION_KEY`. `INVOKR_API_KEY` is optional
-and keeps the deprecated shared key accepted.
+`INVOKR_DATABASE_URL` and `INVOKR_ENCRYPTION_KEY`.
 
 ## Configuration model
 
@@ -159,7 +160,7 @@ service-wide key.
 | database.name | string | `"invokr_db"` | Database name. |
 | database.port | int | `5432` | Database port. |
 | database.user | string | `"invokr"` | Database user. |
-| existingSecret | string | `""` | Use an existing Secret instead of rendering one. Must contain INVOKR_DATABASE_URL and INVOKR_ENCRYPTION_KEY, and may contain INVOKR_API_KEY to keep the deprecated shared key accepted. |
+| existingSecret | string | `""` | Use an existing Secret instead of rendering one. Must contain INVOKR_DATABASE_URL and INVOKR_ENCRYPTION_KEY. |
 | extraEnv | list | `[]` | Extra environment variables, in Kubernetes `env` form. |
 | extraEnvFrom | list | `[]` | Extra `envFrom` sources. Rendered after the chart's own ConfigMaps and Secret, so a key set here wins on collision. |
 | fullnameOverride | string | `""` | Override the generated fullname. |
@@ -188,7 +189,6 @@ service-wide key.
 | nameOverride | string | `""` | Override the chart name. |
 | nodeSelector | object | `{}` | Node selector for all workloads. Overrides `global.nodeSelector`. |
 | podSecurityContext | object | `{}` | Pod-level security context. Empty because the published images do not declare a non-root USER, so `runAsNonRoot` would stop every pod starting. |
-| secrets.api_key | string | `""` | DEPRECATED, and optional. The pre-OIDC shared key. Ignored entirely when `apiConfigs.auth_mode` is `disabled`; under `oidc` it installs an additional authenticator that bypasses per-user identity, and the API logs a warning at every startup while it is set. Leave empty unless callers still present it -- clearing it is how the mechanism is switched off. |
 | secrets.database_url | string | `""` |  |
 | secrets.encryption_key | string | `""` | 32-byte hex key encrypting stored secrets at rest. |
 | securityContext | object | `{}` | Container-level security context. |
