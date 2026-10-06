@@ -125,7 +125,7 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
-      # Two real dimensions -- arch x image -- so this expands to the full 2x4
+      # Two real dimensions -- arch x image -- so this expands to the full 2x2
       # cross-product. `include` only attaches the runner for each arch.
       matrix:
         arch: [amd64, arm64]
@@ -133,16 +133,8 @@ jobs:
           - binary: invokr-api
             features: ""
             include_dashboard: "true"
-          - binary: invokr-api
-            features: "kms"
-            image_name: "invokr-api-kms"
-            include_dashboard: "true"
           - binary: invokr-worker
             features: ""
-            include_dashboard: "false"
-          - binary: invokr-worker
-            features: "kms"
-            image_name: "invokr-worker-kms"
             include_dashboard: "false"
         include:
           - arch: amd64
@@ -199,11 +191,7 @@ jobs:
       matrix:
         include:
           - binary: invokr-api
-          - binary: invokr-api
-            image_name: "invokr-api-kms"
           - binary: invokr-worker
-          - binary: invokr-worker
-            image_name: "invokr-worker-kms"
     steps:
       - uses: docker/login-action@v3
         with:

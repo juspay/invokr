@@ -50,13 +50,13 @@ jobs:
       # dispatchers (kafka, redis-stream) are only reachable with the features on.
       - name: Clippy (default features)
         run: cargo clippy --workspace --all-targets -- -D warnings
-      # The optional dispatchers and the KMS config path are built by nothing
-      # else in CI, so without this step they rot silently.
-      - name: Clippy (kafka + redis-stream + kms)
+      # The optional dispatchers are built by nothing else in CI, so without
+      # this step they rot silently.
+      - name: Clippy (kafka + redis-stream)
         run: |
           cargo clippy -p invokr-worker --all-targets \
-            --features kafka,redis-stream,kms -- -D warnings
-          cargo clippy -p invokr-api --all-targets --features kms -- -D warnings
+            --features kafka,redis-stream -- -D warnings
+          cargo clippy -p invokr-api --all-targets -- -D warnings
 
   test:
     name: unit tests
