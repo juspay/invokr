@@ -9,10 +9,9 @@ pub mod crypto;
 pub mod db;
 pub mod env;
 pub mod error;
-#[cfg(feature = "kms")]
-pub mod kms;
 pub mod metrics;
 pub mod models;
 pub mod pagination;
+pub mod secrets;
 pub mod template;
 pub mod tenant;
