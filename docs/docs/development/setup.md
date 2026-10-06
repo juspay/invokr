@@ -46,7 +46,7 @@ The Nix flake (`flake.nix`) provides a complete development environment with all
 | `just` | Task runner |
 | `wasm-pack` + `wasm-bindgen-cli` | Building the WASM dashboard |
 | `tailwindcss` | Dashboard CSS generation |
-| `awscli2` | KMS scripts and LocalStack interaction |
+| `awscli2` | KMS helper scripts and LocalStack interaction |
 
 The shell also sets `DATABASE_URL` for `sqlx` compile-time checking:
 
@@ -277,14 +277,14 @@ docker compose --profile kafka up -d
 # Redis (for redis-stream dispatcher feature)
 docker compose --profile redis up -d
 
-# LocalStack KMS (for kms feature)
+# LocalStack KMS (for the aws_kms secrets provider)
 just kms-up
 
 # Monitoring only
 just monitoring-up
 ```
 
-See [Building](./building) for enabling feature flags like `kafka`, `redis-stream`, and `kms`.
+See [Building](./building) for enabling feature flags like `kafka` and `redis-stream`.
 
 ## Environment configuration
 

@@ -37,7 +37,7 @@ Secrets are encrypted using AES-256-GCM (Galois/Counter Mode), which provides bo
 :::
 
 :::info
-When KMS is enabled (`INVOKR_KMS_ENABLED=true`), `INVOKR_ENCRYPTION_KEY` itself is expected to be a base64-encoded KMS-encrypted ciphertext, transparently decrypted at startup. See [AWS KMS Integration](../deployment/kms).
+When a secrets provider is selected (`INVOKR_SECRETS_MANAGER=aws_kms`), `INVOKR_ENCRYPTION_KEY` itself is expected to be a base64-encoded ciphertext, transparently decrypted at startup. See [Secrets Management](../deployment/secrets-management).
 :::
 
 ---
@@ -179,5 +179,5 @@ Secret rotation via `PUT` updates the encrypted value in the database. The old v
 - [Configs](./configs) — non-sensitive counterpart to secrets
 - [Templates](./templates) — the template resolution engine
 - [Environment Variables](../configuration/environment-variables) — `INVOKR_ENCRYPTION_KEY`, `INVOKR_SECRET_CACHE_TTL_SEC`
-- [AWS KMS Integration](../deployment/kms) — encrypting sensitive variables with KMS
+- [Secrets Management](../deployment/secrets-management) — encrypting sensitive variables
 - [The Three-Step Workflow](./overview) — where secrets fit in the model

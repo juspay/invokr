@@ -41,7 +41,6 @@ Invokr uses Cargo feature flags to conditionally compile optional functionality.
 |---------|-------|------------|-------------|
 | `kafka` | `invokr-worker` | `rdkafka` | Kafka dispatcher — enables dispatching jobs to Kafka topics |
 | `redis-stream` | `invokr-worker` | `redis` | Redis Stream dispatcher — enables dispatching jobs to Redis Streams |
-| `kms` | `invokr-common` | `aws-sdk-kms` | AWS KMS integration — enables transparent decryption of sensitive env vars |
 | `pg_cron` | `invokr-common` | `pg_cron` extension | pg_cron extension support — required for CRON job scheduling (enabled by default in the database) |
 
 ### Building with features
@@ -53,21 +52,15 @@ cargo build --workspace --features invokr-worker/kafka
 # Build with Redis Stream support
 cargo build --workspace --features invokr-worker/redis-stream
 
-# Build with KMS support
-cargo build --workspace --features kms
-
 # Build with all worker features
 cargo build --workspace --features invokr-worker/kafka,invokr-worker/redis-stream
 
-# Build worker with Kafka + KMS
-cargo build -p invokr-worker --features kafka,kms
-
-# Build API with KMS + dashboard
-cargo build -p invokr-api --features kms
+# Build the worker crate directly with Kafka
+cargo build -p invokr-worker --features kafka
 ```
 
 :::note
-Feature flags use `crate-name/feature-name` syntax when targeting a specific crate. The `kms` feature is defined in `invokr-common` but can be enabled from the workspace level since it propagates to dependent crates.
+Feature flags use `crate-name/feature-name` syntax when targeting a specific crate. A feature defined in a dependency crate can also be enabled from the workspace level, since it propagates to dependent crates.
 :::
 
 ### Starting infrastructure for features
@@ -105,7 +98,7 @@ See [Docker](../deployment/docker) for full details on the Dockerfile stages and
 | Arg | Default | Description |
 |-----|---------|-------------|
 | `BINARY` | *(required)* | Which binary to build: `invokr-api`, `invokr-worker`, or `invokr-mock-server` |
-| `FEATURES` | *(empty)* | Cargo feature flags (e.g. `kafka`, `redis-stream`, `kms`) |
+| `FEATURES` | *(empty)* | Cargo feature flags (e.g. `kafka`, `redis-stream`) |
 | `INCLUDE_DASHBOARD` | `false` | When `true`, builds the dashboard WASM bundle |
 
 ### Building Docker images
@@ -120,10 +113,9 @@ docker build \
   --build-arg FEATURES=kafka,redis-stream \
   -t invokr-worker .
 
-# API with KMS + dashboard
+# API with dashboard
 docker build \
   --build-arg BINARY=invokr-api \
-  --build-arg FEATURES=kms \
   --build-arg INCLUDE_DASHBOARD=true \
   -t invokr-api-full .
 

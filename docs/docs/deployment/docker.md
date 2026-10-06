@@ -24,7 +24,7 @@ The `Dockerfile` at the repository root uses four stages to produce a minimal ru
 | Arg | Default | Description |
 |-----|---------|-------------|
 | `BINARY` | *(required)* | Which binary to build: `invokr-api`, `invokr-worker`, or `invokr-mock-server` |
-| `FEATURES` | *(empty)* | Cargo feature flags to enable (e.g. `kafka`, `redis-stream`, `kms`) |
+| `FEATURES` | *(empty)* | Cargo feature flags to enable (e.g. `kafka`, `redis-stream`) |
 | `INCLUDE_DASHBOARD` | `false` | When `true`, builds the dashboard WASM bundle and copies it into the runtime image |
 
 ### Dependency caching with cargo-chef
@@ -54,12 +54,11 @@ docker build -t invokr-worker \
   .
 ```
 
-### API server with KMS and dashboard
+### API server with dashboard
 
 ```bash
 docker build -t invokr-api-full \
   --build-arg BINARY=invokr-api \
-  --build-arg FEATURES=kms \
   --build-arg INCLUDE_DASHBOARD=true \
   .
 ```
@@ -188,11 +187,11 @@ The `pg_cron` extension must be preloaded at server startup. If you use a differ
 
 ## Running the full dev stack with Docker
 
-For a production-like Docker setup that builds all Invokr services and runs them with KMS encryption, see [Production Deployment](./production). For local development without Docker (using `nix develop` + `just dev`), see [Development Setup](../development/setup).
+For a production-like Docker setup that builds all Invokr services and runs them with the AWS KMS secrets provider, see [Production Deployment](./production). For local development without Docker (using `nix develop` + `just dev`), see [Development Setup](../development/setup).
 
 ## See also
 
-- [Production Deployment](./production) — prod-like Docker Compose with KMS
-- [AWS KMS Integration](./kms) — encrypting sensitive env vars
+- [Production Deployment](./production) — prod-like Docker Compose with the AWS KMS provider
+- [Secrets Management](./secrets-management) — encrypting sensitive env vars
 - [Dashboard](./dashboard) — building and serving the WASM dashboard
 - [Environment Variables](../configuration/environment-variables) — full configuration reference
