@@ -19,7 +19,8 @@ metadata:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-10"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
-    {{/* Carries the IRSA role ARN when `kms.enabled`, same as the main SA. */}}
+    {{/* Carries the IRSA role ARN when `configs.secrets_manager: aws_kms`,
+         same as the main SA. */}}
     {{- with .Values.serviceAccount.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

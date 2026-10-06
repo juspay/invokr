@@ -20,7 +20,7 @@ The `just` task runner has `set dotenv-load` enabled, so variables defined in a 
 | `INVOKR_TABLE_PREFIX` | *(empty)* | Prefix for all per-workspace Invokr tables. Set to e.g. `sched` to get `sched_jobs`, `sched_executions`, etc. Only alphanumeric and underscore characters allowed. |
 
 :::warning
-`INVOKR_DATABASE_URL` is a **sensitive** variable. When KMS is enabled (`INVOKR_KMS_ENABLED=true`), this must contain a base64-encoded KMS-encrypted ciphertext, not a plaintext connection string. See [AWS KMS Integration](../deployment/kms).
+`INVOKR_DATABASE_URL` is a **sensitive** variable. When a secrets provider is selected (`INVOKR_SECRETS_MANAGER=aws_kms`), this must contain a base64-encoded ciphertext, not a plaintext connection string. See [Secrets Management](../deployment/secrets-management).
 :::
 
 ## API Server
@@ -33,7 +33,7 @@ The `just` task runner has `set dotenv-load` enabled, so variables defined in a 
 | `INVOKR_MODE` | `api` | Server mode: `api` (REST API only), `dashboard` (dashboard only), or `both` (API + dashboard SSR). |
 
 :::warning
-`INVOKR_API_KEY` is a **sensitive** variable. When KMS is enabled, this must contain base64-encoded KMS-encrypted ciphertext. In production, always set this to a strong, unique key — never use the default `dev-api-key`.
+`INVOKR_API_KEY` is a **sensitive** variable. When a secrets provider is selected, this must contain base64-encoded ciphertext. In production, always set this to a strong, unique key — never use the default `dev-api-key`.
 :::
 
 ### Path prefix
@@ -99,13 +99,13 @@ When scaling workers horizontally, keep `INVOKR_WORKER_MAX_CONCURRENT` per insta
 | `INVOKR_ENCRYPTION_KEY` | `0000...0000` (64 zeros) | AES-256-GCM encryption key for secrets, as a hex string (32 bytes = 64 hex chars). Used to encrypt/decrypt secret values at rest. |
 
 :::danger
-`INVOKR_ENCRYPTION_KEY` is a **sensitive** variable. When KMS is enabled, this must contain base64-encoded KMS-encrypted ciphertext.
+`INVOKR_ENCRYPTION_KEY` is a **sensitive** variable. When a secrets provider is selected, this must contain base64-encoded ciphertext.
 
 **In production, always set this to a strong, random 32-byte key.** The default all-zeros key provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
 :::
 
 :::warning
-`INVOKR_ENCRYPTION_KEY` is also a **sensitive** variable subject to KMS decryption. See [AWS KMS Integration](../deployment/kms).
+`INVOKR_ENCRYPTION_KEY` is also a **sensitive** variable subject to provider decryption. See [Secrets Management](../deployment/secrets-management).
 :::
 
 ## Metrics
@@ -134,23 +134,22 @@ The reaper is Invokr's own CRON sweep that retires expired CRON jobs and unsched
 | `INVOKR_RECLAIM_INTERVAL_SEC` | `30` | Interval (in seconds) for reclaiming stuck executions (executions in RUNNING status beyond the timeout). |
 | `INVOKR_STUCK_EXECUTION_TIMEOUT_SEC` | `300` | Timeout (in seconds) after which a RUNNING execution is considered stuck and eligible for reclaiming. |
 
-## KMS
+## Secrets management
 
-These variables control AWS KMS integration for encrypting sensitive environment variables at rest.
+These variables control the secrets provider that decrypts sensitive environment variables at startup.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INVOKR_KMS_ENABLED` | `false` | When `true`, `INVOKR_DATABASE_URL`, `INVOKR_API_KEY`, and `INVOKR_ENCRYPTION_KEY` are expected to be base64-encoded KMS-encrypted ciphertext. Requires the `kms` Cargo feature. |
+| `INVOKR_SECRETS_MANAGER` | `no_encryption` | Selects the secrets provider: `no_encryption`, `aws_kms` or `gcp_kms`. With a provider selected, all five sensitive variables must be base64-encoded ciphertext. |
+| `INVOKR_GCP_KMS_KEY_NAME` | — | Full Cloud KMS key resource name. Required when `INVOKR_SECRETS_MANAGER=gcp_kms`. |
 | `AWS_ENDPOINT_URL` | *(unset)* | KMS endpoint URL. Set to `http://localhost:4566` for LocalStack dev. Omit for production AWS. |
-| `AWS_REGION` | *(unset)* | AWS region for KMS (e.g. `us-east-1`). |
+| `AWS_REGION` | *(unset)* | AWS region for KMS (e.g. `us-east-1`). Optional — the SDK resolves the region from the standard chain. |
 | `AWS_ACCESS_KEY_ID` | *(unset)* | AWS access key ID. Use `test` for LocalStack. |
 | `AWS_SECRET_ACCESS_KEY` | *(unset)* | AWS secret access key. Use `test` for LocalStack. |
 
-:::warning
-If `INVOKR_KMS_ENABLED=true` but the binary was compiled without the `kms` feature, the server will fail to start. Build with `cargo build --features kms` or pass `--build-arg FEATURES=kms` for Docker.
-:::
+Every provider is compiled into the single image per workload, so no special image tag or build flag is required.
 
-See [AWS KMS Integration](../deployment/kms) for setup instructions.
+See [Secrets Management](../deployment/secrets-management) for setup instructions.
 
 ## CLI / Test Scripts
 
@@ -167,16 +166,20 @@ These variables are used by the TypeScript CLI and test scripts (in `cli/`). The
 `INVOKR_URL` must include `INVOKR_PATH_PREFIX` when the server is configured with one, and `INVOKR_API_KEY` is the same key the server authenticates against — the CLI and the server read the same variable.
 :::
 
-## Sensitive variables and KMS
+## Sensitive variables
 
-The following variables are treated as **sensitive** by Invokr. When KMS is enabled (`INVOKR_KMS_ENABLED=true`), they are transparently decrypted at startup:
+The following variables are treated as **sensitive** by Invokr. When a secrets provider is selected (`INVOKR_SECRETS_MANAGER=aws_kms`), they are transparently decrypted at startup:
 
-| Variable | Sensitive? | KMS-decrypted? |
-|----------|-----------|----------------|
+| Variable | Sensitive? | Decrypted by the provider? |
+|----------|-----------|----------------------------|
 | `INVOKR_DATABASE_URL` | Yes | Yes |
-| `INVOKR_API_KEY` | Yes | Yes |
 | `INVOKR_ENCRYPTION_KEY` | Yes | Yes |
+| `INVOKR_OIDC_CLIENT_SECRET` | Yes | Yes |
+| `INVOKR_API_STATIC_TOKENS` | Yes | Yes |
+| `INVOKR_API_KEY` (legacy) | Yes | Yes |
 | All other `INVOKR_*` variables | No | No |
+
+This is all-or-nothing: with a provider selected, **every** variable above is treated as ciphertext. Plaintext and ciphertext cannot be mixed.
 
 ## Path prefix summary
 
@@ -213,8 +216,8 @@ healthcheck:
 ## Complete .env.example
 
 ```bash
-# KMS (requires 'kms' feature: cargo build --features kms)
-INVOKR_KMS_ENABLED=false
+# Secrets management
+INVOKR_SECRETS_MANAGER=no_encryption
 # AWS_ENDPOINT_URL=http://localhost:4566
 # AWS_REGION=us-east-1
 # AWS_ACCESS_KEY_ID=test
@@ -266,6 +269,6 @@ INVOKR_API_KEY=dev-api-key
 
 - [Docker](../deployment/docker) — Docker build and compose configuration
 - [Production Deployment](../deployment/production) — production tuning and scaling
-- [AWS KMS Integration](../deployment/kms) — encrypting sensitive variables
+- [Secrets Management](../deployment/secrets-management) — encrypting sensitive variables
 - [Dashboard](../deployment/dashboard) — dashboard path prefix configuration
 - [Development Setup](../development/setup) — setting up a dev environment

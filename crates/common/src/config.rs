@@ -5,48 +5,50 @@ use crate::{
 };
 
 // ---------------------------------------------------------------------------
-// Sensitive-env reader: transparently KMS-decrypts when the feature is active
+// Sensitive-env reader: decrypts through the configured SecretProvider
 // ---------------------------------------------------------------------------
 
 struct SensitiveEnvReader {
-    #[cfg(feature = "kms")]
-    client: Option<aws_sdk_kms::Client>,
+    provider: Box<dyn crate::secrets::SecretProvider>,
 }
 
 impl SensitiveEnvReader {
-    /// Read a *required* sensitive env var (KMS-decrypted when enabled).
+    /// Read a *required* sensitive env var and decrypt it.
     async fn read(&self, name: &str) -> Result<String, String> {
-        #[cfg(feature = "kms")]
-        if let Some(ref client) = self.client {
-            return Ok(crate::kms::decrypt(client, name).await);
-        }
-        get_from_env_unsafe(name)
+        let raw = get_from_env_unsafe::<String>(name)?;
+        self.provider
+            .decrypt(name, &raw)
+            .await
+            .map_err(|e| e.to_string())
     }
 
-    /// Read an *optional* sensitive env var. `None` when absent or blank.
+    /// Read an *optional* sensitive env var. `Ok(None)` when absent or blank.
     ///
     /// Distinct from [`Self::read_or_default`]: for a credential, "absent" must
     /// stay distinguishable from "some fallback value", because the fallback
     /// would itself be an accepted secret.
-    async fn read_opt(&self, name: &str) -> Option<String> {
-        #[cfg(feature = "kms")]
-        if let Some(ref client) = self.client {
-            return crate::kms::decrypt_opt(client, name)
-                .await
-                .filter(|v| !v.trim().is_empty());
-        }
-        std::env::var(name).ok().filter(|v| !v.trim().is_empty())
+    ///
+    /// Returns `Err` when the value is present but cannot be decrypted. The
+    /// previous implementation panicked from inside the KMS helper instead.
+    async fn read_opt(&self, name: &str) -> Result<Option<String>, String> {
+        let Some(raw) = std::env::var(name).ok().filter(|v| !v.trim().is_empty()) else {
+            return Ok(None);
+        };
+        let plain = self
+            .provider
+            .decrypt(name, &raw)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(Some(plain).filter(|v| !v.trim().is_empty()))
     }
 
-    /// Read an *optional* sensitive env var, falling back to `default`.
-    async fn read_or_default(&self, name: &str, default: String) -> String {
-        #[cfg(feature = "kms")]
-        if let Some(ref client) = self.client {
-            return crate::kms::decrypt_opt(client, name)
-                .await
-                .unwrap_or(default);
+    /// Read an *optional* sensitive env var, falling back to `default` when
+    /// absent. A present-but-undecryptable value is an error, not a fallback.
+    async fn read_or_default(&self, name: &str, default: String) -> Result<String, String> {
+        match self.read_opt(name).await? {
+            Some(v) => Ok(v),
+            None => Ok(default),
         }
-        std::env::var(name).unwrap_or(default)
     }
 }
 
@@ -172,7 +174,7 @@ impl CryptoEnv {
     async fn new(reader: &SensitiveEnvReader) -> Result<Self, String> {
         let encryption_key = reader
             .read_or_default("INVOKR_ENCRYPTION_KEY", "0".repeat(64))
-            .await;
+            .await?;
         Ok(Self { encryption_key })
     }
 }
@@ -332,13 +334,19 @@ impl AuthEnv {
             AuthMode::Oidc => Some(OidcEnv {
                 issuer_url: required("INVOKR_OIDC_ISSUER_URL")?,
                 client_id: required("INVOKR_OIDC_CLIENT_ID")?,
-                client_secret: reader.read_opt("INVOKR_OIDC_CLIENT_SECRET").await,
+                client_secret: reader
+                    .read_opt("INVOKR_OIDC_CLIENT_SECRET")
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?,
                 redirect_host: required("INVOKR_OIDC_REDIRECT_HOST")?,
             }),
         };
 
         let api_token_prefix = non_empty(std::env::var("INVOKR_API_TOKEN_PREFIX").ok());
-        let static_tokens = reader.read_opt("INVOKR_API_STATIC_TOKENS").await;
+        let static_tokens = reader
+            .read_opt("INVOKR_API_STATIC_TOKENS")
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         // A prefix with no token list authenticates nothing, and a token list
         // with no prefix can never be presented. Either alone is a typo.
@@ -357,7 +365,10 @@ impl AuthEnv {
             static_tokens,
             // No default: an unset key means the legacy mechanism is off, never
             // that a well-known development key is in force.
-            legacy_api_key: reader.read_opt("INVOKR_API_KEY").await,
+            legacy_api_key: reader
+                .read_opt("INVOKR_API_KEY")
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?,
             secure_cookies: get_from_env_or_default("INVOKR_AUTH_SECURE_COOKIES", true),
         })
     }
@@ -383,28 +394,14 @@ pub struct AppConfig {
     pub reaper: ReaperEnv,
 }
 
-/// Builds the KMS-aware reader used for every sensitive variable.
+/// Builds the provider-backed reader used for every sensitive variable.
 ///
 /// Shared by [`AppConfig::from_env`] and [`AuthEnv::from_env`] so the two agree
-/// on whether ciphertext is expected — a mismatch would decrypt half the
+/// on whether ciphertext is expected -- a mismatch would decrypt half the
 /// secrets and read the rest verbatim.
 async fn sensitive_reader() -> anyhow::Result<SensitiveEnvReader> {
-    let kms_enabled: bool = get_from_env_or_default("INVOKR_KMS_ENABLED", false);
-
-    #[cfg(not(feature = "kms"))]
-    if kms_enabled {
-        anyhow::bail!("INVOKR_KMS_ENABLED=true but invokr was compiled without the 'kms' feature");
-    }
-
-    Ok(SensitiveEnvReader {
-        #[cfg(feature = "kms")]
-        client: if kms_enabled {
-            tracing::info!("KMS decryption enabled, initializing AWS KMS client");
-            Some(crate::kms::new_client().await)
-        } else {
-            None
-        },
-    })
+    let provider = crate::secrets::provider_from_env().await?;
+    Ok(SensitiveEnvReader { provider })
 }
 
 impl AppConfig {

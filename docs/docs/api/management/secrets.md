@@ -347,10 +347,10 @@ You cannot delete a secret that is referenced by any endpoint. The `has_dependen
 | **Storage** | `encrypted_value` column (BYTEA) in the `secrets` table |
 | **API responses** | `SecretResponse` struct — never includes `value` or `encrypted_value` |
 | **In-memory cache** | Decrypted values cached for `INVOKR_SECRET_CACHE_TTL_SEC` (default 300s) |
-| **KMS integration** | `INVOKR_ENCRYPTION_KEY` itself can be KMS-encrypted (see [KMS](../../deployment/kms)) |
+| **Secrets provider** | `INVOKR_ENCRYPTION_KEY` itself can be provider-encrypted (see [Secrets Management](../../deployment/secrets-management)) |
 
 :::tip
-For defense in depth, enable [AWS KMS integration](../../deployment/kms) to encrypt `INVOKR_ENCRYPTION_KEY` itself at rest. This means the encryption key is never stored in plaintext in the environment — it's decrypted from KMS ciphertext at startup.
+For defense in depth, select a [secrets provider](../../deployment/secrets-management) to encrypt `INVOKR_ENCRYPTION_KEY` itself at rest. This means the encryption key is never stored in plaintext in the environment — it's decrypted from ciphertext at startup.
 :::
 
 ## See also
@@ -359,5 +359,5 @@ For defense in depth, enable [AWS KMS integration](../../deployment/kms) to encr
 - [Organizations](./organizations) — top-level tenant entity
 - [Workspaces](./workspaces) — workspace creation and schema provisioning
 - [Template resolution](../../core-concepts/templates) — how `{{secret.*}}` templates are resolved
-- [AWS KMS Integration](../../deployment/kms) — encrypting `INVOKR_ENCRYPTION_KEY` via KMS
+- [Secrets Management](../../deployment/secrets-management) — encrypting `INVOKR_ENCRYPTION_KEY` at rest
 - [Environment Variables](../../configuration/environment-variables) — `INVOKR_ENCRYPTION_KEY`, `INVOKR_SECRET_CACHE_TTL_SEC`

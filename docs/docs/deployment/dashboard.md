@@ -219,6 +219,6 @@ The dashboard is built with these reusable Leptos components:
 
 ## See also
 
-- [Production Deployment](./production) — running the dashboard in Docker with KMS
+- [Production Deployment](./production) — running the dashboard in Docker with the AWS KMS provider
 - [Docker](./docker) — building images with `INCLUDE_DASHBOARD=true`
 - [Environment Variables](../configuration/environment-variables) — `INVOKR_MODE`, `INVOKR_DASHBOARD_PATH_PREFIX`, `INVOKR_API_BASE_URL`

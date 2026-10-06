@@ -150,10 +150,11 @@ service-wide key.
 | apiConfigs | object | `{"auth_mode":"disabled","mode":"both"}` | Settings for the api workload. INVOKR_LISTEN_ADDR is derived from `api.service.targetPort`, not set here. |
 | apiConfigs.auth_mode | string | `"disabled"` | `disabled` or `oidc`. Has no default in the API, which refuses to start without it rather than pick an auth posture for itself; the chart supplies one so a default install boots. `disabled` authenticates every request as a development identity -- combine it with `api.ingress.enabled: false`. For `oidc`, add `oidc_issuer_url`, `oidc_client_id` and `oidc_redirect_host` here, and `oidc_client_secret` under `secrets`; any key in these maps is rendered as `INVOKR_<KEY>`. |
 | apiConfigs.mode | string | `"both"` | `api`, `dashboard` or `both`. |
-| configs | object | `{"db_pool_size":20,"kms_enabled":false,"path_prefix":"/invokr"}` | Non-secret settings shared by both workloads. |
+| configs | object | `{"db_pool_size":20,"gcp_kms_key_name":null,"path_prefix":"/invokr","secrets_manager":"no_encryption"}` | Non-secret settings shared by both workloads. |
 | configs.db_pool_size | int | `20` | Connection pool size, PER POD. Multiply by total replicas and compare against the database's max_connections before scaling. |
-| configs.kms_enabled | bool | `false` | Whether secrets arrive as base64 KMS ciphertext. Requires `kms.enabled`. |
+| configs.gcp_kms_key_name | string | `nil` | Full GCP KMS key resource name. Required when `secrets_manager: gcp_kms`. Credentials come from Application Default Credentials (Workload Identity on GKE), so nothing else needs setting. Example: projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k> |
 | configs.path_prefix | string | `"/invokr"` | URL prefix the API is served under. Single source of truth: feeds the ingress path, probes, ServiceMonitor path and dashboard config. |
+| configs.secrets_manager | string | `"no_encryption"` | Secrets manager: `no_encryption` (default), `aws_kms` or `gcp_kms`. With a provider selected, every key under `secrets` must be base64 ciphertext -- it is all-or-nothing, and that includes `oidc_client_secret` if OIDC is on. For `aws_kms`, grant kms:Decrypt via `serviceAccount.annotations`. |
 | dashboard.enabled | bool | `true` | Serve the web dashboard. Requires `apiConfigs.mode` to be `both` or `dashboard`. |
 | dashboard.pathPrefix | string | `"/dashboard"` | URL prefix the dashboard is served under. |
 | database.host | string | `""` | Database host. Required when `migration.enabled` — the Job's pg_isready check needs it, and it cannot be parsed out of the connection string. |
@@ -180,7 +181,6 @@ service-wide key.
 | istio.virtualService.gateways | list | `[]` | Gateways the VirtualService attaches to. |
 | istio.virtualService.hosts | list | `[]` | Hosts the VirtualService matches. |
 | istio.virtualService.http | list | `[]` | Routing rules. The destination is set to the API service automatically. |
-| kms | object | `{"enabled":false}` | Selects the `-kms` image variants, which expect `secrets` to hold base64 KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`, and set AWS_REGION via `extraEnv` -- the SDK defaults to us-east-1, not to the cluster's region. |
 | migration.args | list | `["migrate"]` | Arguments passed to the api image to run migrations and exit. |
 | migration.enabled | bool | `false` | Run migrations as a pre-install/pre-upgrade hook. Helm blocks on hook Jobs, so a failed migration aborts the release before any pod is replaced.  OFF by default: the api image has no migrate-and-exit path yet, so the Job would start an API server that never exits and the hook would hang until Helm's timeout. Apply migrations/*.sql by hand until that lands, then set this to true. |
 | migration.mode | string | `"run"` | INVOKR_DB_MIGRATION_MODE for the Job. `run` applies pending migrations; `dry-run` prints the SQL without applying it, for review or for baselining a database whose schema was applied by hand. App pods never migrate. |
@@ -189,10 +189,10 @@ service-wide key.
 | nameOverride | string | `""` | Override the chart name. |
 | nodeSelector | object | `{}` | Node selector for all workloads. Overrides `global.nodeSelector`. |
 | podSecurityContext | object | `{}` | Pod-level security context. Empty because the published images do not declare a non-root USER, so `runAsNonRoot` would stop every pod starting. |
-| secrets.database_url | string | `""` |  |
+| secrets.database_url | string | `""` | PostgreSQL connection string. MUST be the writer endpoint: pg_cron runs jobs only on the writer, so a reader gives a working API and zero executions. |
 | secrets.encryption_key | string | `""` | 32-byte hex key encrypting stored secrets at rest. |
 | securityContext | object | `{}` | Container-level security context. |
-| serviceAccount.annotations | object | `{}` | Annotations. Add the IRSA role ARN here when `kms.enabled`. |
+| serviceAccount.annotations | object | `{}` | Annotations. Add the IRSA role ARN here when `configs.secrets_manager: aws_kms`. |
 | serviceAccount.automount | bool | `false` | Automount the ServiceAccount's API credentials. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
 | serviceAccount.name | string | `""` | Name. Generated from the fullname when empty. |

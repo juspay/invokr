@@ -285,7 +285,8 @@ kms-init: kms-up
 kms-encrypt VALUE:
     @./scripts/kms-encrypt.sh "{{VALUE}}"
 
-# Run API + worker with KMS feature enabled (uses .env.kms)
+# Run API + worker against LocalStack KMS (uses .env.kms, which sets
+# INVOKR_SECRETS_MANAGER=aws_kms to select the provider at runtime)
 kms-dev:
     #!/usr/bin/env bash
     set -e
@@ -299,8 +300,8 @@ kms-dev:
     set -a && . ./.env.kms && set +a
     trap 'kill 0' EXIT
     echo "Starting KMS-enabled dev services..."
-    cargo run --features kms -p invokr-api &
-    INVOKR_METRICS_PORT=9090 RUST_LOG=info cargo run --features kms -p invokr-worker &
+    cargo run -p invokr-api &
+    INVOKR_METRICS_PORT=9090 RUST_LOG=info cargo run -p invokr-worker &
     cargo run -p invokr-mock-server &
     echo "All services starting with KMS. Press Ctrl+C to stop."
     wait

@@ -10,7 +10,6 @@ path = "src/main.rs"
 
 [features]
 default = []
-kms = ["invokr-common/kms"]
 pg_cron = []
 
 [dependencies]

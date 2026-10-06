@@ -46,14 +46,10 @@ invokr-worker = { git = "https://github.com/juspay/invokr", branch = "main" }
 |---------|-------------|
 | `kafka` | Kafka dispatcher support via `rdkafka` |
 | `redis-stream` | Redis Stream dispatcher support via `redis` |
-| `kms` | AWS KMS integration for at-rest secret encryption |
 
 ```toml
 # Example: Kafka + Redis Stream dispatchers
 invokr-worker = { git = "https://github.com/juspay/invokr", branch = "main", features = ["kafka", "redis-stream"] }
-
-# Example: KMS-encrypted secrets at rest
-invokr-worker = { git = "https://github.com/juspay/invokr", branch = "main", features = ["kms"] }
 ```
 
 Without a feature, the corresponding endpoint type returns an `UNSUPPORTED_TYPE` error at dispatch time.
@@ -73,7 +69,7 @@ openssl rand -hex 32
 **In production, always use a strong, randomly generated key.** The default all-zeros key (`0000...0000`) provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
 :::
 
-For local development without secrets, passing 64 zeros is acceptable. See [Environment Variables](../configuration/environment-variables) (`INVOKR_ENCRYPTION_KEY`) and [AWS KMS Integration](./kms) for production key management.
+For local development without secrets, passing 64 zeros is acceptable. See [Environment Variables](../configuration/environment-variables) (`INVOKR_ENCRYPTION_KEY`) and [Secrets Management](./secrets-management) for production key management.
 
 ---
 
@@ -355,6 +351,6 @@ See [Dual Deployment Modes](../architecture/dual-deployment) for the full compar
 - [Dual Deployment Modes](../architecture/dual-deployment) — conceptual model and method-by-method comparison
 - [Docker](./docker) — PostgreSQL image with `pg_cron`, dev compose stack
 - [Environment Variables](../configuration/environment-variables) — full configuration reference
-- [AWS KMS Integration](./kms) — encrypting the encryption key at rest
+- [Secrets Management](./secrets-management) — encrypting the encryption key at rest
 - [HTTP Endpoints](../guides/http-endpoints) — endpoint spec and template resolution
 - [Core Concepts](../core-concepts/overview) — the three-step workflow

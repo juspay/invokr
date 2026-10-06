@@ -4,13 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[features]
-default = []
-kms = ["aws-config", "aws-sdk-kms"]
-
 [dependencies]
-aws-config = { workspace = true, optional = true }
-aws-sdk-kms = { workspace = true, optional = true }
+aws-config.workspace = true
+aws-sdk-kms.workspace = true
+google-cloud-kms.workspace = true
+async-trait.workspace = true
 tokio.workspace = true
 sqlx.workspace = true
 log.workspace = true

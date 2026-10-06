@@ -192,7 +192,6 @@ The worker crate supports optional features that can be enabled at compile time:
 |---------|-------------|-------------|
 | `kafka` | Kafka dispatcher support via `rdkafka` | `--features invokr-worker/kafka` |
 | `redis-stream` | Redis Stream dispatcher support via `redis` | `--features invokr-worker/redis-stream` |
-| `kms` | AWS KMS integration for secret encryption (in `invokr-common`) | `--features invokr-worker/kms` |
 | `pg_cron` | pg_cron extension for CRON scheduling (database-level) | Enabled via migration |
 
 ```bash
@@ -203,7 +202,7 @@ cargo build --workspace --features invokr-worker/kafka
 cargo build --workspace --features invokr-worker/redis-stream
 
 # Build with all features
-cargo build --workspace --features invokr-worker/kafka,invokr-worker/redis-stream,invokr-worker/kms
+cargo build --workspace --features invokr-worker/kafka,invokr-worker/redis-stream
 ```
 
 Kafka and Redis Stream dispatchers are conditionally compiled. When not enabled, the pipeline returns an `UNSUPPORTED_TYPE` error for those endpoint types. The `pg_cron` extension is installed at the database level via migration and is always available.

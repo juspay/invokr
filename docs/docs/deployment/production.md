@@ -9,22 +9,21 @@ This page covers deploying Invokr in a production-like configuration using Docke
 
 ## docker-compose.prod.yml
 
-The `docker-compose.prod.yml` file defines a complete prod-like environment with all services on a shared Docker network (`invokr-net`) and KMS encryption enabled:
+The `docker-compose.prod.yml` file defines a complete prod-like environment with all services on a shared Docker network (`invokr-net`) and the AWS KMS secrets provider enabled:
 
 | Service | Image / Build | Port | Purpose |
 |---------|---------------|------|---------|
 | `postgres` | `docker/postgres` (custom, pg_cron) | 5432 | PostgreSQL database with health check |
 | `localstack` | `localstack/localstack:3` | 4566 | LocalStack KMS for at-rest encryption of sensitive env vars |
 | `invokr-mock-server` | Built from `Dockerfile` | 9999 | Mock HTTP server (used for testing) |
-| `invokr-server` | Built from `Dockerfile` (API + dashboard + KMS) | 8080 | API server in `both` mode with path prefix and dashboard |
-| `invokr-worker` | Built from `Dockerfile` (KMS) | 9090 | Worker with metrics listener |
+| `invokr-server` | Built from `Dockerfile` (API + dashboard) | 8080 | API server in `both` mode with path prefix and dashboard |
+| `invokr-worker` | Built from `Dockerfile` | 9090 | Worker with metrics listener |
 
 ### Key differences from dev compose
 
 - All services are on a shared `invokr-net` bridge network (no `host.docker.internal` needed)
 - PostgreSQL uses port **5432** (not 5434)
-- The API server is built with `FEATURES=kms` and `INCLUDE_DASHBOARD=true`
-- The worker is built with `FEATURES=kms`
+- The API server is built with `INCLUDE_DASHBOARD=true`
 - The API server runs in `INVOKR_MODE=both` with `INVOKR_PATH_PREFIX=/invokr` and `INVOKR_DASHBOARD_PATH_PREFIX=/dashboard`
 - All services have health checks with retry logic
 - Service dependencies use `condition: service_healthy` for ordered startup
@@ -45,7 +44,7 @@ This runs `scripts/docker-prod.sh`, which performs a two-phase startup:
 3. Waits for PostgreSQL and LocalStack to become healthy
 4. Runs all database migrations
 
-**Phase 2 — KMS + Application:**
+**Phase 2 — Secrets + Application:**
 1. Creates a KMS key on LocalStack
 2. Encrypts `INVOKR_DATABASE_URL`, `INVOKR_API_KEY`, and `INVOKR_ENCRYPTION_KEY` using the KMS key
 3. Writes the encrypted values to `.env.prod.kms`
@@ -74,7 +73,7 @@ docker compose -f docker-compose.prod.yml exec -T postgres sh -c '
   PGPASSWORD=invokr psql -h localhost -U invokr -d invokr_db -f /migrations/20260322000001_pg_cron.sql
 '
 
-# Create KMS key and encrypt values (see KMS Integration page for details)
+# Create KMS key and encrypt values (see the Secrets Management page for details)
 # Then start app services:
 docker compose -f docker-compose.prod.yml up -d invokr-server invokr-worker
 ```
@@ -113,7 +112,7 @@ Before deploying to production, ensure the following are configured:
 - [ ] **`INVOKR_API_KEY`** — set to a strong, unique API key (not `dev-api-key`)
 - [ ] **`INVOKR_ENCRYPTION_KEY`** — set to a valid 32-byte (64 hex character) AES-256 key (not the default all-zeros key)
 - [ ] **`INVOKR_DATABASE_URL`** — point to your production PostgreSQL instance with appropriate credentials
-- [ ] **KMS enabled** — set `INVOKR_KMS_ENABLED=true` and encrypt `INVOKR_DATABASE_URL`, `INVOKR_API_KEY`, and `INVOKR_ENCRYPTION_KEY` via AWS KMS. See [AWS KMS Integration](./kms).
+- [ ] **Secrets provider selected** — set `INVOKR_SECRETS_MANAGER=aws_kms` (or `gcp_kms`) and encrypt every sensitive variable you set: `INVOKR_DATABASE_URL`, `INVOKR_ENCRYPTION_KEY`, `INVOKR_OIDC_CLIENT_SECRET`, `INVOKR_API_STATIC_TOKENS` and the legacy `INVOKR_API_KEY`. See [Secrets Management](./secrets-management).
 - [ ] **PostgreSQL credentials** — use strong passwords, not the default `invokr:invokr`
 
 ### Database
@@ -283,7 +282,7 @@ See the [Monitoring guide](../guides/monitoring) for details on Prometheus metri
 ## See also
 
 - [Docker](./docker) — Dockerfile and dev compose details
-- [AWS KMS Integration](./kms) — encrypting sensitive environment variables
+- [Secrets Management](./secrets-management) — encrypting sensitive environment variables
 - [Dashboard](./dashboard) — building and serving the WASM dashboard
 - [Environment Variables](../configuration/environment-variables) — full configuration reference
 - [Monitoring](../guides/monitoring) — Prometheus and Grafana setup

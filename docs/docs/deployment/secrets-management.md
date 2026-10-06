@@ -1,64 +1,57 @@
 ---
-id: kms
-title: AWS KMS Integration
+id: secrets-management
+title: Secrets Management
 ---
 
-# AWS KMS Integration
+# Secrets Management
 
-Invokr supports encrypting sensitive environment variables at rest using AWS Key Management Service (KMS). When KMS is enabled, the database URL, API key, and encryption key are stored as base64-encoded KMS ciphertext and transparently decrypted at startup.
+Invokr can decrypt sensitive environment variables at startup through a pluggable provider. `INVOKR_SECRETS_MANAGER` selects one:
+
+| Value | Behaviour |
+|---|---|
+| `no_encryption` (default) | Variables are read verbatim. |
+| `aws_kms` | Variables must be base64-encoded AWS KMS ciphertext, decrypted at startup. Region comes from the standard chain; grant `kms:Decrypt` via IRSA. |
+| `gcp_kms` | Variables must be base64-encoded Cloud KMS ciphertext. Requires `INVOKR_GCP_KMS_KEY_NAME`; credentials via Application Default Credentials. |
+
+There is a single image per workload — every provider is compiled in, so no special image tag is required.
 
 ## How it works
 
-When `INVOKR_KMS_ENABLED=true` and the `kms` Cargo feature is compiled in, Invokr's `SensitiveEnvReader` intercepts reads of three environment variables:
+With a provider selected, Invokr's `SensitiveEnvReader` intercepts reads of the sensitive environment variables:
 
 | Variable | Description |
 |----------|-------------|
 | `INVOKR_DATABASE_URL` | PostgreSQL connection string |
-| `INVOKR_API_KEY` | Bearer token for API authentication |
 | `INVOKR_ENCRYPTION_KEY` | AES-256 key for secret encryption |
+| `INVOKR_OIDC_CLIENT_SECRET` | OIDC client secret |
+| `INVOKR_API_STATIC_TOKENS` | Static API tokens |
+| `INVOKR_API_KEY` | Bearer token for API authentication (legacy) |
 
-Instead of reading plaintext values, the reader calls `aws kms decrypt` on the base64-encoded ciphertext stored in the environment variable and uses the decrypted plaintext value in memory.
+Instead of reading plaintext values, the reader hands the base64-encoded ciphertext stored in the environment variable to the provider and uses the decrypted plaintext value in memory.
 
-:::info
-The `kms` feature must be compiled into the binary. If `INVOKR_KMS_ENABLED=true` but the binary was built without `--features kms`, Invokr will fail to start with an error:
+This is all-or-nothing: with a provider selected, **every** variable above is treated as ciphertext. Plaintext and ciphertext cannot be mixed.
 
-```
-INVOKR_KMS_ENABLED=true but invokr was compiled without the 'kms' feature
-```
-:::
+If a variable is not set at all, there is nothing to decrypt and the provider is not called for it.
 
-## Building with KMS support
+## AWS KMS
 
-```bash
-# API server with KMS
-cargo build --release -p invokr-api --features kms
+### AWS region
 
-# Worker with KMS
-cargo build --release -p invokr-worker --features kms
+The SDK resolves the region from the standard chain — `AWS_REGION`, `AWS_DEFAULT_REGION`, IRSA, then IMDS. Invokr does not override it. Setting `AWS_REGION` explicitly is supported but not required.
 
-# Both with KMS
-cargo build --workspace --features kms
-```
+### AWS environment variables
 
-For Docker builds, pass the `FEATURES` build arg:
-
-```bash
-docker build --build-arg BINARY=invokr-api --build-arg FEATURES=kms -t invokr-api-kms .
-```
-
-## AWS environment variables
-
-KMS requires standard AWS SDK environment variables for authentication:
+The AWS KMS provider uses the standard AWS SDK environment variables for authentication:
 
 | Variable | Description | Dev (LocalStack) | Production |
 |----------|-------------|------------------|------------|
 | `AWS_ENDPOINT_URL` | KMS endpoint URL | `http://localhost:4566` | *(omit — uses AWS)* |
-| `AWS_REGION` | AWS region | `us-east-1` | Your KMS key's region |
-| `AWS_ACCESS_KEY_ID` | AWS access key | `test` (any value for LocalStack) | Your real access key |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key | `test` (any value for LocalStack) | Your real secret key |
+| `AWS_REGION` | AWS region | `us-east-1` | *(optional — resolved from the standard chain)* |
+| `AWS_ACCESS_KEY_ID` | AWS access key | `test` (any value for LocalStack) | *(omit when using IRSA)* |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key | `test` (any value for LocalStack) | *(omit when using IRSA)* |
 
 :::tip
-In production, omit `AWS_ENDPOINT_URL` to use the real AWS KMS endpoint. Use IAM roles or environment-based credentials per your AWS best practices.
+In production, omit `AWS_ENDPOINT_URL` to use the real AWS KMS endpoint. Prefer IRSA (IAM Roles for Service Accounts) over static credentials, and grant the role `kms:Decrypt` on your key.
 :::
 
 ## Local development with LocalStack
@@ -84,7 +77,7 @@ This runs `scripts/kms-init.sh`, which:
 1. Creates a KMS key on LocalStack with the description "Invokr dev encryption key"
 2. Creates an alias `alias/invokr-dev` for the key
 3. Saves the key ID to `.kms-key-id`
-4. Encrypts the three sensitive env vars:
+4. Encrypts the sensitive env vars it sets:
    - `INVOKR_DATABASE_URL`
    - `INVOKR_API_KEY`
    - `INVOKR_ENCRYPTION_KEY`
@@ -105,13 +98,13 @@ To encrypt custom values, set them before running `just kms-init`:
 INVOKR_API_KEY=my-secret-api-key INVOKR_DATABASE_URL=postgresql://user:pass@db:5432/mydb just kms-init
 ```
 
-### Step 3: Run with KMS
+### Step 3: Run with the AWS KMS provider
 
 ```bash
 just kms-dev
 ```
 
-This starts the API server and worker with the `kms` feature enabled, using the `.env.kms` file. The script verifies `.env.kms` exists before starting.
+This starts the API server and worker using the `.env.kms` file, which selects `INVOKR_SECRETS_MANAGER=aws_kms`. The script verifies `.env.kms` exists before starting.
 
 :::note
 `just kms-dev` unsets the plaintext `INVOKR_DATABASE_URL`, `INVOKR_API_KEY`, and `INVOKR_ENCRYPTION_KEY` from the environment before starting, ensuring only the KMS-encrypted versions are used.
@@ -138,9 +131,9 @@ The script outputs the base64-encoded KMS ciphertext, which you can paste into y
 The `kms-init.sh` script generates a file like this:
 
 ```bash
-# Generated by scripts/kms-init.sh — KMS-enabled dev environment
+# Generated by scripts/kms-init.sh — AWS KMS dev environment
 
-INVOKR_KMS_ENABLED=true
+INVOKR_SECRETS_MANAGER=aws_kms
 
 # Encrypted values (base64-encoded KMS ciphertext)
 INVOKR_DATABASE_URL=AQICAHh...base64...
@@ -169,7 +162,7 @@ AWS_SECRET_ACCESS_KEY=test
 just kms-down
 ```
 
-## Production KMS setup
+## Production AWS KMS setup
 
 In production, you use a real AWS KMS key instead of LocalStack.
 
@@ -198,45 +191,50 @@ aws kms encrypt \
   --output text
 ```
 
-Repeat for `INVOKR_API_KEY` and `INVOKR_ENCRYPTION_KEY`.
+Repeat for every sensitive variable you set — `INVOKR_ENCRYPTION_KEY`, `INVOKR_OIDC_CLIENT_SECRET`, `INVOKR_API_STATIC_TOKENS` and the legacy `INVOKR_API_KEY`.
 
 ### 3. Configure the environment
 
 Set the following environment variables in your production deployment:
 
 ```bash
-INVOKR_KMS_ENABLED=true
+INVOKR_SECRETS_MANAGER=aws_kms
 
 # Encrypted values (base64-encoded KMS ciphertext from step 2)
 INVOKR_DATABASE_URL=<encrypted-db-url>
-INVOKR_API_KEY=<encrypted-api-key>
 INVOKR_ENCRYPTION_KEY=<encrypted-encryption-key>
+INVOKR_OIDC_CLIENT_SECRET=<encrypted-oidc-client-secret>
+INVOKR_API_STATIC_TOKENS=<encrypted-static-tokens>
 
 # AWS configuration (omit AWS_ENDPOINT_URL for real AWS)
-AWS_REGION=us-east-1
-# Use IAM roles or explicit credentials:
+# AWS_REGION is optional — the SDK resolves it from the standard chain
+# Prefer IRSA over explicit credentials:
 # AWS_ACCESS_KEY_ID=<your-access-key>
 # AWS_SECRET_ACCESS_KEY=<your-secret-key>
-```
-
-### 4. Build and deploy with the kms feature
-
-Ensure your production binaries are built with `--features kms`. For Docker:
-
-```bash
-docker build --build-arg BINARY=invokr-api --build-arg FEATURES=kms -t invokr-api:prod .
-docker build --build-arg BINARY=invokr-worker --build-arg FEATURES=kms -t invokr-worker:prod .
 ```
 
 :::danger
 **Do not** set `AWS_ENDPOINT_URL` in production — this would redirect KMS calls to a non-AWS endpoint. The variable should only be set for LocalStack development.
 :::
 
+## GCP KMS
+
+Select the provider and point it at a key:
+
+```bash
+INVOKR_SECRETS_MANAGER=gcp_kms
+INVOKR_GCP_KMS_KEY_NAME=projects/<project>/locations/<location>/keyRings/<ring>/cryptoKeys/<key>
+```
+
+`INVOKR_GCP_KMS_KEY_NAME` is required for this provider and must be the full Cloud KMS key resource name. Credentials are resolved through Application Default Credentials — Workload Identity on GKE, or `GOOGLE_APPLICATION_CREDENTIALS` pointing at a service account key elsewhere. The identity needs the `cloudkms.cryptoKeyVersions.useToDecrypt` permission on the key.
+
+Sensitive variables are base64-encoded Cloud KMS ciphertext, exactly as with AWS KMS.
+
 ## The docker-prod.sh script
 
-The `scripts/docker-prod.sh` script automates the full prod-like KMS setup in Docker. It:
+The `scripts/docker-prod.sh` script automates the full prod-like AWS KMS setup in Docker. It:
 
-1. Builds all images with `FEATURES=kms`
+1. Builds all images
 2. Starts PostgreSQL and LocalStack
 3. Runs database migrations
 4. Creates a KMS key on LocalStack via `awslocal`
@@ -261,7 +259,7 @@ env_file:
 | Key alias | `alias/invokr-dev` | `alias/invokr-prod` |
 | Key ID storage | `.kms-key-id` file | AWS KMS console / IaC |
 | Endpoint | `http://localhost:4566` | AWS (default endpoint) |
-| Credentials | `test` / `test` | IAM role or explicit keys |
+| Credentials | `test` / `test` | IRSA or explicit keys |
 | Key rotation | Manual (re-run `kms-init`) | Enable automatic key rotation in AWS |
 
 :::tip
@@ -272,4 +270,4 @@ Enable [automatic key rotation](https://docs.aws.amazon.com/kms/latest/developer
 
 - [Production Deployment](./production) — full prod-like Docker setup
 - [Docker](./docker) — Dockerfile and build arguments
-- [Environment Variables](../configuration/environment-variables) — all environment variables including KMS
+- [Environment Variables](../configuration/environment-variables) — all environment variables including `INVOKR_SECRETS_MANAGER`

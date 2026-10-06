@@ -147,7 +147,7 @@ const sidebars: SidebarsConfig = {
         'deployment/docker',
         'deployment/library-mode',
         'deployment/production',
-        'deployment/kms',
+        'deployment/secrets-management',
         'deployment/dashboard',
       ],
     },
