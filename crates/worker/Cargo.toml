@@ -12,7 +12,6 @@ path = "src/main.rs"
 default = []
 kafka = ["rdkafka"]
 redis-stream = ["redis"]
-kms = ["invokr-common/kms"]
 
 [dependencies]
 invokr-common = { path = "../common" }
