@@ -74,13 +74,11 @@ app.kubernetes.io/component: {{ .component }}
 
 {{/* Resolve a container image; pass a dict of `root` and `repository`.
      Registry precedence is global.imageRegistry then image.registry, so an ECR
-     mirror is one value. `kms.enabled` appends the -kms suffix. */}}
+     mirror is one value. There is one image per workload -- every secrets
+     provider is compiled in and selected by `configs.secrets_manager`. */}}
 {{- define "invokr.image" -}}
 {{- $root := .root -}}
 {{- $repository := .repository -}}
-{{- if $root.Values.kms.enabled -}}
-{{- $repository = printf "%s-kms" $repository -}}
-{{- end -}}
 {{- $registry := $root.Values.global.imageRegistry | default $root.Values.image.registry -}}
 {{/* toString: a numeric tag parses as int64, which %s mangles. */}}
 {{- $tag := $root.Values.image.tag | default $root.Chart.AppVersion | toString -}}
@@ -155,6 +153,21 @@ affinity:
 {{- end -}}
 {{- if and .Values.migration.enabled (not .Values.database.host) -}}
   {{- fail "invokr: migration.enabled is true, so database.host must be set for the Job's pg_isready check." -}}
+{{- end -}}
+{{/* The provider name reaches the app as INVOKR_SECRETS_MANAGER. An
+     unrecognised value aborts startup, so catch it at render time instead. */}}
+{{- $sm := .Values.configs.secrets_manager | default "no_encryption" -}}
+{{- if not (has $sm (list "no_encryption" "aws_kms" "gcp_kms")) -}}
+  {{- fail (printf "invokr: configs.secrets_manager '%s' is not recognised; expected no_encryption, aws_kms or gcp_kms." $sm) -}}
+{{- end -}}
+{{/* No guard on AWS credentials: the chart cannot know how they will be
+     supplied. IRSA, an EC2 instance role via IMDS, static keys through
+     `extraEnvFrom` and a mounted credentials file all work, so requiring the
+     EKS annotation would reject three of the four -- and all of them on GKE or
+     a local cluster. The provider's own validate() fails fast at startup
+     instead, naming what is missing. */}}
+{{- if and (eq $sm "gcp_kms") (not .Values.configs.gcp_kms_key_name) -}}
+  {{- fail "invokr: configs.secrets_manager is gcp_kms, so configs.gcp_kms_key_name must be the full key resource name (projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>)." -}}
 {{- end -}}
 {{/* An HPA computes utilization as a percentage of the CPU REQUEST. With no
      request there is no denominator, so it reports <unknown> and never scales --

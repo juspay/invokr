@@ -49,8 +49,16 @@ configs:
   # -- Connection pool size, PER POD. Multiply by total replicas and compare
   # against the database's max_connections before scaling.
   db_pool_size: 20
-  # -- Whether secrets arrive as base64 KMS ciphertext. Requires `kms.enabled`.
-  kms_enabled: false
+  # -- Secrets manager: `no_encryption` (default), `aws_kms` or `gcp_kms`. With
+  # a provider selected, every key under `secrets` must be base64 ciphertext --
+  # it is all-or-nothing, and that includes `oidc_client_secret` if OIDC is on.
+  # For `aws_kms`, grant kms:Decrypt via `serviceAccount.annotations`.
+  secrets_manager: no_encryption
+  # -- Full GCP KMS key resource name. Required when `secrets_manager: gcp_kms`.
+  # Credentials come from Application Default Credentials (Workload Identity on
+  # GKE), so nothing else needs setting.
+  # Example: projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>
+  gcp_kms_key_name: null
 
 # -- Settings for the api workload. INVOKR_LISTEN_ADDR is derived from
 # `api.service.targetPort`, not set here.
@@ -93,12 +101,12 @@ workerConfigs:
 # obviously wrong. Variables the process needs under some OTHER name therefore
 # have no home there, so they go here.
 #
-# The motivating case is `kms.enabled`: the AWS SDK reads AWS_REGION, and
-# aws_config falls back to us-east-1 when it is unset, so a key in any other
-# region fails to decrypt and every pod crash-loops on startup.
+# The AWS SDK now resolves its region from the standard chain (AWS_REGION,
+# AWS_DEFAULT_REGION, IRSA, IMDS), so setting AWS_REGION here is optional. It
+# remains the right place for a provider credential the SDK cannot discover.
 #
 # Applied to the api, the worker AND the migration Job -- the Job runs the same
-# image with the same INVOKR_KMS_ENABLED, so it must decrypt too.
+# image with the same INVOKR_SECRETS_MANAGER, so it must decrypt too.
 
 # -- Extra environment variables, in Kubernetes `env` form.
 extraEnv: []
@@ -112,12 +120,13 @@ extraEnvFrom: []
 #      name: my-aws-credentials
 
 # ─── Secrets ────────────────────────────────────────────────────────────────
-# Rendered into a Secret as INVOKR_<KEY_UPPERCASED>. With `kms.enabled`, these
-# are expected to be base64 KMS ciphertext rather than plaintext.
+# Rendered into a Secret as INVOKR_<KEY_UPPERCASED>. With `configs.secrets_manager`
+# set to anything but `no_encryption`, these are expected to be ciphertext rather
+# than plaintext.
 
 secrets:
-  # -- PostgreSQL connection string. MUST be the writer endpoint -- pg_cron runs
-  # jobs only on the writer.
+  # -- PostgreSQL connection string. MUST be the writer endpoint: pg_cron runs
+  # jobs only on the writer, so a reader gives a working API and zero executions.
   database_url: ""
   # -- 32-byte hex key encrypting stored secrets at rest.
   encryption_key: ""
@@ -125,13 +134,6 @@ secrets:
 # -- Use an existing Secret instead of rendering one. Must contain
 # INVOKR_DATABASE_URL and INVOKR_ENCRYPTION_KEY.
 existingSecret: ""
-
-# -- Selects the `-kms` image variants, which expect `secrets` to hold base64
-# KMS ciphertext. Grant decrypt permission via `serviceAccount.annotations`, and
-# set AWS_REGION via `extraEnv` -- the SDK defaults to us-east-1, not to the
-# cluster's region.
-kms:
-  enabled: false
 
 # ─── Database ───────────────────────────────────────────────────────────────
 # Used only by the migration Job's pg_isready init container. The application
@@ -299,7 +301,7 @@ serviceAccount:
   create: true
   # -- Automount the ServiceAccount's API credentials.
   automount: false
-  # -- Annotations. Add the IRSA role ARN here when `kms.enabled`.
+  # -- Annotations. Add the IRSA role ARN here when `configs.secrets_manager: aws_kms`.
   annotations: {}
   # -- Name. Generated from the fullname when empty.
   name: ""
