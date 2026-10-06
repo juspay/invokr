@@ -37,6 +37,10 @@ pub enum JobTrigger {
 
 /// Abstracts over library-mode (`InvokrLibraryClient`) and service-mode (`InvokrHttpClient`).
 /// Switching between the two requires only env-var changes — no code changes at call sites.
+// Pre-existing: clippy 1.99 flags `double_must_use` on every `async_trait`
+// method returning a Result, because the macro adds `#[must_use]` to the boxed
+// future it generates. Nothing here to remove.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait InvokrClient: Send + Sync {
     async fn upsert_secret(

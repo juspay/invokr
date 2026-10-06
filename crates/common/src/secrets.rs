@@ -16,6 +16,12 @@ pub use no_encryption::NoEncryption;
 
 use crate::env::get_from_env_or_default;
 
+// `async_trait` rewrites each `async fn` into a `#[must_use]` boxed future, and
+// the methods already return a `#[must_use]` Result, which clippy 1.99 reports
+// as `double_must_use`. The attribute is macro-generated, so there is nothing to
+// remove; native `async fn` in traits is not an option because the trait must
+// stay dyn-compatible for `Box<dyn SecretProvider>`.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait SecretProvider: Send + Sync {
     /// Decrypt one value. `name` is used only to name the variable in errors.
