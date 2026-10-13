@@ -112,7 +112,7 @@ Before deploying to production, ensure the following are configured:
 - [ ] **`INVOKR_API_KEY`** — set to a strong, unique API key (not `dev-api-key`)
 - [ ] **`INVOKR_ENCRYPTION_KEY`** — set to a valid 32-byte (64 hex character) AES-256 key (not the default all-zeros key)
 - [ ] **`INVOKR_DATABASE_URL`** — point to your production PostgreSQL instance with appropriate credentials
-- [ ] **Secrets provider selected** — set `INVOKR_SECRETS_MANAGER=aws_kms` (or `gcp_kms`) and encrypt every sensitive variable you set: `INVOKR_DATABASE_URL`, `INVOKR_ENCRYPTION_KEY`, `INVOKR_OIDC_CLIENT_SECRET`, `INVOKR_API_STATIC_TOKENS` and the legacy `INVOKR_API_KEY`. See [Secrets Management](./secrets-management).
+- [ ] **Secrets provider selected** — set `INVOKR_SECRETS_MANAGER=aws_kms` (or `gcp_kms`, `oci_kms`) and encrypt every sensitive variable you set: `INVOKR_DATABASE_URL`, `INVOKR_ENCRYPTION_KEY`, `INVOKR_OIDC_CLIENT_SECRET`, `INVOKR_API_STATIC_TOKENS` and the legacy `INVOKR_API_KEY`. See [Secrets Management](./secrets-management).
 - [ ] **PostgreSQL credentials** — use strong passwords, not the default `invokr:invokr`
 
 ### Database

@@ -12,6 +12,7 @@ Invokr can decrypt sensitive environment variables at startup through a pluggabl
 | `no_encryption` (default) | Variables are read verbatim. |
 | `aws_kms` | Variables must be base64-encoded AWS KMS ciphertext, decrypted at startup. Region comes from the standard chain; grant `kms:Decrypt` via IRSA. |
 | `gcp_kms` | Variables must be base64-encoded Cloud KMS ciphertext. Requires `INVOKR_GCP_KMS_KEY_NAME`; credentials via Application Default Credentials. |
+| `oci_kms` | Variables must be base64-encoded OCI Vault KMS ciphertext. Requires `INVOKR_OCI_KMS_CRYPTO_ENDPOINT` and `INVOKR_OCI_KMS_KEY_ID`; credentials via OKE Workload Identity. |
 
 There is a single image per workload — every provider is compiled in, so no special image tag is required.
 
@@ -229,6 +230,61 @@ INVOKR_GCP_KMS_KEY_NAME=projects/<project>/locations/<location>/keyRings/<ring>/
 `INVOKR_GCP_KMS_KEY_NAME` is required for this provider and must be the full Cloud KMS key resource name. Credentials are resolved through Application Default Credentials — Workload Identity on GKE, or `GOOGLE_APPLICATION_CREDENTIALS` pointing at a service account key elsewhere. The identity needs the `cloudkms.cryptoKeyVersions.useToDecrypt` permission on the key.
 
 Sensitive variables are base64-encoded Cloud KMS ciphertext, exactly as with AWS KMS.
+
+## OCI KMS
+
+Select the provider and point it at a vault key:
+
+```bash
+INVOKR_SECRETS_MANAGER=oci_kms
+INVOKR_OCI_KMS_CRYPTO_ENDPOINT=https://<vault>-crypto.kms.<region>.oraclecloud.com
+INVOKR_OCI_KMS_KEY_ID=ocid1.key.oc1.<region>.<...>
+```
+
+Both are required. Like GCP, OCI names the key on every request, so neither can be inferred. Both appear on the vault's page in the OCI console. Use the **cryptographic** endpoint, not the management endpoint listed beside it, and the **key** OCID, not the vault's. Startup fails with the variable named if either is wrong in one of these ways, or if the endpoint is not `https://`.
+
+The client is Hyperswitch's [`oci_kms`](https://github.com/juspay/hyperswitch/tree/main/crates/oci_kms) crate. There is no official OCI Rust SDK.
+
+### Credentials
+
+- **Inside Kubernetes:** OKE Workload Identity, which requires an **Enhanced** cluster. The pod's service account token is exchanged for a short-lived OCI session token, and no credential is stored. This never falls back to a config file inside Kubernetes.
+- **Outside Kubernetes** (local development, a VM): the `oci` CLI's `~/.oci/config`. `OCI_CLI_CONFIG_FILE` and `OCI_CLI_PROFILE` select a different file or profile.
+
+With the Helm chart, set `serviceAccount.automount: true`. Workload Identity reads the service account token from its default mount, and the chart refuses to render `oci_kms` without it.
+
+Grant the service accounts permission to use the key. When migrations run as a Helm hook (`migration.enabled: true`), the migration Job runs as a second service account, `<fullname>-migrate`, and also reads `INVOKR_DATABASE_URL`, so it needs the same grant:
+
+```text
+Allow any-user to use keys in compartment <compartment> where all {
+  request.principal.type = 'workload',
+  request.principal.cluster_id = '<cluster-ocid>',
+  request.principal.namespace = '<namespace>',
+  request.principal.service_account = '<fullname>'
+}
+```
+
+Repeat the statement with `request.principal.service_account = '<fullname>-migrate'`, or drop that line to grant every service account in the namespace.
+
+### Encrypting values
+
+```bash
+printf '%s' "postgresql://user:password@host:5432/invokr_db" | base64 | tr -d '\n' > plaintext.b64
+oci kms crypto encrypt \
+  --endpoint "$INVOKR_OCI_KMS_CRYPTO_ENDPOINT" \
+  --key-id "$INVOKR_OCI_KMS_KEY_ID" \
+  --plaintext "$(cat plaintext.b64)" \
+  --query 'data.ciphertext' --raw-output
+rm plaintext.b64
+```
+
+`oci kms crypto encrypt` expects base64 plaintext. Use `printf '%s'` rather than `echo`: `echo` appends a newline, which becomes part of the decrypted value. For `INVOKR_ENCRYPTION_KEY`, that newline makes the key 65 characters long and every secret operation fails.
+
+Repeat for every sensitive variable you set. To check a key and your credentials end to end, run the ignored round-trip test:
+
+```bash
+INVOKR_OCI_KMS_CRYPTO_ENDPOINT=... INVOKR_OCI_KMS_KEY_ID=... \
+  cargo test -p invokr-common secrets::oci -- --ignored --nocapture
+```
 
 ## The docker-prod.sh script
 
