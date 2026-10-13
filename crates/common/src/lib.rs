@@ -13,5 +13,6 @@ pub mod metrics;
 pub mod models;
 pub mod pagination;
 pub mod secrets;
+pub mod service;
 pub mod template;
 pub mod tenant;
