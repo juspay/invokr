@@ -38,7 +38,7 @@ pub trait InvokrClient: Send + Sync {
 | `register_endpoint_with_refs` | Upserts in DB, also setting the payload-spec / config refs | PUT/POST to `/v1/endpoints` with `payload_spec` / `config` |
 | `delete_endpoint` | Deletes from DB | DELETE to `/v1/endpoints/{name}` |
 | `create_job` | Shared job core (`service::jobs`), same as the REST handler | POST to `/v1/jobs` |
-| `provision_workspace` | Applies `workspace_v1.sql` template | POST to `/v1/orgs/{id}/workspaces` |
+| `provision_workspace` | Applies `workspace_v1.sql` template and installs the reaper | POST to `/v1/orgs/{id}/workspaces` |
 | `cancel_job` | Shared job core: retire + unschedule pg_cron in one transaction | POST to `/v1/jobs/{id}/cancel` |
 | `get_execution` | Queries DB directly | GET to `/v1/executions/{id}` |
 
@@ -91,16 +91,26 @@ let client = InvokrLibraryClient::new(
 
 ### Provisioning a Workspace
 
-In library mode, `provision_workspace()` applies the `workspace_v1.sql` template directly to the database, creating all workspace-scoped tables. The `{p}` placeholder in the template is replaced by `table_prefix` verbatim:
+In library mode, `provision_workspace()` applies the `workspace_v1.sql` template directly to the database, creating all workspace-scoped tables, and then installs the workspace's reaper — the same two steps the API runs when it creates a workspace. The `{p}` placeholder in the template is replaced by `table_prefix` verbatim:
 
 ```rust
-pub async fn provision_workspace(&self, schema_name: &str) -> anyhow::Result<()> {
-    Ok(db::workspaces::provision_schema(&self.pool, schema_name, &self.ctx.table_prefix).await?)
+async fn provision_workspace(&self, schema_name: &str) -> anyhow::Result<()> {
+    db::workspaces::provision_schema(&self.pool, schema_name, &self.ctx.table_prefix).await?;
+    db::workspaces::provision_reaper(
+        &self.pool,
+        schema_name,
+        &self.ctx.table_prefix,
+        DEFAULT_REAPER_CRON_EXPRESSION,
+    )
+    .await?;
+    Ok(())
 }
 ```
 
+Both steps are idempotent, so embedders can call it on every startup.
+
 :::info
-In library mode, `provision_workspace()` only creates the tenant schema and tables. It does **not** insert into `public.organizations` or `public.workspaces` — those are managed by the caller. See [Library Mode Setup](../deployment/library-mode) for the full provisioning flow.
+In library mode, `provision_workspace()` does **not** insert into `public.organizations` or `public.workspaces` — those are managed by the caller. See [Library Mode Setup](../deployment/library-mode) for the full provisioning flow.
 :::
 
 ### Starting the Worker

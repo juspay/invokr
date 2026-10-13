@@ -104,16 +104,20 @@ For convenience, `InvokrLibraryClient::from_database_url(database_url, max_conne
 
 ## Provision a workspace
 
-Each workspace gets its own PostgreSQL schema with isolated tables. Call `provision_workspace()` to create the schema and apply the workspace DDL template:
+Each workspace gets its own PostgreSQL schema with isolated tables. Call `provision_workspace()` to create the schema, apply the workspace DDL template and install the workspace's reaper:
 
 ```rust
 client.provision_workspace("my_schema").await?;
 ```
 
-This is idempotent (`CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`). The `{p}` placeholder in `workspace_v1.sql` is replaced by the `table_prefix` verbatim — so with prefix `"sched_"` you get `sched_jobs`, `sched_executions`, etc.
+The `{p}` placeholder in `workspace_v1.sql` is replaced by the `table_prefix` verbatim — so with prefix `"sched_"` you get `sched_jobs`, `sched_executions`, etc.
+
+The **reaper** is an `INTERNAL` CRON job with its own `pg_cron` entry, firing every 15 minutes. It retires CRON jobs that have passed their `ends_at` and removes their `pg_cron` entries, which would otherwise keep firing forever. It cannot be cancelled or overwritten through the client.
+
+`provision_workspace()` is idempotent, so it is safe to call on every startup. Tables are created with `IF NOT EXISTS`, and the reaper is installed only if the workspace has no active one. The same call therefore adds a reaper to a workspace provisioned by an older version.
 
 :::info
-In library mode, `provision_workspace()` only creates the tenant schema and tables. It does **not** insert into `public.organizations` or `public.workspaces` — those are managed by the caller (or skipped entirely if you use a custom `SchemaProvider`).
+In library mode, `provision_workspace()` does **not** insert into `public.organizations` or `public.workspaces` — those are managed by the caller (or skipped entirely if you use a custom `SchemaProvider`).
 :::
 
 ---

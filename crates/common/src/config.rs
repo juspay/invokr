@@ -221,6 +221,10 @@ impl Default for WorkerHealthEnv {
     }
 }
 
+/// Reaper schedule when `INVOKR_REAPER_CRON_EXPRESSION` is unset, and the one
+/// library mode always uses: every 15 minutes.
+pub const DEFAULT_REAPER_CRON_EXPRESSION: &str = "*/15 * * * *";
+
 #[derive(Debug, Clone)]
 pub struct ReaperEnv {
     /// pg_cron expression controlling how often invokr's own dogfooded reaper
@@ -233,8 +237,10 @@ pub struct ReaperEnv {
 
 impl ReaperEnv {
     fn new() -> Result<Self, String> {
-        let cron_expression =
-            get_from_env_or_default("INVOKR_REAPER_CRON_EXPRESSION", "*/15 * * * *".to_string());
+        let cron_expression = get_from_env_or_default(
+            "INVOKR_REAPER_CRON_EXPRESSION",
+            DEFAULT_REAPER_CRON_EXPRESSION.to_string(),
+        );
         PgCronExpr::try_from(cron_expression.clone()).map_err(|e| {
             format!(
                 "Invalid INVOKR_REAPER_CRON_EXPRESSION '{}': {}",

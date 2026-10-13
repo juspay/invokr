@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use invokr_common::{
     cache::{ConfigCache, SecretCache},
+    config::DEFAULT_REAPER_CRON_EXPRESSION,
     db,
     db::DbContext,
     models::{endpoint::EndpointType, job::TriggerType, Execution},
@@ -507,7 +508,7 @@ fn build_app_config(ctx: &PipelineContext, wc: &WorkerConfig) -> invokr_common::
         // Reaper schedule is consumed at workspace creation (API side), not by the
         // worker poller; the library worker just runs reaper ticks as they arrive.
         reaper: ReaperEnv {
-            cron_expression: "*/15 * * * *".to_string(),
+            cron_expression: DEFAULT_REAPER_CRON_EXPRESSION.to_string(),
         },
     }
 }
@@ -595,10 +596,19 @@ impl InvokrClient for InvokrLibraryClient {
     }
 
     async fn provision_workspace(&self, schema_name: &str) -> anyhow::Result<()> {
-        Ok(
-            db::workspaces::provision_schema(&self.pool, schema_name, &self.ctx.table_prefix)
-                .await?,
+        db::workspaces::provision_schema(&self.pool, schema_name, &self.ctx.table_prefix).await?;
+        // Install the dogfooded reaper (INTERNAL CRON job + pg_cron entry) so
+        // expired CRON jobs are retired and their schedules removed — parity with
+        // the API's `workspaces::create`. Without it, bounded library CRON jobs
+        // would leak their pg_cron entry once they pass `ends_at`.
+        db::workspaces::provision_reaper(
+            &self.pool,
+            schema_name,
+            &self.ctx.table_prefix,
+            DEFAULT_REAPER_CRON_EXPRESSION,
         )
+        .await?;
+        Ok(())
     }
 
     async fn cancel_job(&self, schema_name: &str, job_id: &str) -> anyhow::Result<()> {
