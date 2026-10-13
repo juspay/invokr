@@ -11,4 +11,5 @@
 //! (already defined in this crate); the REST handler propagates it directly, the
 //! library client converts it via `anyhow`.
 
+pub mod endpoints;
 pub mod jobs;

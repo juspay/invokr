@@ -5,8 +5,9 @@ use invokr_common::{
     db,
     db::DbContext,
     error::AppError,
-    models::endpoint::{CreateEndpoint, EndpointType, UpdateEndpoint},
+    models::endpoint::{CreateEndpoint, UpdateEndpoint},
     pagination::{encode_cursor, PaginatedResponse, PaginationParams},
+    service::endpoints as endpoint_svc,
 };
 
 pub async fn create(
@@ -15,19 +16,7 @@ pub async fn create(
     ws: Workspace,
     body: web::Json<CreateEndpoint>,
 ) -> Result<HttpResponse, AppError> {
-    // INTERNAL endpoints exist for invokr-driven internal tasks (e.g. the
-    // dogfooded reaper) and are provisioned at workspace-creation time —
-    // never through the public API. Reject them explicitly so the constraint
-    // doesn't have to do it with an opaque "violates check" error.
-    match EndpointType::from_str_val(&body.endpoint_type) {
-        None | Some(EndpointType::INTERNAL) => {
-            return Err(AppError::InvalidRequest(format!(
-                "Invalid endpoint type: {}. Must be HTTP, KAFKA, or REDIS_STREAM",
-                body.endpoint_type
-            )));
-        }
-        _ => {}
-    }
+    endpoint_svc::ensure_user_endpoint_type(&body.endpoint_type)?;
 
     let prefix = state.prefix();
     let mut conn = invokr_common::db::scoped::scoped_connection(&state.pool, &ws.0.schema_name)
@@ -35,16 +24,12 @@ pub async fn create(
         .map_err(AppError::from)?;
     let mut db = DbContext::new(&mut conn, prefix);
 
-    if let Some(ref ps) = body.payload_spec {
-        if db::payload_specs::get(&mut db, ps).await?.is_none() {
-            return Err(AppError::InvalidPayloadSpecRef(ps.clone()));
-        }
-    }
-    if let Some(ref cfg) = body.config {
-        if db::configs::get(&mut db, cfg).await?.is_none() {
-            return Err(AppError::InvalidConfigRef(cfg.clone()));
-        }
-    }
+    endpoint_svc::check_refs(
+        &mut db,
+        body.payload_spec.as_deref(),
+        body.config.as_deref(),
+    )
+    .await?;
 
     let retry_json = body
         .retry_policy
@@ -132,16 +117,12 @@ pub async fn update(
         .map_err(AppError::from)?;
     let mut db = DbContext::new(&mut conn, prefix);
     let name = path.into_inner();
-    if let Some(ref ps) = body.payload_spec {
-        if db::payload_specs::get(&mut db, ps).await?.is_none() {
-            return Err(AppError::InvalidPayloadSpecRef(ps.clone()));
-        }
-    }
-    if let Some(ref cfg) = body.config {
-        if db::configs::get(&mut db, cfg).await?.is_none() {
-            return Err(AppError::InvalidConfigRef(cfg.clone()));
-        }
-    }
+    endpoint_svc::check_refs(
+        &mut db,
+        body.payload_spec.as_deref(),
+        body.config.as_deref(),
+    )
+    .await?;
 
     let retry_json = body
         .retry_policy
