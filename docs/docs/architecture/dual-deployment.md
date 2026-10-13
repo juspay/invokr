@@ -21,6 +21,7 @@ pub trait InvokrClient: Send + Sync {
     async fn upsert_secret(&self, schema_name: &str, name: &str, plaintext: &str) -> anyhow::Result<()>;
     async fn delete_secret(&self, schema_name: &str, name: &str) -> anyhow::Result<()>;
     async fn register_endpoint(&self, schema_name: &str, name: &str, endpoint_type: &str, spec: serde_json::Value, retry_policy: Option<serde_json::Value>) -> anyhow::Result<()>;
+    async fn register_endpoint_with_refs(&self, schema_name: &str, name: &str, endpoint_type: &str, spec: serde_json::Value, retry_policy: Option<serde_json::Value>, payload_spec_ref: Option<&str>, config_ref: Option<&str>) -> anyhow::Result<()>;
     async fn delete_endpoint(&self, schema_name: &str, name: &str) -> anyhow::Result<()>;
     async fn create_job(&self, schema_name: &str, endpoint: &str, input: serde_json::Value, max_attempts: i64, trigger: JobTrigger, idempotency_key: Option<&str>) -> anyhow::Result<String>;
     async fn provision_workspace(&self, schema_name: &str) -> anyhow::Result<()>;
@@ -34,6 +35,7 @@ pub trait InvokrClient: Send + Sync {
 | `upsert_secret` | Encrypts and writes directly to DB | POST/PUT to `/v1/secrets` |
 | `delete_secret` | Deletes from DB | DELETE to `/v1/secrets/{name}` |
 | `register_endpoint` | Upserts in DB | PUT/POST to `/v1/endpoints` |
+| `register_endpoint_with_refs` | Upserts in DB, also setting the payload-spec / config refs | PUT/POST to `/v1/endpoints` with `payload_spec` / `config` |
 | `delete_endpoint` | Deletes from DB | DELETE to `/v1/endpoints/{name}` |
 | `create_job` | Shared job core (`service::jobs`), same as the REST handler | POST to `/v1/jobs` |
 | `provision_workspace` | Applies `workspace_v1.sql` template | POST to `/v1/orgs/{id}/workspaces` |

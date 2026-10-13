@@ -4,7 +4,8 @@ use invokr_common::{
     cache::{ConfigCache, SecretCache},
     db,
     db::DbContext,
-    models::{job::TriggerType, Execution},
+    models::{endpoint::EndpointType, job::TriggerType, Execution},
+    service::endpoints as endpoint_svc,
     service::jobs::{self as jobsvc, CreateJobParams, CreateOutcome, CreateTrigger},
     tenant::{validate_table_prefix, SchemaProvider},
 };
@@ -61,6 +62,35 @@ pub trait InvokrClient: Send + Sync {
         spec: serde_json::Value,
         retry_policy: Option<serde_json::Value>,
     ) -> anyhow::Result<()>;
+
+    /// Register (upsert) an endpoint, additionally setting its payload-spec /
+    /// config references. The default impl drops the refs and delegates to
+    /// [`InvokrClient::register_endpoint`], so existing implementors keep
+    /// compiling; modes that support refs (library, HTTP) override it.
+    // `register_endpoint`'s five arguments plus the two refs; a params struct
+    // would break symmetry with `register_endpoint` for one extra pair.
+    #[allow(clippy::too_many_arguments)]
+    async fn register_endpoint_with_refs(
+        &self,
+        schema_name: &str,
+        name: &str,
+        endpoint_type: &str,
+        spec: serde_json::Value,
+        retry_policy: Option<serde_json::Value>,
+        payload_spec_ref: Option<&str>,
+        config_ref: Option<&str>,
+    ) -> anyhow::Result<()> {
+        // Dropping the refs silently would register an endpoint without the
+        // validation or templating the caller asked for.
+        if payload_spec_ref.is_some() || config_ref.is_some() {
+            anyhow::bail!(
+                "this InvokrClient does not support payload_spec/config refs; \
+                 override register_endpoint_with_refs to use them"
+            );
+        }
+        self.register_endpoint(schema_name, name, endpoint_type, spec, retry_policy)
+            .await
+    }
 
     async fn delete_endpoint(&self, schema_name: &str, name: &str) -> anyhow::Result<()>;
 
@@ -237,32 +267,82 @@ impl InvokrLibraryClient {
         spec: serde_json::Value,
         retry_policy: Option<serde_json::Value>,
     ) -> anyhow::Result<()> {
+        self.register_endpoint_with_refs(
+            schema_name,
+            name,
+            endpoint_type,
+            spec,
+            retry_policy,
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Register (upsert) an endpoint, additionally setting its payload-spec and
+    /// config references — needed for input validation and `{{config.*}}`
+    /// templating. On update, `None` preserves the existing ref (the DB layer
+    /// `COALESCE`s), matching the no-refs [`register_endpoint`].
+    // `register_endpoint`'s five arguments plus the two refs; a params struct
+    // would break symmetry with `register_endpoint` for one extra pair.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn register_endpoint_with_refs(
+        &self,
+        schema_name: &str,
+        name: &str,
+        endpoint_type: &str,
+        spec: serde_json::Value,
+        retry_policy: Option<serde_json::Value>,
+        payload_spec_ref: Option<&str>,
+        config_ref: Option<&str>,
+    ) -> anyhow::Result<()> {
         let prefix = self.ctx.table_prefix.as_str();
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
 
-        let existing = db::endpoints::get(&mut db, name).await?;
-        if existing.is_none() {
-            db::endpoints::create(
-                &mut db,
-                name,
-                endpoint_type,
-                None,
-                None,
-                &spec,
-                retry_policy.as_ref(),
-            )
-            .await?;
-        } else {
-            db::endpoints::update(
-                &mut db,
-                name,
-                Some(&spec),
-                None,
-                None,
-                retry_policy.as_ref(),
-            )
-            .await?;
+        // The same guards the REST handlers apply (`service::endpoints`): a ref
+        // must exist, so a typo fails here rather than at the first job.
+        endpoint_svc::check_refs(&mut db, payload_spec_ref, config_ref).await?;
+
+        match db::endpoints::get(&mut db, name).await? {
+            None => {
+                endpoint_svc::ensure_user_endpoint_type(endpoint_type)?;
+                // create(name, type, payload_spec_ref, config_ref, spec, retry)
+                db::endpoints::create(
+                    &mut db,
+                    name,
+                    endpoint_type,
+                    payload_spec_ref,
+                    config_ref,
+                    &spec,
+                    retry_policy.as_ref(),
+                )
+                .await?;
+            }
+            // INTERNAL endpoints (today: the reaper) are invokr-managed. An upsert
+            // over one would replace its spec and stop the workspace's sweep.
+            Some(existing)
+                if EndpointType::from_str_val(&existing.endpoint_type)
+                    == Some(EndpointType::INTERNAL) =>
+            {
+                anyhow::bail!(
+                    "Endpoint '{name}' is internal to invokr and cannot be re-registered"
+                );
+            }
+            Some(_) => {
+                // NOTE: update() takes (config_ref, payload_spec_ref) — the OPPOSITE
+                // order to create(). Mirror the REST handler exactly, or the two refs
+                // get cross-wired.
+                db::endpoints::update(
+                    &mut db,
+                    name,
+                    Some(&spec),
+                    config_ref,
+                    payload_spec_ref,
+                    retry_policy.as_ref(),
+                )
+                .await?;
+            }
         }
 
         Ok(())
@@ -466,6 +546,29 @@ impl InvokrClient for InvokrLibraryClient {
         .await
     }
 
+    async fn register_endpoint_with_refs(
+        &self,
+        schema_name: &str,
+        name: &str,
+        endpoint_type: &str,
+        spec: serde_json::Value,
+        retry_policy: Option<serde_json::Value>,
+        payload_spec_ref: Option<&str>,
+        config_ref: Option<&str>,
+    ) -> anyhow::Result<()> {
+        InvokrLibraryClient::register_endpoint_with_refs(
+            self,
+            schema_name,
+            name,
+            endpoint_type,
+            spec,
+            retry_policy,
+            payload_spec_ref,
+            config_ref,
+        )
+        .await
+    }
+
     async fn delete_endpoint(&self, schema_name: &str, name: &str) -> anyhow::Result<()> {
         InvokrLibraryClient::delete_endpoint(self, schema_name, name).await
     }
@@ -621,6 +724,28 @@ impl InvokrClient for InvokrHttpClient {
         spec: serde_json::Value,
         retry_policy: Option<serde_json::Value>,
     ) -> anyhow::Result<()> {
+        self.register_endpoint_with_refs(
+            schema_name,
+            name,
+            endpoint_type,
+            spec,
+            retry_policy,
+            None,
+            None,
+        )
+        .await
+    }
+
+    async fn register_endpoint_with_refs(
+        &self,
+        schema_name: &str,
+        name: &str,
+        endpoint_type: &str,
+        spec: serde_json::Value,
+        retry_policy: Option<serde_json::Value>,
+        payload_spec_ref: Option<&str>,
+        config_ref: Option<&str>,
+    ) -> anyhow::Result<()> {
         // Try update first; on 404 (doesn't exist yet) fall through to create.
         let resp = self
             .authed(
@@ -630,7 +755,12 @@ impl InvokrClient for InvokrHttpClient {
                     schema_name,
                 ),
             )
-            .json(&serde_json::json!({ "spec": spec, "retry_policy": retry_policy }))
+            .json(&serde_json::json!({
+                "spec": spec,
+                "retry_policy": retry_policy,
+                "payload_spec": payload_spec_ref,
+                "config": config_ref,
+            }))
             .send()
             .await?;
         let status = resp.status();
@@ -649,6 +779,8 @@ impl InvokrClient for InvokrHttpClient {
                 "type": endpoint_type,
                 "spec": spec,
                 "retry_policy": retry_policy,
+                "payload_spec": payload_spec_ref,
+                "config": config_ref,
             }))
             .send()
             .await?;

@@ -141,6 +141,22 @@ client.register_endpoint(
 ).await?;
 ```
 
+To validate job input against a [payload spec](../core-concepts/payload-specs), or to use `{{config.*}}` in the spec's templates, attach them with `register_endpoint_with_refs`:
+
+```rust
+client.register_endpoint_with_refs(
+    "my_schema",
+    "send-email",
+    "HTTP",
+    spec,
+    None,
+    Some("email-payload"),   // payload_spec_ref
+    Some("email-provider"),  // config_ref
+).await?;
+```
+
+Both must already exist in the workspace, or registration fails. On an update, `None` keeps the endpoint's current ref. `INTERNAL` endpoints, such as the reaper, can be neither registered nor overwritten.
+
 Fire an immediate job:
 
 ```rust
