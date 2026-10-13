@@ -2904,6 +2904,7 @@ dependencies = [
  "log",
  "metrics",
  "metrics-exporter-prometheus",
+ "oci_kms",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -3849,6 +3850,26 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 1.0.69",
  "url",
+]
+
+[[package]]
+name = "oci_kms"
+version = "0.1.0"
+source = "git+https://github.com/juspay/hyperswitch?rev=9986e5c0c201a20d2f7c06ae087d7b90fd2e899c#9986e5c0c201a20d2f7c06ae087d7b90fd2e899c"
+dependencies = [
+ "base64 0.22.1",
+ "rand 0.8.5",
+ "reqwest",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tracing",
+ "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -4817,6 +4838,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.6.4",
+ "sha2 0.10.9",
  "signature",
  "spki",
  "subtle",
