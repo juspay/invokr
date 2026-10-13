@@ -4,17 +4,20 @@
  * The dogfooded reaper is provisioned at workspace creation as an INTERNAL
  * endpoint (`invokr.reaper`) plus a CRON job. The public API protects this
  * pair so users can't stack their own jobs on the endpoint, modify the
- * reaper job's schedule, or cancel it — all of which would silently break
+ * reaper job's schedule or the endpoint's spec, or cancel it — all of which would silently break
  * invokr's self-monitoring for that workspace. This script verifies those
  * guards and that reads still surface the system state.
  *
  * Steps:
  *   1. List jobs and find the reaper (endpoint == "invokr.reaper").
  *   2. POST /jobs with endpoint: "invokr.reaper" → expect 400 INVALID_REQUEST.
- *   3. PATCH /jobs/{reaper}                     → expect 409 JOB_NOT_UPDATABLE.
- *   4. DELETE /jobs/{reaper}                    → expect 409 CONFLICT.
+ *   3. PUT /jobs/{reaper}                       → expect 409 JOB_NOT_UPDATABLE.
+ *   4. POST /jobs/{reaper}/cancel               → expect 409 CONFLICT.
  *   5. POST /endpoints with type: "INTERNAL"    → expect 400 INVALID_REQUEST.
- *   6. GET /jobs/{reaper} and list its executions → expect 200 (reads visible).
+ *   6. PUT /endpoints/invokr.reaper             → expect 409 CONFLICT.
+ *   7. DELETE /endpoints/invokr.reaper          → expect 409 CONFLICT.
+ *   8. GET /jobs/{reaper}, its executions and its endpoint → expect 200, with
+ *      the endpoint's spec unchanged (reads visible, nothing overwritten).
  *
  * No worker / scheduler required — purely an API-surface test.
  *
@@ -26,6 +29,9 @@
 
 import {
   CreateEndpointCommand,
+  DeleteEndpointCommand,
+  GetEndpointCommand,
+  UpdateEndpointCommand,
   CreateJobCommand,
   UpdateJobCommand,
   CancelJobCommand,
@@ -112,7 +118,7 @@ async function main() {
   );
 
   // ── 2. Block updating the reaper job ────────────────────────────────
-  log("Attempting PATCH /jobs/{reaper} (should 409)");
+  log("Attempting PUT /jobs/{reaper} (should 409)");
   await expectError(
     "update INTERNAL job",
     409,
@@ -128,7 +134,7 @@ async function main() {
   );
 
   // ── 3. Block cancelling the reaper job ──────────────────────────────
-  log("Attempting DELETE /jobs/{reaper} (should 409)");
+  log("Attempting POST /jobs/{reaper}/cancel (should 409)");
   await expectError(
     "cancel INTERNAL job",
     409,
@@ -153,7 +159,35 @@ async function main() {
       ),
   );
 
-  // ── 5. Reads stay visible — operators need this for dogfooded monitoring ──
+  // ── 5. Block modifying the reaper endpoint ─────────────────────────
+  // The reaper job would keep firing, but against whatever spec replaced its
+  // own, so the workspace's sweep would stop with nothing reporting it.
+  log("Attempting PUT /endpoints/invokr.reaper (should 409)");
+  await expectError(
+    "update INTERNAL endpoint",
+    409,
+    "CONFLICT",
+    () =>
+      client.send(
+        new UpdateEndpointCommand({
+          ...tenant,
+          name: REAPER_ENDPOINT,
+          spec: { url: "http://example.invalid/" },
+        }),
+      ),
+  );
+
+  // ── 6. Block deleting the reaper endpoint ─────────────────────────
+  log("Attempting DELETE /endpoints/invokr.reaper (should 409)");
+  await expectError(
+    "delete INTERNAL endpoint",
+    409,
+    "CONFLICT",
+    () =>
+      client.send(new DeleteEndpointCommand({ ...tenant, name: REAPER_ENDPOINT })),
+  );
+
+  // ── 7. Reads stay visible — operators need this for dogfooded monitoring ──
   log("Verifying reads still surface the reaper job and executions");
   const getResp = await client.send(
     new GetJobCommand({ ...tenant, job_id: reaperJobId }),
@@ -176,6 +210,17 @@ async function main() {
   log(
     `  ✓ ListJobExecutions returned ${execsResp.data?.length ?? 0} execution(s) for the reaper`,
   );
+
+  const epResp = await client.send(
+    new GetEndpointCommand({ ...tenant, name: REAPER_ENDPOINT }),
+  );
+  const task = (epResp.data?.spec as { task?: string } | undefined)?.task;
+  if (task !== "reaper") {
+    throw new Error(
+      `GET /endpoints/invokr.reaper returned a modified spec: ${JSON.stringify(epResp.data?.spec)}`,
+    );
+  }
+  log(`  ✓ GET /endpoints/invokr.reaper still has spec.task=reaper`);
 
   log("All INTERNAL guard assertions passed");
   process.exit(0);

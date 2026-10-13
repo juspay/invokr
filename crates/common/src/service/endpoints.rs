@@ -18,6 +18,19 @@ pub fn ensure_user_endpoint_type(endpoint_type: &str) -> Result<(), AppError> {
     }
 }
 
+/// Reject changes to an existing `INTERNAL` endpoint. Its job (today: the
+/// reaper) keeps firing against whatever spec replaces its own, so the
+/// workspace's sweep would stop with nothing to report it — and nothing to
+/// re-provision it.
+pub fn ensure_user_managed(existing_endpoint_type: &str) -> Result<(), AppError> {
+    if EndpointType::from_str_val(existing_endpoint_type) == Some(EndpointType::INTERNAL) {
+        return Err(AppError::Conflict(
+            "Internal invokr endpoints cannot be modified through the API".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Check that the payload spec and config an endpoint refers to exist, so a typo
 /// fails at registration rather than at the first job that uses the endpoint.
 pub async fn check_refs(
@@ -41,6 +54,19 @@ pub async fn check_refs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn internal_endpoints_cannot_be_modified() {
+        let err = ensure_user_managed("INTERNAL").unwrap_err();
+        assert!(matches!(err, AppError::Conflict(_)), "{err:?}");
+    }
+
+    #[test]
+    fn user_endpoints_can_be_modified() {
+        for t in ["HTTP", "KAFKA", "REDIS_STREAM"] {
+            assert!(ensure_user_managed(t).is_ok(), "{t}");
+        }
+    }
 
     #[test]
     fn user_endpoint_types_are_accepted() {
