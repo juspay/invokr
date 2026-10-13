@@ -4,7 +4,8 @@ use invokr_common::{
     cache::{ConfigCache, SecretCache},
     db,
     db::DbContext,
-    models::Execution,
+    models::{job::TriggerType, Execution},
+    service::jobs::{self as jobsvc, CreateJobParams, CreateOutcome, CreateTrigger},
     tenant::{validate_table_prefix, SchemaProvider},
 };
 use reqwest::Client;
@@ -180,72 +181,51 @@ impl InvokrLibraryClient {
     ) -> anyhow::Result<String> {
         let prefix = self.ctx.table_prefix.as_str();
 
-        // Pass the key through as-is: `None` binds SQL NULL (not `''`), so keyless
-        // jobs don't collide on the partial unique index (juspay/invokr#55, gap #3).
-        let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
-        let mut db = DbContext::new(&mut conn, prefix);
-
-        let ep = db::endpoints::get(&mut db, endpoint)
-            .await?
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Endpoint '{}' not found in schema '{}'",
-                    endpoint,
-                    schema_name
-                )
-            })?;
-
-        let execution_id = match trigger {
-            JobTrigger::Immediate => {
-                let result = db::jobs::create_immediate(
-                    &mut db,
-                    endpoint,
-                    ep.endpoint_type.as_str(),
-                    idempotency_key,
-                    Some(&input),
-                    max_attempts,
-                )
-                .await?;
-                result.execution_id
-            }
-            JobTrigger::Delayed { run_at } => {
-                let result = db::jobs::create_delayed(
-                    &mut db,
-                    endpoint,
-                    ep.endpoint_type.as_str(),
-                    idempotency_key,
-                    Some(&input),
-                    run_at,
-                    max_attempts,
-                )
-                .await?;
-                result.execution_id
-            }
+        // Map the library's trigger to the shared core's. The library trusts the
+        // caller's `first_run_at` for CRON (its API takes it explicitly), whereas
+        // the REST adapter computes it — the core just persists what it's given.
+        let core_trigger = match &trigger {
+            JobTrigger::Immediate => CreateTrigger::Immediate,
+            JobTrigger::Delayed { run_at } => CreateTrigger::Delayed { run_at: *run_at },
             JobTrigger::Cron {
                 expression,
                 timezone,
                 starts_at,
                 ends_at,
                 first_run_at,
-            } => {
-                let job = db::jobs::create_cron(
-                    &mut db,
-                    endpoint,
-                    ep.endpoint_type.as_str(),
-                    idempotency_key,
-                    Some(&input),
-                    &expression,
-                    &timezone,
-                    starts_at,
-                    ends_at,
-                    first_run_at,
-                )
-                .await?;
-                job.job_id
-            }
+            } => CreateTrigger::Cron {
+                expression: expression.as_str(),
+                timezone: timezone.as_str(),
+                starts_at: *starts_at,
+                ends_at: *ends_at,
+                next_run_at: *first_run_at,
+            },
         };
 
-        Ok(execution_id)
+        let params = CreateJobParams {
+            endpoint,
+            idempotency_key,
+            input: Some(&input),
+            max_attempts_override: Some(max_attempts),
+            trigger: core_trigger,
+        };
+
+        // The shared core handles the transaction, INTERNAL guard, validation,
+        // idempotency short-circuit and (for CRON) pg_cron registration — the
+        // same code the REST handler runs, so library mode can't drift.
+        let outcome = jobsvc::create_job(&self.pool, prefix, schema_name, &params).await?;
+
+        let id = match outcome {
+            CreateOutcome::Created {
+                job, execution_id, ..
+            } => created_job_ref(&job.trigger_type, job.job_id, execution_id),
+            CreateOutcome::Existing { job, execution } => created_job_ref(
+                &job.trigger_type,
+                job.job_id,
+                execution.map(|e| e.execution_id),
+            ),
+        };
+        Ok(id)
     }
 
     /// Register (upsert) an endpoint in the given workspace schema.
@@ -326,27 +306,12 @@ impl InvokrLibraryClient {
         Ok(())
     }
 
-    /// Cancel a job and its pending executions.
-    // `drop(db)` releases the scoped connection borrow before the pg_cron
-    // unschedule runs on the pool; it is a borrow handoff, not a destructor.
-    #[allow(clippy::drop_non_drop)]
+    /// Cancel a job and its pending executions. For CRON jobs also unschedules
+    /// pg_cron — atomically, on one transaction. Delegates to the shared core, so
+    /// it enforces the same RETIRED/INTERNAL guards as REST (see juspay/invokr#55).
     pub async fn cancel_job(&self, schema_name: &str, job_id: &str) -> anyhow::Result<()> {
         let prefix = self.ctx.table_prefix.as_str();
-        let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
-        let mut db = DbContext::new(&mut conn, prefix);
-
-        let job = db::jobs::get(&mut db, job_id)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Job '{}' not found", job_id))?;
-
-        if job.trigger_type != "CRON" {
-            db::executions::cancel_pending_for_job(&mut db, job_id).await?;
-        }
-        db::jobs::cancel(&mut db, job_id).await?;
-        drop(db);
-        if job.trigger_type == "CRON" {
-            db::jobs::unregister_pg_cron(&self.pool, schema_name, job_id).await?;
-        }
+        jobsvc::cancel_job(&self.pool, prefix, schema_name, job_id).await?;
         Ok(())
     }
 
@@ -410,6 +375,20 @@ impl WorkerHandle {
     /// Wait for the worker task to finish.
     pub async fn join(self) -> anyhow::Result<()> {
         self.join.await?
+    }
+}
+
+/// The id [`InvokrLibraryClient::create_job`] returns: the execution id for
+/// IMMEDIATE and DELAYED, the job id for CRON, whose executions materialize later.
+///
+/// Keyed on the trigger, not on whether an execution exists: an idempotent replay
+/// of a CRON job looks up its latest execution, which exists after the first tick,
+/// and must still return the job id the first call returned.
+fn created_job_ref(trigger_type: &str, job_id: String, execution_id: Option<String>) -> String {
+    if trigger_type == TriggerType::CRON.as_str() {
+        job_id
+    } else {
+        execution_id.unwrap_or(job_id)
     }
 }
 
@@ -823,3 +802,6 @@ impl InvokrClient for InvokrHttpClient {
         Ok(Some(execution))
     }
 }
+
+#[cfg(test)]
+mod tests;

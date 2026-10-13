@@ -35,10 +35,12 @@ pub trait InvokrClient: Send + Sync {
 | `delete_secret` | Deletes from DB | DELETE to `/v1/secrets/{name}` |
 | `register_endpoint` | Upserts in DB | PUT/POST to `/v1/endpoints` |
 | `delete_endpoint` | Deletes from DB | DELETE to `/v1/endpoints/{name}` |
-| `create_job` | Inserts job + execution directly | POST to `/v1/jobs` |
+| `create_job` | Shared job core (`service::jobs`), same as the REST handler | POST to `/v1/jobs` |
 | `provision_workspace` | Applies `workspace_v1.sql` template | POST to `/v1/orgs/{id}/workspaces` |
-| `cancel_job` | Updates DB + unschedules pg_cron | POST to `/v1/jobs/{id}/cancel` |
+| `cancel_job` | Shared job core: retire + unschedule pg_cron in one transaction | POST to `/v1/jobs/{id}/cancel` |
 | `get_execution` | Queries DB directly | GET to `/v1/executions/{id}` |
+
+`create_job` and `cancel_job` do not have a library-specific implementation. Both modes call `invokr_common::service::jobs`, which owns the transaction, the `INTERNAL`-endpoint guard, payload-spec validation, the idempotency short-circuit and `pg_cron` (un)registration. A behaviour change there applies to both modes at once.
 
 ## JobTrigger Enum
 
