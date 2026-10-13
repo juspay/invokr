@@ -154,6 +154,15 @@ let execution_id = client.create_job(
 ).await?;
 ```
 
+`create_job` and `cancel_job` run the same code as the REST API (`invokr_common::service::jobs`), so a job behaves the same whichever mode created it:
+
+- **Return value.** The execution id for `Immediate` and `Delayed`, the job id for `Cron`.
+- **Idempotency.** Reusing a key returns the id the first call returned instead of creating a second job. Without a key, nothing is deduplicated.
+- **Validation.** `input` is checked against the endpoint's payload spec, if it has one. Jobs cannot target `INTERNAL` endpoints.
+- **`max_attempts`.** A value of `0` or less falls back to the endpoint's retry policy.
+- **Atomicity.** The job, its first execution and, for `Cron`, its `pg_cron` schedule are written in one transaction.
+- **Cancelling.** `cancel_job` returns an error for a job that is already retired, and for `INTERNAL` jobs such as the reaper.
+
 See [HTTP Endpoints](../guides/http-endpoints) for template variables, [Payload Specs](../core-concepts/payload-specs) for input validation, and [Retry Policy](../core-concepts/retry-policy) for backoff configuration.
 
 ---
