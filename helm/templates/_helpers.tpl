@@ -157,8 +157,8 @@ affinity:
 {{/* The provider name reaches the app as INVOKR_SECRETS_MANAGER. An
      unrecognised value aborts startup, so catch it at render time instead. */}}
 {{- $sm := .Values.configs.secrets_manager | default "no_encryption" -}}
-{{- if not (has $sm (list "no_encryption" "aws_kms" "gcp_kms")) -}}
-  {{- fail (printf "invokr: configs.secrets_manager '%s' is not recognised; expected no_encryption, aws_kms or gcp_kms." $sm) -}}
+{{- if not (has $sm (list "no_encryption" "aws_kms" "gcp_kms" "oci_kms")) -}}
+  {{- fail (printf "invokr: configs.secrets_manager '%s' is not recognised; expected no_encryption, aws_kms, gcp_kms or oci_kms." $sm) -}}
 {{- end -}}
 {{/* No guard on AWS credentials: the chart cannot know how they will be
      supplied. IRSA, an EC2 instance role via IMDS, static keys through
@@ -168,6 +168,21 @@ affinity:
      instead, naming what is missing. */}}
 {{- if and (eq $sm "gcp_kms") (not .Values.configs.gcp_kms_key_name) -}}
   {{- fail "invokr: configs.secrets_manager is gcp_kms, so configs.gcp_kms_key_name must be the full key resource name (projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>)." -}}
+{{- end -}}
+{{- if eq $sm "oci_kms" -}}
+  {{- if not .Values.configs.oci_kms_crypto_endpoint -}}
+    {{- fail "invokr: configs.secrets_manager is oci_kms, so configs.oci_kms_crypto_endpoint must be the vault's crypto endpoint (https://<vault>-crypto.kms.<region>.oraclecloud.com)." -}}
+  {{- end -}}
+  {{- if not .Values.configs.oci_kms_key_id -}}
+    {{- fail "invokr: configs.secrets_manager is oci_kms, so configs.oci_kms_key_id must be the key OCID (ocid1.key.oc1...)." -}}
+  {{- end -}}
+  {{/* Unlike IRSA and GKE Workload Identity, which inject credentials by other
+       means, OKE Workload Identity exchanges the pod's own service account
+       token, read from its default mount. Without it every pod -- and the
+       migration Job -- fails on the first secret read. */}}
+  {{- if not .Values.serviceAccount.automount -}}
+    {{- fail "invokr: configs.secrets_manager is oci_kms, so serviceAccount.automount must be true: OKE Workload Identity reads the pod's service account token." -}}
+  {{- end -}}
 {{- end -}}
 {{/* An HPA computes utilization as a percentage of the CPU REQUEST. With no
      request there is no denominator, so it reports <unknown> and never scales --

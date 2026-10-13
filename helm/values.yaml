@@ -49,16 +49,24 @@ configs:
   # -- Connection pool size, PER POD. Multiply by total replicas and compare
   # against the database's max_connections before scaling.
   db_pool_size: 20
-  # -- Secrets manager: `no_encryption` (default), `aws_kms` or `gcp_kms`. With
-  # a provider selected, every key under `secrets` must be base64 ciphertext --
-  # it is all-or-nothing, and that includes `oidc_client_secret` if OIDC is on.
-  # For `aws_kms`, grant kms:Decrypt via `serviceAccount.annotations`.
+  # -- Secrets manager: `no_encryption` (default), `aws_kms`, `gcp_kms` or
+  # `oci_kms`. With a provider selected, every key under `secrets` must be base64
+  # ciphertext -- it is all-or-nothing, and that includes `oidc_client_secret` if
+  # OIDC is on. For `aws_kms`, grant kms:Decrypt via `serviceAccount.annotations`.
   secrets_manager: no_encryption
   # -- Full GCP KMS key resource name. Required when `secrets_manager: gcp_kms`.
   # Credentials come from Application Default Credentials (Workload Identity on
   # GKE), so nothing else needs setting.
   # Example: projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>
   gcp_kms_key_name: null
+  # -- OCI vault crypto endpoint. Required when `secrets_manager: oci_kms`.
+  # Credentials come from OKE Workload Identity (Enhanced clusters only), which
+  # also needs `serviceAccount.automount: true`.
+  # Example: https://<vault>-crypto.kms.<region>.oraclecloud.com
+  oci_kms_crypto_endpoint: null
+  # -- OCI KMS key OCID. Required when `secrets_manager: oci_kms`.
+  # Example: ocid1.key.oc1.<region>.<...>
+  oci_kms_key_id: null
 
 # -- Settings for the api workload. INVOKR_LISTEN_ADDR is derived from
 # `api.service.targetPort`, not set here.
@@ -299,7 +307,8 @@ serviceMonitor:
 serviceAccount:
   # -- Create a ServiceAccount.
   create: true
-  # -- Automount the ServiceAccount's API credentials.
+  # -- Automount the ServiceAccount's API credentials. Must be true when
+  # `configs.secrets_manager: oci_kms`: OKE Workload Identity reads this token.
   automount: false
   # -- Annotations. Add the IRSA role ARN here when `configs.secrets_manager: aws_kms`.
   annotations: {}
