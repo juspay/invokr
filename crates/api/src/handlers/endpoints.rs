@@ -124,6 +124,11 @@ pub async fn update(
     )
     .await?;
 
+    let existing = db::endpoints::get(&mut db, &name)
+        .await?
+        .ok_or_else(|| AppError::EndpointNotFound(name.clone()))?;
+    endpoint_svc::ensure_user_managed(&existing.endpoint_type)?;
+
     let retry_json = body
         .retry_policy
         .as_ref()

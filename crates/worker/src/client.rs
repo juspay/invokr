@@ -5,7 +5,7 @@ use invokr_common::{
     config::DEFAULT_REAPER_CRON_EXPRESSION,
     db,
     db::DbContext,
-    models::{endpoint::EndpointType, job::TriggerType, Execution},
+    models::{job::TriggerType, Execution},
     service::endpoints as endpoint_svc,
     service::jobs::{self as jobsvc, CreateJobParams, CreateOutcome, CreateTrigger},
     tenant::{validate_table_prefix, SchemaProvider},
@@ -320,17 +320,10 @@ impl InvokrLibraryClient {
                 )
                 .await?;
             }
-            // INTERNAL endpoints (today: the reaper) are invokr-managed. An upsert
-            // over one would replace its spec and stop the workspace's sweep.
-            Some(existing)
-                if EndpointType::from_str_val(&existing.endpoint_type)
-                    == Some(EndpointType::INTERNAL) =>
-            {
-                anyhow::bail!(
-                    "Endpoint '{name}' is internal to invokr and cannot be re-registered"
-                );
-            }
-            Some(_) => {
+            Some(existing) => {
+                // INTERNAL endpoints (today: the reaper) are invokr-managed; the
+                // same guard REST's PUT /endpoints/{name} applies.
+                endpoint_svc::ensure_user_managed(&existing.endpoint_type)?;
                 // NOTE: update() takes (config_ref, payload_spec_ref) — the OPPOSITE
                 // order to create(). Mirror the REST handler exactly, or the two refs
                 // get cross-wired.

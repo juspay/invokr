@@ -51,6 +51,21 @@ When a workspace is provisioned, the reaper's `INTERNAL` endpoint and CRON job a
 
 The reaper is therefore always present in every workspace — no manual setup required.
 
+## Protected from Callers
+
+Nothing re-provisions the reaper once it is broken, so the API refuses every change to it. Reads stay open, so operators can still see it run:
+
+| Request | Response |
+|---------|----------|
+| `POST /v1/jobs` targeting `invokr.reaper` | `400 INVALID_REQUEST` |
+| `PUT /v1/jobs/{reaper}` | `409 JOB_NOT_UPDATABLE` |
+| `POST /v1/jobs/{reaper}/cancel` | `409 CONFLICT` |
+| `POST /v1/endpoints` with `type: INTERNAL` | `400 INVALID_REQUEST` |
+| `PUT /v1/endpoints/invokr.reaper` | `409 CONFLICT` |
+| `DELETE /v1/endpoints/invokr.reaper` | `409 CONFLICT` (the reaper job is always active) |
+
+Library mode applies the same guards through the shared `service::jobs` and `service::endpoints` modules. The e2e suite `test-internal-guards.ts` checks each of them.
+
 ## Runs Inside the Scoped Transaction
 
 The reaper's `reap_schema()` function runs on the caller's database connection — the same scoped transaction that the execution pipeline uses for the reaper execution's outcome. This means:
