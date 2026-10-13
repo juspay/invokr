@@ -9,10 +9,12 @@
 mod aws;
 mod gcp;
 mod no_encryption;
+mod oci;
 
 pub use aws::AwsKms;
 pub use gcp::GcpKms;
 pub use no_encryption::NoEncryption;
+pub use oci::OciKms;
 
 use crate::env::get_from_env_or_default;
 
@@ -45,7 +47,7 @@ pub enum SecretsError {
     InvalidConfig(String),
     #[error(
         "INVOKR_SECRETS_MANAGER '{0}' is not recognised; expected one of: \
-         no_encryption, aws_kms, gcp_kms"
+         no_encryption, aws_kms, gcp_kms, oci_kms"
     )]
     UnknownProvider(String),
 }
@@ -55,6 +57,7 @@ pub enum ProviderKind {
     NoEncryption,
     AwsKms,
     GcpKms,
+    OciKms,
 }
 
 /// Parse `INVOKR_SECRETS_MANAGER`. Case-insensitive; empty means the default.
@@ -63,6 +66,7 @@ pub fn parse_provider_kind(raw: &str) -> Result<ProviderKind, SecretsError> {
         "" | "no_encryption" => Ok(ProviderKind::NoEncryption),
         "aws_kms" => Ok(ProviderKind::AwsKms),
         "gcp_kms" => Ok(ProviderKind::GcpKms),
+        "oci_kms" => Ok(ProviderKind::OciKms),
         other => Err(SecretsError::UnknownProvider(other.to_owned())),
     }
 }
@@ -79,6 +83,10 @@ pub async fn provider_from_env() -> Result<Box<dyn SecretProvider>, SecretsError
         ProviderKind::GcpKms => {
             tracing::info!("secrets manager: gcp_kms");
             Box::new(GcpKms::new().await?)
+        }
+        ProviderKind::OciKms => {
+            tracing::info!("secrets manager: oci_kms");
+            Box::new(OciKms::new()?)
         }
     };
     provider.validate().await?;
@@ -131,6 +139,18 @@ mod tests {
     }
 
     #[test]
+    fn parses_oci_kms_case_insensitively() {
+        assert_eq!(
+            parse_provider_kind("OCI_KMS").unwrap(),
+            ProviderKind::OciKms
+        );
+        assert_eq!(
+            parse_provider_kind("oci_kms").unwrap(),
+            ProviderKind::OciKms
+        );
+    }
+
+    #[test]
     fn tolerates_surrounding_whitespace() {
         assert_eq!(
             parse_provider_kind("  aws_kms  ").unwrap(),
@@ -147,7 +167,10 @@ mod tests {
             "message should name the bad value: {msg}"
         );
         assert!(
-            msg.contains("no_encryption") && msg.contains("aws_kms") && msg.contains("gcp_kms"),
+            msg.contains("no_encryption")
+                && msg.contains("aws_kms")
+                && msg.contains("gcp_kms")
+                && msg.contains("oci_kms"),
             "message should list valid values: {msg}"
         );
     }
