@@ -150,11 +150,13 @@ service-wide key.
 | apiConfigs | object | `{"auth_mode":"disabled","mode":"both"}` | Settings for the api workload. INVOKR_LISTEN_ADDR is derived from `api.service.targetPort`, not set here. |
 | apiConfigs.auth_mode | string | `"disabled"` | `disabled` or `oidc`. Has no default in the API, which refuses to start without it rather than pick an auth posture for itself; the chart supplies one so a default install boots. `disabled` authenticates every request as a development identity -- combine it with `api.ingress.enabled: false`. For `oidc`, add `oidc_issuer_url`, `oidc_client_id` and `oidc_redirect_host` here, and `oidc_client_secret` under `secrets`; any key in these maps is rendered as `INVOKR_<KEY>`. |
 | apiConfigs.mode | string | `"both"` | `api`, `dashboard` or `both`. |
-| configs | object | `{"db_pool_size":20,"gcp_kms_key_name":null,"path_prefix":"/invokr","secrets_manager":"no_encryption"}` | Non-secret settings shared by both workloads. |
+| configs | object | `{"db_pool_size":20,"gcp_kms_key_name":null,"oci_kms_crypto_endpoint":null,"oci_kms_key_id":null,"path_prefix":"/invokr","secrets_manager":"no_encryption"}` | Non-secret settings shared by both workloads. |
 | configs.db_pool_size | int | `20` | Connection pool size, PER POD. Multiply by total replicas and compare against the database's max_connections before scaling. |
 | configs.gcp_kms_key_name | string | `nil` | Full GCP KMS key resource name. Required when `secrets_manager: gcp_kms`. Credentials come from Application Default Credentials (Workload Identity on GKE), so nothing else needs setting. Example: projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k> |
+| configs.oci_kms_crypto_endpoint | string | `nil` | OCI vault crypto endpoint. Required when `secrets_manager: oci_kms`. Credentials come from OKE Workload Identity (Enhanced clusters only), which also needs `serviceAccount.automount: true`. Example: https://<vault>-crypto.kms.<region>.oraclecloud.com |
+| configs.oci_kms_key_id | string | `nil` | OCI KMS key OCID. Required when `secrets_manager: oci_kms`. Example: ocid1.key.oc1.<region>.<...> |
 | configs.path_prefix | string | `"/invokr"` | URL prefix the API is served under. Single source of truth: feeds the ingress path, probes, ServiceMonitor path and dashboard config. |
-| configs.secrets_manager | string | `"no_encryption"` | Secrets manager: `no_encryption` (default), `aws_kms` or `gcp_kms`. With a provider selected, every key under `secrets` must be base64 ciphertext -- it is all-or-nothing, and that includes `oidc_client_secret` if OIDC is on. For `aws_kms`, grant kms:Decrypt via `serviceAccount.annotations`. |
+| configs.secrets_manager | string | `"no_encryption"` | Secrets manager: `no_encryption` (default), `aws_kms`, `gcp_kms` or `oci_kms`. With a provider selected, every key under `secrets` must be base64 ciphertext -- it is all-or-nothing, and that includes `oidc_client_secret` if OIDC is on. For `aws_kms`, grant kms:Decrypt via `serviceAccount.annotations`. |
 | dashboard.enabled | bool | `true` | Serve the web dashboard. Requires `apiConfigs.mode` to be `both` or `dashboard`. |
 | dashboard.pathPrefix | string | `"/dashboard"` | URL prefix the dashboard is served under. |
 | database.host | string | `""` | Database host. Required when `migration.enabled` — the Job's pg_isready check needs it, and it cannot be parsed out of the connection string. |
@@ -193,7 +195,7 @@ service-wide key.
 | secrets.encryption_key | string | `""` | 32-byte hex key encrypting stored secrets at rest. |
 | securityContext | object | `{}` | Container-level security context. |
 | serviceAccount.annotations | object | `{}` | Annotations. Add the IRSA role ARN here when `configs.secrets_manager: aws_kms`. |
-| serviceAccount.automount | bool | `false` | Automount the ServiceAccount's API credentials. |
+| serviceAccount.automount | bool | `false` | Automount the ServiceAccount's API credentials. Must be true when `configs.secrets_manager: oci_kms`: OKE Workload Identity reads this token. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
 | serviceAccount.name | string | `""` | Name. Generated from the fullname when empty. |
 | serviceMonitor.enabled | bool | `false` | Create ServiceMonitors for the Prometheus Operator. |

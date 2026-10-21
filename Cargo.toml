@@ -91,6 +91,9 @@ authn_kit = { git = "https://github.com/ayushjain17/authn_kit", rev = "671f4fca7
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-kms = "1"
 google-cloud-kms = "0.6.0"
+# No official OCI Rust SDK covers the KMS crypto endpoint. Hyperswitch's crate is
+# standalone (no Hyperswitch dependencies) and shared across Juspay services.
+oci_kms = { git = "https://github.com/juspay/hyperswitch", rev = "9986e5c0c201a20d2f7c06ae087d7b90fd2e899c" }
 
 # Leptos (dashboard SSR)
 leptos = "0.7"

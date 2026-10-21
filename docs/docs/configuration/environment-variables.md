@@ -140,8 +140,10 @@ These variables control the secrets provider that decrypts sensitive environment
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INVOKR_SECRETS_MANAGER` | `no_encryption` | Selects the secrets provider: `no_encryption`, `aws_kms` or `gcp_kms`. With a provider selected, all five sensitive variables must be base64-encoded ciphertext. |
+| `INVOKR_SECRETS_MANAGER` | `no_encryption` | Selects the secrets provider: `no_encryption`, `aws_kms`, `gcp_kms` or `oci_kms`. With a provider selected, all five sensitive variables must be base64-encoded ciphertext. |
 | `INVOKR_GCP_KMS_KEY_NAME` | — | Full Cloud KMS key resource name. Required when `INVOKR_SECRETS_MANAGER=gcp_kms`. |
+| `INVOKR_OCI_KMS_CRYPTO_ENDPOINT` | — | The OCI vault's cryptographic endpoint (`https://<vault>-crypto.kms.<region>.oraclecloud.com`). Required when `INVOKR_SECRETS_MANAGER=oci_kms`. |
+| `INVOKR_OCI_KMS_KEY_ID` | — | The OCI KMS key OCID (`ocid1.key.oc1...`). Required when `INVOKR_SECRETS_MANAGER=oci_kms`. |
 | `AWS_ENDPOINT_URL` | *(unset)* | KMS endpoint URL. Set to `http://localhost:4566` for LocalStack dev. Omit for production AWS. |
 | `AWS_REGION` | *(unset)* | AWS region for KMS (e.g. `us-east-1`). Optional — the SDK resolves the region from the standard chain. |
 | `AWS_ACCESS_KEY_ID` | *(unset)* | AWS access key ID. Use `test` for LocalStack. |

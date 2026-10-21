@@ -45,8 +45,11 @@ COPY --from=planner /app/recipe.json recipe.json
 
 ARG FEATURES=""
 
-# Cache dependency build (rebuilds only when Cargo.toml/lock change)
+# Cache dependency build (rebuilds only when Cargo.toml/lock change). The git
+# cache matters: git dependencies (oci_kms lives in the ~470 MB hyperswitch
+# repo) are otherwise re-cloned on every build.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git \
     --mount=type=cache,target=/app/target,sharing=locked,id=cargo-target \
     if [ -n "$FEATURES" ]; then \
       cargo chef cook --release --recipe-path recipe.json --features "$FEATURES"; \
@@ -59,6 +62,7 @@ COPY . .
 ARG BINARY
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git \
     --mount=type=cache,target=/app/target,sharing=locked,id=cargo-target \
     if [ -n "$FEATURES" ]; then \
       cargo build --release --bin "$BINARY" --features "$FEATURES"; \
