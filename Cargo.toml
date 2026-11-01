@@ -30,7 +30,7 @@ actix-web = "4"
 actix-rt = "2"
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json"] }
 log = "0.4"
 
 # Serialization
@@ -48,7 +48,7 @@ redis = { version = "0.25", features = ["tokio-comp", "aio"] }
 
 # Crypto
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.10"
 
 # JSON Schema validation
 jsonschema = "0.18"
