@@ -147,6 +147,7 @@ const sidebars: SidebarsConfig = {
         'deployment/docker',
         'deployment/library-mode',
         'deployment/production',
+        'deployment/runbook',
         'deployment/secrets-management',
         'deployment/dashboard',
       ],
