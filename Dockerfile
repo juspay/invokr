@@ -1,16 +1,21 @@
 # ── Stage 0: Build dashboard WASM (skipped when INCLUDE_DASHBOARD != true) ──
-FROM rust:bookworm AS dashboard-builder
+FROM rust:1.94.1-bookworm AS dashboard-builder
 
 ARG INCLUDE_DASHBOARD="false"
 
 RUN if [ "$INCLUDE_DASHBOARD" = "true" ]; then \
       apt-get update && apt-get install -y pkg-config libssl-dev cmake && rm -rf /var/lib/apt/lists/* \
       && rustup target add wasm32-unknown-unknown \
-      && cargo install wasm-pack --locked \
+      && cargo install wasm-pack --version 0.13.1 --locked \
       && ARCH=$(dpkg --print-architecture) \
-      && if [ "$ARCH" = "arm64" ]; then TW_ARCH="linux-arm64"; else TW_ARCH="linux-x64"; fi \
-      && curl -sL "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-${TW_ARCH}" \
+      && if [ "$ARCH" = "arm64" ]; then \
+           TW_ARCH="linux-arm64"; TW_SHA256="69b1378b8133192d7d2feb12a116fa12d035594f58db3eff215879e4ad8cf39b"; \
+         else \
+           TW_ARCH="linux-x64"; TW_SHA256="7d24f7fa191d2193b78cd5f5a42a6093e14409521908529f42d80b11fde1f1d4"; \
+         fi \
+      && curl -fsSL "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-${TW_ARCH}" \
            -o /usr/local/bin/tailwindcss \
+      && echo "${TW_SHA256}  /usr/local/bin/tailwindcss" | sha256sum -c - \
       && chmod +x /usr/local/bin/tailwindcss; \
     fi
 
@@ -25,7 +30,7 @@ RUN if [ "$INCLUDE_DASHBOARD" = "true" ]; then \
     fi
 
 # ── Stage 1: Plan dependencies (cargo-chef) ─────────────────────────────
-FROM lukemathwalker/cargo-chef:latest-rust-bookworm AS chef
+FROM lukemathwalker/cargo-chef:0.1.77-rust-1.94.1-bookworm AS chef
 WORKDIR /app
 
 FROM chef AS planner

@@ -43,9 +43,7 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
+      - run: rustup toolchain install
 
       - name: Install cargo-edit
         uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759 # v3.5.0
@@ -68,6 +66,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin"
           curl -fsSL -o "$RUNNER_TEMP/bin/yq" \
             https://github.com/mikefarah/yq/releases/download/v4.44.2/yq_linux_amd64
+          echo "246b781828353a59fb04ffaada241f78a8f3f25c623047b40306def1f6806e71  $RUNNER_TEMP/bin/yq" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/bin/yq"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 

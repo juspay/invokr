@@ -382,7 +382,7 @@ dashboard:
 # Install dashboard build tools
 dashboard-setup:
     rustup target add wasm32-unknown-unknown
-    cargo install wasm-pack
+    cargo install wasm-pack --version 0.13.1 --locked
 
 # ─── Cleanup ─────────────────────────────────────────────────
 
