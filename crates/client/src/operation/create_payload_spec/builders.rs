@@ -18,7 +18,7 @@ impl crate::operation::create_payload_spec::builders::CreatePayloadSpecInputBuil
                     }
                 }
 /// Fluent builder constructing a request to `CreatePayloadSpec`.
-/// 
+///
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct CreatePayloadSpecFluentBuilder {
                 handle: ::std::sync::Arc<crate::client::Handle>,
@@ -73,7 +73,7 @@ impl CreatePayloadSpecFluentBuilder {
                         );
                         crate::operation::create_payload_spec::CreatePayloadSpec::orchestrate(&runtime_plugins, input).await
                     }
-    
+
                     /// Consumes this builder, creating a customizable operation that can be modified before being sent.
                     pub fn customize(
                         self,
@@ -87,7 +87,7 @@ impl CreatePayloadSpecFluentBuilder {
                             self.set_config_override(::std::option::Option::Some(config_override.into()));
                             self
                         }
-    
+
                         pub(crate) fn set_config_override(
                             &mut self,
                             config_override: ::std::option::Option<crate::config::Builder>,

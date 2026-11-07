@@ -18,7 +18,7 @@ impl crate::operation::list_execution_logs::builders::ListExecutionLogsInputBuil
                     }
                 }
 /// Fluent builder constructing a request to `ListExecutionLogs`.
-/// 
+///
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct ListExecutionLogsFluentBuilder {
                 handle: ::std::sync::Arc<crate::client::Handle>,
@@ -73,7 +73,7 @@ impl ListExecutionLogsFluentBuilder {
                         );
                         crate::operation::list_execution_logs::ListExecutionLogs::orchestrate(&runtime_plugins, input).await
                     }
-    
+
                     /// Consumes this builder, creating a customizable operation that can be modified before being sent.
                     pub fn customize(
                         self,
@@ -87,7 +87,7 @@ impl ListExecutionLogsFluentBuilder {
                             self.set_config_override(::std::option::Option::Some(config_override.into()));
                             self
                         }
-    
+
                         pub(crate) fn set_config_override(
                             &mut self,
                             config_override: ::std::option::Option<crate::config::Builder>,

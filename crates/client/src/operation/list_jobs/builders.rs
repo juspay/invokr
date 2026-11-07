@@ -18,7 +18,7 @@ impl crate::operation::list_jobs::builders::ListJobsInputBuilder {
                     }
                 }
 /// Fluent builder constructing a request to `ListJobs`.
-/// 
+///
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct ListJobsFluentBuilder {
                 handle: ::std::sync::Arc<crate::client::Handle>,
@@ -73,7 +73,7 @@ impl ListJobsFluentBuilder {
                         );
                         crate::operation::list_jobs::ListJobs::orchestrate(&runtime_plugins, input).await
                     }
-    
+
                     /// Consumes this builder, creating a customizable operation that can be modified before being sent.
                     pub fn customize(
                         self,
@@ -87,7 +87,7 @@ impl ListJobsFluentBuilder {
                             self.set_config_override(::std::option::Option::Some(config_override.into()));
                             self
                         }
-    
+
                         pub(crate) fn set_config_override(
                             &mut self,
                             config_override: ::std::option::Option<crate::config::Builder>,
@@ -179,11 +179,11 @@ impl ListJobsFluentBuilder {
     pub fn get_endpoint(&self) -> &::std::option::Option<::std::string::String> {
                     self.inner.get_endpoint()
                 }
-    /// 
+    ///
     /// Appends an item to `trigger_type`.
-    /// 
+    ///
     /// To override the contents of this collection use [`set_trigger_type`](Self::set_trigger_type).
-    /// 
+    ///
     #[allow(missing_docs)] // documentation missing in model
     pub fn trigger_type(mut self, input: crate::types::TriggerTypeEnum) -> Self {
                         self.inner = self.inner.trigger_type(input);
@@ -198,11 +198,11 @@ impl ListJobsFluentBuilder {
     pub fn get_trigger_type(&self) -> &::std::option::Option<::std::vec::Vec::<crate::types::TriggerTypeEnum>> {
                     self.inner.get_trigger_type()
                 }
-    /// 
+    ///
     /// Appends an item to `status`.
-    /// 
+    ///
     /// To override the contents of this collection use [`set_status`](Self::set_status).
-    /// 
+    ///
     #[allow(missing_docs)] // documentation missing in model
     pub fn status(mut self, input: crate::types::JobStatusEnum) -> Self {
                         self.inner = self.inner.status(input);
@@ -217,11 +217,11 @@ impl ListJobsFluentBuilder {
     pub fn get_status(&self) -> &::std::option::Option<::std::vec::Vec::<crate::types::JobStatusEnum>> {
                     self.inner.get_status()
                 }
-    /// 
+    ///
     /// Appends an item to `endpoint_type`.
-    /// 
+    ///
     /// To override the contents of this collection use [`set_endpoint_type`](Self::set_endpoint_type).
-    /// 
+    ///
     #[allow(missing_docs)] // documentation missing in model
     pub fn endpoint_type(mut self, input: crate::types::EndpointTypeEnum) -> Self {
                         self.inner = self.inner.endpoint_type(input);

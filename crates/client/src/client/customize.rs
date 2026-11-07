@@ -134,7 +134,7 @@
                         self.execute(|sender, config|sender.send(config)).await
                     }
 
-                    
+
                 }
 
 pub(crate) mod internal;

@@ -23,7 +23,7 @@ impl ListJobs {
                         let output = context.finalize().map_err(map_err)?;
                         ::std::result::Result::Ok(output.downcast::<crate::operation::list_jobs::ListJobsOutput>().expect("correct output type"))
                     }
-    
+
                     pub(crate) async fn orchestrate_with_stop_point(
                         runtime_plugins: &::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins,
                         input: crate::operation::list_jobs::ListJobsInput,
@@ -45,19 +45,18 @@ impl ListJobs {
                                 "rpc.service" = "InvokrService",
                                 "rpc.method" = "ListJobs",
                                 "sdk_invocation_id" = ::fastrand::u32(1_000_000..10_000_000),
-                                
+
                             ))
                         .await
                     }
-    
+
                     pub(crate) fn operation_runtime_plugins(
                         client_runtime_plugins: ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins,
                         client_config: &crate::config::Config,
                         config_override: ::std::option::Option<crate::config::Builder>,
                     ) -> ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins {
                         let mut runtime_plugins = client_runtime_plugins.with_operation_plugin(Self::new());
-                        runtime_plugins = runtime_plugins
-                                        .with_client_plugin(crate::auth_plugin::DefaultAuthOptionsPlugin::new(vec![::aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID]));
+
                         if let ::std::option::Option::Some(config_override) = config_override {
                             for plugin in config_override.runtime_plugins.iter().cloned() {
                                 runtime_plugins = runtime_plugins.with_operation_plugin(plugin);
@@ -76,8 +75,12 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for ListJob
                     cfg.store_put(::aws_smithy_runtime_api::client::ser_de::SharedRequestSerializer::new(ListJobsRequestSerializer));
                     cfg.store_put(::aws_smithy_runtime_api::client::ser_de::SharedResponseDeserializer::new(ListJobsResponseDeserializer));
 
-                    
-                    cfg.store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new()));
+                    cfg.store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
+                        crate::config::auth::Params::builder()
+                            .operation_name("ListJobs")
+                            .build()
+                            .expect("required fields set")
+                    ));
 
                     cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
                             "ListJobs",
@@ -90,8 +93,9 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for ListJob
                 fn runtime_components(&self, _: &::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder) -> ::std::borrow::Cow<'_, ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder> {
                     #[allow(unused_mut)]
                     let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new("ListJobs")
-                            .with_interceptor(::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default())
-.with_interceptor(ListJobsEndpointParamsInterceptor)
+                            .with_interceptor(::aws_smithy_runtime_api::client::interceptors::SharedInterceptor::permanent(ListJobsTelemetryInputCaptureInterceptor))
+.with_interceptor(::aws_smithy_runtime_api::client::interceptors::SharedInterceptor::permanent(::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default()))
+.with_interceptor(::aws_smithy_runtime_api::client::interceptors::SharedInterceptor::permanent(ListJobsEndpointParamsInterceptor))
                             .with_retry_classifier(::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<crate::operation::list_jobs::ListJobsError>::new())
 .with_retry_classifier(::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<crate::operation::list_jobs::ListJobsError>::new());
 
@@ -99,23 +103,77 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for ListJob
                 }
             }
 
-            
+            #[derive(Debug)]
+            struct ListJobsTelemetryInputCaptureInterceptor;
+
+            #[::aws_smithy_runtime_api::client::interceptors::dyn_dispatch_hint]
+            impl ::aws_smithy_runtime_api::client::interceptors::Intercept for ListJobsTelemetryInputCaptureInterceptor {
+                fn name(&self) -> &'static str {
+                    "ListJobsTelemetryInputCaptureInterceptor"
+                }
+
+                fn read_before_execution(
+                    &self,
+                    context: &::aws_smithy_runtime_api::client::interceptors::context::BeforeSerializationInterceptorContextRef<'_, ::aws_smithy_runtime_api::client::interceptors::context::Input, ::aws_smithy_runtime_api::client::interceptors::context::Output, ::aws_smithy_runtime_api::client::interceptors::context::Error>,
+                    cfg: &mut ::aws_smithy_types::config_bag::ConfigBag,
+                ) -> ::std::result::Result<(), ::aws_smithy_runtime_api::box_error::BoxError> {
+                    // Nothing to do unless the customer opted in by naming members to record.
+                    let ::std::option::Option::Some(requested) = cfg.load::<::aws_smithy_types::telemetry::RequestedTelemetryAttributes>().filter(|r| !r.is_empty()) else {
+                        return ::std::result::Result::Ok(());
+                    };
+
+                    let ::std::option::Option::Some(input) = context.input().downcast_ref::<ListJobsInput>() else {
+                        // A mismatched input is not this interceptor's concern; skip quietly.
+                        return ::std::result::Result::Ok(());
+                    };
+
+                    let mut captured = ::aws_smithy_types::telemetry::CapturedTelemetryAttributes::default();
+                    if requested.should_capture("org_id") {
+                            if let ::std::option::Option::Some(value) = input.org_id.as_deref() {
+                                captured.insert("org_id", value);
+                            }
+                        }
+if requested.should_capture("workspace_id") {
+                            if let ::std::option::Option::Some(value) = input.workspace_id.as_deref() {
+                                captured.insert("workspace_id", value);
+                            }
+                        }
+if requested.should_capture("cursor") {
+                            if let ::std::option::Option::Some(value) = input.cursor.as_deref() {
+                                captured.insert("cursor", value);
+                            }
+                        }
+if requested.should_capture("job_id") {
+                            if let ::std::option::Option::Some(value) = input.job_id.as_deref() {
+                                captured.insert("job_id", value);
+                            }
+                        }
+if requested.should_capture("endpoint") {
+                            if let ::std::option::Option::Some(value) = input.endpoint.as_deref() {
+                                captured.insert("endpoint", value);
+                            }
+                        }
+
+                    cfg.interceptor_state().store_put(captured);
+                    ::std::result::Result::Ok(())
+                }
+            }
 #[derive(Debug)]
             struct ListJobsResponseDeserializer;
             impl ::aws_smithy_runtime_api::client::ser_de::DeserializeResponse for ListJobsResponseDeserializer {
-                
 
-                fn deserialize_nonstreaming(&self, response: &::aws_smithy_runtime_api::client::orchestrator::HttpResponse) -> ::aws_smithy_runtime_api::client::interceptors::context::OutputOrError {
+
+                fn deserialize_nonstreaming_with_config(&self, response: &::aws_smithy_runtime_api::client::orchestrator::HttpResponse, _cfg: &::aws_smithy_types::config_bag::ConfigBag) -> ::aws_smithy_runtime_api::client::interceptors::context::OutputOrError {
                     let (success, status) = (response.status().is_success(), response.status().as_u16());
             let headers = response.headers();
             let body = response.body().bytes().expect("body loaded");
             #[allow(unused_mut)]
             let mut force_error = false;
-            
+
             let parse_result = if !success && status != 200 || force_error {
-                crate::protocol_serde::shape_list_jobs::de_list_jobs_http_error(status, headers, body)
+                crate::protocol_serde::shape_list_jobs::de_list_jobs_http_error(status, headers, body, _cfg)
             } else {
-                crate::protocol_serde::shape_list_jobs::de_list_jobs_http_response(status, headers, body)
+                crate::protocol_serde::shape_list_jobs::de_list_jobs_http_response(status, headers, body, _cfg)
             };
             crate::protocol_serde::type_erase_result(parse_result)
                 }
@@ -128,7 +186,8 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for ListJob
                     let input = input.downcast::<crate::operation::list_jobs::ListJobsInput>().expect("correct type");
                     let _header_serialization_settings = _cfg.load::<crate::serialization_settings::HeaderSerializationSettings>().cloned().unwrap_or_default();
                     let mut request_builder = {
-                        fn uri_base(_input: &crate::operation::list_jobs::ListJobsInput, output: &mut ::std::string::String) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::BuildError> {
+                        #[allow(clippy::uninlined_format_args)]
+fn uri_base(_input: &crate::operation::list_jobs::ListJobsInput, output: &mut ::std::string::String) -> ::std::result::Result<(), ::aws_smithy_types::error::operation::BuildError> {
     use ::std::fmt::Write as _;
     ::std::write!(output, "/v1/jobs").expect("formatting should succeed");
     ::std::result::Result::Ok(())
@@ -158,21 +217,21 @@ fn uri_query(_input: &crate::operation::list_jobs::ListJobsInput, mut output: &m
     if let ::std::option::Option::Some(inner_5) = &_input.trigger_type {
          {
             for inner_6 in inner_5 {
-                query.push_kv("trigger_type", &::aws_smithy_http::query::fmt_string(inner_6));
+                query.push_kv("trigger_type", &::aws_smithy_http::query::fmt_string(inner_6.as_str()));
             }
         }
     }
     if let ::std::option::Option::Some(inner_7) = &_input.status {
          {
             for inner_8 in inner_7 {
-                query.push_kv("status", &::aws_smithy_http::query::fmt_string(inner_8));
+                query.push_kv("status", &::aws_smithy_http::query::fmt_string(inner_8.as_str()));
             }
         }
     }
     if let ::std::option::Option::Some(inner_9) = &_input.endpoint_type {
          {
             for inner_10 in inner_9 {
-                query.push_kv("endpoint_type", &::aws_smithy_http::query::fmt_string(inner_10));
+                query.push_kv("endpoint_type", &::aws_smithy_http::query::fmt_string(inner_10.as_str()));
             }
         }
     }
@@ -191,25 +250,26 @@ fn uri_query(_input: &crate::operation::list_jobs::ListJobsInput, mut output: &m
 #[allow(clippy::unnecessary_wraps)]
 fn update_http_builder(
                 input: &crate::operation::list_jobs::ListJobsInput,
-                builder: ::http::request::Builder
-            ) -> ::std::result::Result<::http::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
+                builder: ::http_1x::request::Builder
+            ) -> ::std::result::Result<::http_1x::request::Builder, ::aws_smithy_types::error::operation::BuildError> {
     let mut uri = ::std::string::String::new();
     uri_base(input, &mut uri)?;
     uri_query(input, &mut uri)?;
     let builder = crate::protocol_serde::shape_list_jobs::ser_list_jobs_headers(input, builder)?;
     ::std::result::Result::Ok(builder.method("GET").uri(uri))
 }
-let mut builder = update_http_builder(&input, ::http::request::Builder::new())?;
+let mut builder = update_http_builder(&input, ::http_1x::request::Builder::new())?;
 builder
                     };
                     let body = ::aws_smithy_types::body::SdkBody::from("");
-                    
+
                     ::std::result::Result::Ok(request_builder.body(body).expect("valid request").try_into().unwrap())
                 }
             }
 #[derive(Debug)]
             struct ListJobsEndpointParamsInterceptor;
 
+            #[::aws_smithy_runtime_api::client::interceptors::dyn_dispatch_hint]
             impl ::aws_smithy_runtime_api::client::interceptors::Intercept for ListJobsEndpointParamsInterceptor {
                 fn name(&self) -> &'static str {
                     "ListJobsEndpointParamsInterceptor"
@@ -224,10 +284,10 @@ builder
                         .downcast_ref::<ListJobsInput>()
                         .ok_or("failed to downcast to ListJobsInput")?;
 
-                    
+
 
                     let params = crate::config::endpoint::Params::builder()
-                        
+
                         .build()
                         .map_err(|err| ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new("endpoint params could not be built", err))?;
                     cfg.interceptor_state().store_put(::aws_smithy_runtime_api::client::endpoint::EndpointResolverParams::new(params));
@@ -238,7 +298,7 @@ builder
             // The get_* functions below are generated from JMESPath expressions in the
             // operationContextParams trait. They target the operation's input shape.
 
-            
+
 
 /// Error type for the `ListJobsError` operation.
 #[non_exhaustive]
@@ -264,15 +324,15 @@ impl ListJobsError {
                     pub fn unhandled(err: impl ::std::convert::Into<::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync + 'static>>) -> Self {
                         Self::Unhandled(crate::error::sealed_unhandled::Unhandled { source: err.into(), meta: ::std::default::Default::default() })
                     }
-    
+
                     /// Creates the `ListJobsError::Unhandled` variant from an [`ErrorMetadata`](::aws_smithy_types::error::ErrorMetadata).
                     pub fn generic(err: ::aws_smithy_types::error::ErrorMetadata) -> Self {
                         Self::Unhandled(crate::error::sealed_unhandled::Unhandled { source: err.clone().into(), meta: err })
                     }
-    /// 
+    ///
     /// Returns error metadata, which includes the error code, message,
     /// request ID, and potentially additional information.
-    /// 
+    ///
     pub fn meta(&self) -> &::aws_smithy_types::error::ErrorMetadata {
         match self {
             Self::UnauthorizedError(e) => ::aws_smithy_types::error::metadata::ProvideErrorMetadata::meta(e),

@@ -18,7 +18,7 @@ impl crate::operation::get_job_versions::builders::GetJobVersionsInputBuilder {
                     }
                 }
 /// Fluent builder constructing a request to `GetJobVersions`.
-/// 
+///
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct GetJobVersionsFluentBuilder {
                 handle: ::std::sync::Arc<crate::client::Handle>,
@@ -73,7 +73,7 @@ impl GetJobVersionsFluentBuilder {
                         );
                         crate::operation::get_job_versions::GetJobVersions::orchestrate(&runtime_plugins, input).await
                     }
-    
+
                     /// Consumes this builder, creating a customizable operation that can be modified before being sent.
                     pub fn customize(
                         self,
@@ -87,7 +87,7 @@ impl GetJobVersionsFluentBuilder {
                             self.set_config_override(::std::option::Option::Some(config_override.into()));
                             self
                         }
-    
+
                         pub(crate) fn set_config_override(
                             &mut self,
                             config_override: ::std::option::Option<crate::config::Builder>,

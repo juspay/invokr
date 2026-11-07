@@ -74,7 +74,7 @@ check:
 
 # ─── Smithy + SDK ─────────────────────────────────────────────
 
-export SMITHY_MAVEN_REPOS := "https://repo.maven.apache.org/maven2|https://sandbox.assets.juspay.in/smithy/m2"
+export SMITHY_MAVEN_REPOS := "https://sandbox.assets.juspay.in/smithy/m2|https://repo.maven.apache.org/maven2"
 
 # Run before regeneration to surface model errors with clean messages
 # instead of cryptic codegen failures.
