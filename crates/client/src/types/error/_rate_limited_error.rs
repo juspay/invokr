@@ -24,7 +24,7 @@ impl ::std::fmt::Display for RateLimitedError {
         ::std::write!(f, "RateLimitedError")?;
         if let ::std::option::Option::Some(inner_1) = &self.message {
              {
-                ::std::write!(f, ": {}", inner_1)?;
+                ::std::write!(f, ": {inner_1}")?;
             }
         }
         Ok(())
@@ -82,7 +82,7 @@ impl RateLimitedErrorBuilder {
                                                     self.meta = Some(meta);
                                                     self
                                                 }
-    
+
                                                 /// Sets error metadata
                                                 pub fn set_meta(&mut self, meta: std::option::Option<::aws_smithy_types::error::ErrorMetadata>) -> &mut Self {
                                                     self.meta = meta;

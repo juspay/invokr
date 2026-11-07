@@ -18,7 +18,7 @@ impl crate::operation::update_job::builders::UpdateJobInputBuilder {
                     }
                 }
 /// Fluent builder constructing a request to `UpdateJob`.
-/// 
+///
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct UpdateJobFluentBuilder {
                 handle: ::std::sync::Arc<crate::client::Handle>,
@@ -73,7 +73,7 @@ impl UpdateJobFluentBuilder {
                         );
                         crate::operation::update_job::UpdateJob::orchestrate(&runtime_plugins, input).await
                     }
-    
+
                     /// Consumes this builder, creating a customizable operation that can be modified before being sent.
                     pub fn customize(
                         self,
@@ -87,7 +87,7 @@ impl UpdateJobFluentBuilder {
                             self.set_config_override(::std::option::Option::Some(config_override.into()));
                             self
                         }
-    
+
                         pub(crate) fn set_config_override(
                             &mut self,
                             config_override: ::std::option::Option<crate::config::Builder>,

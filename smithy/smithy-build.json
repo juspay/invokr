@@ -3,15 +3,16 @@
   "sources": ["model"],
   "maven": {
     "dependencies": [
-      "software.amazon.smithy:smithy-model:1.55.0",
-      "software.amazon.smithy:smithy-utils:1.55.0",
-      "software.amazon.smithy:smithy-codegen-core:1.55.0",
-      "software.amazon.smithy:smithy-aws-traits:1.55.0",
-      "software.amazon.smithy:smithy-validation-model:1.55.0",
-      "software.amazon.smithy:smithy-openapi:1.55.0",
+      "software.amazon.smithy:smithy-model:1.69.0",
+      "software.amazon.smithy:smithy-utils:1.69.0",
+      "software.amazon.smithy:smithy-codegen-core:1.69.0",
+      "software.amazon.smithy:smithy-aws-traits:1.69.0",
+      "software.amazon.smithy:smithy-validation-model:1.69.0",
+      "software.amazon.smithy:smithy-rules-engine:1.69.0",
+      "software.amazon.smithy:smithy-openapi:1.69.0",
       "software.amazon.smithy.typescript:smithy-aws-typescript-codegen:0.26.0",
       "in.juspay.smithy.haskell:client-codegen:0.0.4",
-      "software.amazon.smithy.rust.codegen:codegen-client:0.1.0"
+      "software.amazon.smithy.rust:codegen-client:0.1.37"
     ]
   },
   "plugins": {
@@ -32,12 +33,13 @@
       "codegen": {
         "addMessageToErrors": true,
         "renameErrors": true,
-        "enableNewSmithyRuntime": "orchestrator"
+        "enableNewSmithyRuntime": "orchestrator",
+        "includeLegacyClient": false
       },
       "service": "com.invokr#InvokrService",
       "module": "invokr_sdk",
       "moduleVersion": "0.1.0",
-      "minimumSupportedRustVersion": "1.82.0",
+      "minimumSupportedRustVersion": "1.94.1",
       "moduleDescription": "Rust SDK for Invokr job scheduling service",
       "moduleAuthors": [
         "invokr@example.com"

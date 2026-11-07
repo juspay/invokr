@@ -20,7 +20,7 @@ invokr_sdk = { git = "https://github.com/juspay/invokr.git" }
 
 The `invokr_sdk` crate is **excluded** from the Invokr workspace (`Cargo.toml` → `[workspace] exclude`) for two reasons:
 
-1. **Different MSRV**: The SDK targets Rust 1.82, while the server crates target a different minimum version
+1. **Different MSRV**: The SDK targets Rust 1.94.1, while the server crates target a different minimum version
 2. **Heavy AWS runtime stack**: The SDK pulls in the AWS smithy runtime, which the server crates don't need
 
 ### Committed to Repository
@@ -145,12 +145,13 @@ The `smithy-build.json` configures the Rust codegen:
     "codegen": {
       "addMessageToErrors": true,
       "renameErrors": true,
-      "enableNewSmithyRuntime": "orchestrator"
+      "enableNewSmithyRuntime": "orchestrator",
+      "includeLegacyClient": false
     },
     "service": "com.invokr#InvokrService",
     "module": "invokr_sdk",
     "moduleVersion": "0.1.0",
-    "minimumSupportedRustVersion": "1.82.0",
+    "minimumSupportedRustVersion": "1.94.1",
     "moduleDescription": "Rust SDK for Invokr job scheduling service"
   }
 }
@@ -162,9 +163,10 @@ The `smithy-build.json` configures the Rust codegen:
 | `codegen.addMessageToErrors` | `true` | Include error messages in error types |
 | `codegen.renameErrors` | `true` | Rename Smithy errors to idiomatic Rust names |
 | `codegen.enableNewSmithyRuntime` | `orchestrator` | Use the new smithy orchestrator runtime |
+| `codegen.includeLegacyClient` | `false` | Omit the legacy `rustls` (rustls 0.21 / hyper 0.14) feature from the generated crate |
 | `service` | `com.invokr#InvokrService` | Smithy service shape |
 | `module` | `invokr_sdk` | Cargo crate name |
-| `minimumSupportedRustVersion` | `1.82.0` | MSRV for the generated crate |
+| `minimumSupportedRustVersion` | `1.94.1` | MSRV for the generated crate |
 
 ## Related Pages
 

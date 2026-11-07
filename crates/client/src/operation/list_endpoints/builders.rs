@@ -18,7 +18,7 @@ impl crate::operation::list_endpoints::builders::ListEndpointsInputBuilder {
                     }
                 }
 /// Fluent builder constructing a request to `ListEndpoints`.
-/// 
+///
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct ListEndpointsFluentBuilder {
                 handle: ::std::sync::Arc<crate::client::Handle>,
@@ -73,7 +73,7 @@ impl ListEndpointsFluentBuilder {
                         );
                         crate::operation::list_endpoints::ListEndpoints::orchestrate(&runtime_plugins, input).await
                     }
-    
+
                     /// Consumes this builder, creating a customizable operation that can be modified before being sent.
                     pub fn customize(
                         self,
@@ -87,7 +87,7 @@ impl ListEndpointsFluentBuilder {
                             self.set_config_override(::std::option::Option::Some(config_override.into()));
                             self
                         }
-    
+
                         pub(crate) fn set_config_override(
                             &mut self,
                             config_override: ::std::option::Option<crate::config::Builder>,

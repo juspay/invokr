@@ -6,9 +6,9 @@
 /// variant in a current version of SDK, your code should continue to work when you
 /// upgrade SDK to a future version in which the enum does include a variant for that
 /// feature.
-/// 
+///
 /// Here is an example of how you can make a match expression forward-compatible:
-/// 
+///
 /// ```text
 /// # let endpointtypeenum = unimplemented!();
 /// match endpointtypeenum {
@@ -32,12 +32,12 @@
 /// Specifically, when `endpointtypeenum` represents `NewFeature`,
 /// the execution path will hit the second last match arm as before by virtue of
 /// calling `as_str` on `EndpointTypeEnum::NewFeature` also yielding `"NewFeature"`.
-/// 
+///
 /// Explicitly matching on the `Unknown` variant should
 /// be avoided for two reasons:
 /// - The inner data `UnknownVariantValue` is opaque, and no further information can be extracted.
 /// - It might inadvertently shadow other intended match arms.
-/// 
+///
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::Eq, ::std::cmp::Ord, ::std::cmp::PartialEq, ::std::cmp::PartialOrd, ::std::fmt::Debug, ::std::hash::Hash)]
@@ -112,7 +112,7 @@ impl ::std::fmt::Display for EndpointTypeEnum {
 EndpointTypeEnum::Internal => write!(f, "INTERNAL"),
 EndpointTypeEnum::Kafka => write!(f, "KAFKA"),
 EndpointTypeEnum::RedisStream => write!(f, "REDIS_STREAM"),
-EndpointTypeEnum::Unknown(value) => write!(f, "{}", value)
+EndpointTypeEnum::Unknown(value) => write!(f, "{value}")
                             }
                         }
                     }

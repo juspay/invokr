@@ -18,8 +18,11 @@ pub fn ser_retry_policy(
     Ok(())
 }
 
-pub(crate) fn de_retry_policy<'a, I>(tokens: &mut ::std::iter::Peekable<I>) -> ::std::result::Result<Option<crate::types::RetryPolicy>, ::aws_smithy_json::deserialize::error::DeserializeError>
+pub(crate) fn de_retry_policy<'a, I>(tokens: &mut ::std::iter::Peekable<I>, _value: &'a [u8], depth: u32) -> ::std::result::Result<Option<crate::types::RetryPolicy>, ::aws_smithy_json::deserialize::error::DeserializeError>
                         where I: Iterator<Item = Result<::aws_smithy_json::deserialize::Token<'a>, ::aws_smithy_json::deserialize::error::DeserializeError>> {
+    if depth >= 128u32 {
+                                return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom("maximum nesting depth exceeded"));
+                            }
     match tokens.next().transpose()? {
         Some(::aws_smithy_json::deserialize::Token::ValueNull { .. }) => Ok(None),
                         Some(::aws_smithy_json::deserialize::Token::StartObject { .. }) => {
@@ -63,7 +66,7 @@ pub(crate) fn de_retry_policy<'a, I>(tokens: &mut ::std::iter::Peekable<I>) -> :
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?
                         }
                     }
-                    other => return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!("expected object key or end object, found: {:?}", other)))
+                    other => return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(format!("expected object key or end object, found: {other:?}")))
                 }
             }
             Ok(Some(builder.build()))

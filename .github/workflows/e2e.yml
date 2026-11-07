@@ -72,10 +72,13 @@ jobs:
       # Same version pinned by nix/smithy-cli.nix so CI codegen matches dev.
       - name: Install Smithy CLI
         env:
-          SMITHY_VERSION: 1.55.0
+          SMITHY_VERSION: 1.69.0
+          # sha256 of smithy-cli-linux-x86_64.zip; update together with SMITHY_VERSION.
+          SMITHY_SHA256: 45db1e239c0aa5fce6706676701c9e4ed09e67cd231222762207dcf384c9ea4e
         run: |
           curl -sSL -o /tmp/smithy.zip \
             "https://github.com/smithy-lang/smithy/releases/download/${SMITHY_VERSION}/smithy-cli-linux-x86_64.zip"
+          echo "${SMITHY_SHA256}  /tmp/smithy.zip" | sha256sum -c -
           unzip -q /tmp/smithy.zip -d /tmp
           sudo /tmp/smithy-cli-linux-x86_64/install
           smithy --version

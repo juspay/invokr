@@ -9,7 +9,7 @@ members = [
 ]
 exclude = [
     # Generated client SDK — committed for downstream consumers (e.g. aarokya)
-    # to depend on via `git`. Pins a different MSRV (1.82) and runtime stack
+    # to depend on via `git`. Pins a different MSRV (1.94.1) and runtime stack
     # than the server workspace, so it stays out of the workspace build graph.
     "crates/client",
 ]
@@ -30,7 +30,13 @@ actix-web = "4"
 actix-rt = "2"
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json"] }
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "chrono",
+    "uuid",
+    "json",
+] }
 log = "0.4"
 
 # Serialization
@@ -89,7 +95,7 @@ authn_kit = { git = "https://github.com/ayushjain17/authn_kit", rev = "671f4fca7
 
 # Secret providers
 aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-kms = "1"
+aws-sdk-kms = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 google-cloud-kms = "0.6.0"
 # No official OCI Rust SDK covers the KMS crypto endpoint. Hyperswitch's crate is
 # standalone (no Hyperswitch dependencies) and shared across Juspay services.

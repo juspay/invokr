@@ -52,21 +52,21 @@ impl  ListJobsInput  {
         self.endpoint.as_deref()
     }
     #[allow(missing_docs)] // documentation missing in model
-    /// 
+    ///
     /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.trigger_type.is_none()`.
     pub fn trigger_type(&self) -> &[crate::types::TriggerTypeEnum] {
         self.trigger_type.as_deref()
         .unwrap_or_default()
     }
     #[allow(missing_docs)] // documentation missing in model
-    /// 
+    ///
     /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.status.is_none()`.
     pub fn status(&self) -> &[crate::types::JobStatusEnum] {
         self.status.as_deref()
         .unwrap_or_default()
     }
     #[allow(missing_docs)] // documentation missing in model
-    /// 
+    ///
     /// If no value was sent for this field, a default will be set. If you want to determine if no value was sent, use `.endpoint_type.is_none()`.
     pub fn endpoint_type(&self) -> &[crate::types::EndpointTypeEnum] {
         self.endpoint_type.as_deref()

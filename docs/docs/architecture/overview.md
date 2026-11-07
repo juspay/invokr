@@ -101,7 +101,7 @@ The dashboard is a single-page application built with [Leptos](https://leptos.rs
 | `invokr-worker` | Execution engine. Polls DB for QUEUED/RETRYING/PENDING executions, resolves templates, dispatches to endpoints. Exposes metrics via HTTP listener |
 | `invokr-mock-server` | Test fixture — HTTP server on port 9999 for integration tests |
 | `invokr-dashboard` | Web UI — Leptos/WASM, shows jobs, executions, attempts. Excluded from workspace build |
-| `invokr-sdk` | Generated Rust SDK from Smithy models. Excluded from workspace build (different MSRV 1.82) |
+| `invokr-sdk` | Generated Rust SDK from Smithy models. Excluded from workspace build (different MSRV 1.94.1) |
 
 Both `invokr-api` and `invokr-worker` depend on `invokr-common`. The dashboard and SDK are standalone — they communicate with Invokr exclusively through the REST API.
 
@@ -208,5 +208,5 @@ cargo build --workspace --features invokr-worker/kafka,invokr-worker/redis-strea
 Kafka and Redis Stream dispatchers are conditionally compiled. When not enabled, the pipeline returns an `UNSUPPORTED_TYPE` error for those endpoint types. The `pg_cron` extension is installed at the database level via migration and is always available.
 
 :::note
-The `invokr-sdk` crate (generated Rust SDK) is excluded from the workspace build because it targets a different MSRV (1.82) and pulls a heavy AWS smithy runtime stack that the server crates don't need. See [Rust SDK](../sdks/rust) for details.
+The `invokr-sdk` crate (generated Rust SDK) is excluded from the workspace build because it targets a different MSRV (1.94.1) and pulls a heavy AWS smithy runtime stack that the server crates don't need. See [Rust SDK](../sdks/rust) for details.
 :::
