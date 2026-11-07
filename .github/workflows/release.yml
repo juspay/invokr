@@ -18,21 +18,30 @@ jobs:
   tag-release:
     name: Bump, changelog and tag
     runs-on: ubuntu-latest
+    # The app's credentials live in the production environment, so only this
+    # job on main can use them. Same setup as juspay/superposition and airborne.
+    environment: production
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
     outputs:
       version: ${{ steps.bump.outputs.version }}
     steps:
+      # main's ruleset requires every change to go through a pull request, so
+      # github-actions[bot] cannot push the version bump this job creates. This
+      # app is on the ruleset's bypass list, so its token can.
+      - name: Generate GitHub app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.HYPER_SDK_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HYPER_SDK_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # main's ruleset requires every change to go through a pull request and
-          # has no bypass actors, so github-actions[bot] cannot push the version
-          # bump this job creates. This token's owner must be on the ruleset's
-          # bypass list -- the token changes who is pushing, not whether that
-          # identity is allowed to.
-          token: ${{ secrets.INVOKR_RELEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: dtolnay/rust-toolchain@stable
 
