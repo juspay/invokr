@@ -1,9 +1,3 @@
-//! The worker binary's ops server: `/health`, `/ready` and `/metrics`.
-//!
-//! Behind the `ops-server` feature (on by default). Embedders running the worker
-//! inside their own process serve their own probes and metrics, and leave it off
-//! to skip actix-web and the Prometheus exporter.
-
 use std::sync::Arc;
 use std::time::Duration;
 

@@ -1,4 +1,6 @@
+#[cfg(feature = "actix")]
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+#[cfg(feature = "actix")]
 use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
@@ -47,11 +49,13 @@ pub enum AppError {
     Internal(String),
 }
 
+#[cfg(feature = "actix")]
 #[derive(Serialize)]
 struct ErrorBody {
     error: ErrorDetail,
 }
 
+#[cfg(feature = "actix")]
 #[derive(Serialize)]
 struct ErrorDetail {
     code: &'static str,
@@ -59,6 +63,7 @@ struct ErrorDetail {
     request_id: Option<String>,
 }
 
+#[cfg(feature = "actix")]
 impl AppError {
     fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {
@@ -94,6 +99,7 @@ impl AppError {
     }
 }
 
+#[cfg(feature = "actix")]
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         self.status_and_code().0

@@ -10,7 +10,7 @@ name = "library-mode-example"
 path = "src/main.rs"
 
 [dependencies]
-invokr-worker = { path = "../../crates/worker" }
+invokr-worker = { path = "../../crates/worker", default-features = false }
 invokr-common = { path = "../../crates/common" }
 tokio = { workspace = true }
 sqlx = { workspace = true }

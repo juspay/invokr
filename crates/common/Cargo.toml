@@ -13,6 +13,7 @@ kms = [
     "dep:oci_kms",
 ]
 prometheus = ["dep:metrics-exporter-prometheus"]
+actix = ["dep:actix-web"]
 
 [dependencies]
 aws-config = { workspace = true, optional = true }
@@ -29,7 +30,7 @@ chrono.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-actix-web.workspace = true
+actix-web = { workspace = true, optional = true }
 dashmap.workspace = true
 aes-gcm.workspace = true
 rand.workspace = true
