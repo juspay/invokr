@@ -6,14 +6,20 @@
 //! state. `NoEncryption` is compiled in unconditionally and is the default, so
 //! every deployment runs the same code path whether or not it encrypts.
 
+#[cfg(feature = "kms")]
 mod aws;
+#[cfg(feature = "kms")]
 mod gcp;
 mod no_encryption;
+#[cfg(feature = "kms")]
 mod oci;
 
+#[cfg(feature = "kms")]
 pub use aws::AwsKms;
+#[cfg(feature = "kms")]
 pub use gcp::GcpKms;
 pub use no_encryption::NoEncryption;
+#[cfg(feature = "kms")]
 pub use oci::OciKms;
 
 use crate::env::get_from_env_or_default;
@@ -50,6 +56,11 @@ pub enum SecretsError {
          no_encryption, aws_kms, gcp_kms, oci_kms"
     )]
     UnknownProvider(String),
+    #[error(
+        "INVOKR_SECRETS_MANAGER '{0}' is recognised, but this build was \
+         compiled without the `kms` cargo feature"
+    )]
+    KmsNotCompiled(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -76,17 +87,26 @@ pub async fn provider_from_env() -> Result<Box<dyn SecretProvider>, SecretsError
     let raw: String = get_from_env_or_default("INVOKR_SECRETS_MANAGER", String::new());
     let provider: Box<dyn SecretProvider> = match parse_provider_kind(&raw)? {
         ProviderKind::NoEncryption => Box::new(NoEncryption),
+        #[cfg(feature = "kms")]
         ProviderKind::AwsKms => {
             tracing::info!("secrets manager: aws_kms");
             Box::new(AwsKms::new().await)
         }
+        #[cfg(feature = "kms")]
         ProviderKind::GcpKms => {
             tracing::info!("secrets manager: gcp_kms");
             Box::new(GcpKms::new().await?)
         }
+        #[cfg(feature = "kms")]
         ProviderKind::OciKms => {
             tracing::info!("secrets manager: oci_kms");
             Box::new(OciKms::new()?)
+        }
+        #[cfg(not(feature = "kms"))]
+        ProviderKind::AwsKms | ProviderKind::GcpKms | ProviderKind::OciKms => {
+            return Err(SecretsError::KmsNotCompiled(
+                raw.trim().to_ascii_lowercase(),
+            ));
         }
     };
     provider.validate().await?;
@@ -172,6 +192,15 @@ mod tests {
                 && msg.contains("gcp_kms")
                 && msg.contains("oci_kms"),
             "message should list valid values: {msg}"
+        );
+    }
+
+    #[test]
+    fn kms_not_compiled_names_the_provider_and_the_feature() {
+        let msg = SecretsError::KmsNotCompiled("oci_kms".into()).to_string();
+        assert!(
+            msg.contains("oci_kms") && msg.contains("`kms`"),
+            "message should name the provider and the feature: {msg}"
         );
     }
 

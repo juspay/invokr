@@ -15,10 +15,7 @@
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
-          targets = [ "wasm32-unknown-unknown" ];
-        };
+        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
       in {
         packages.smithy-cli = pkgs.callPackage ./nix/smithy-cli.nix { };
 
@@ -31,7 +28,7 @@
             nodejs_22
             openssl
             pkg-config
-            postgresql
+            postgresql_16
             rustToolchain
             self.packages.${system}.smithy-cli
             sqlx-cli

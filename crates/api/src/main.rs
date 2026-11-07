@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 // Leptos SSR renders the dashboard's deeply-nested `view!` trees, whose generated
 // generic types exceed rustc's default recursion limit (128) when this binary
 // monomorphizes the server-side render. Raise it so codegen can compute the

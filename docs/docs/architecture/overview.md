@@ -192,6 +192,8 @@ The worker crate supports optional features that can be enabled at compile time:
 |---------|-------------|-------------|
 | `kafka` | Kafka dispatcher support via `rdkafka` | `--features invokr-worker/kafka` |
 | `redis-stream` | Redis Stream dispatcher support via `redis` | `--features invokr-worker/redis-stream` |
+| `kms` (default) | Cloud KMS secret providers (`aws_kms`, `gcp_kms`, `oci_kms`); on by default in `invokr-api` and `invokr-worker`, off in `invokr-common` | `--no-default-features` to drop |
+| `ops-server` (default) | `invokr-worker`'s `/health`, `/ready`, `/metrics` server; the worker binary requires it | `--no-default-features` to drop (library only) |
 | `pg_cron` | pg_cron extension for CRON scheduling (database-level) | Enabled via migration |
 
 ```bash

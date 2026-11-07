@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};

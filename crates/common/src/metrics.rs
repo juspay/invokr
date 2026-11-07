@@ -1,5 +1,3 @@
-use metrics_exporter_prometheus::PrometheusHandle;
-
 // --- Counters ---
 pub const JOBS_CREATED_TOTAL: &str = "invokr_jobs_created_total";
 pub const EXECUTIONS_CLAIMED_TOTAL: &str = "invokr_executions_claimed_total";
@@ -20,7 +18,8 @@ pub const DISPATCH_DURATION_SECONDS: &str = "invokr_dispatch_duration_seconds";
 pub const WORKER_INFLIGHT: &str = "invokr_worker_inflight_executions";
 
 /// Install the Prometheus recorder and return a handle for rendering metrics.
-pub fn install_recorder() -> PrometheusHandle {
+#[cfg(feature = "prometheus")]
+pub fn install_recorder() -> metrics_exporter_prometheus::PrometheusHandle {
     metrics_exporter_prometheus::PrometheusBuilder::new()
         .install_recorder()
         .expect("failed to install Prometheus recorder")

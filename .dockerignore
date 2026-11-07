@@ -14,3 +14,4 @@ smithy/build/
 *.svg
 .env*
 .DS_Store
+rust-toolchain.toml

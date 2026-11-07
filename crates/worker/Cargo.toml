@@ -7,9 +7,16 @@ license.workspace = true
 [[bin]]
 name = "invokr-worker"
 path = "src/main.rs"
+required-features = ["ops-server"]
 
 [features]
-default = []
+default = ["kms", "ops-server"]
+kms = ["invokr-common/kms"]
+ops-server = [
+    "dep:actix-web",
+    "dep:metrics-exporter-prometheus",
+    "invokr-common/prometheus",
+]
 kafka = ["rdkafka"]
 redis-stream = ["redis"]
 
@@ -30,9 +37,9 @@ anyhow.workspace = true
 tokio-util.workspace = true
 async-trait.workspace = true
 
-actix-web.workspace = true
+actix-web = { workspace = true, optional = true }
 metrics.workspace = true
-metrics-exporter-prometheus.workspace = true
+metrics-exporter-prometheus = { workspace = true, optional = true }
 
 rdkafka = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }

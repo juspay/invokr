@@ -1,3 +1,4 @@
+#![deny(unused_crate_dependencies)]
 // Re-exported so embedders don't need their own sqlx dependency: sqlx types
 // (PgPool, Error) appear in this crate's public API (e.g. SchemaProvider),
 // and a separately pinned sqlx version would not type-check against them.

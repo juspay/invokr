@@ -9,16 +9,14 @@ name = "invokr-api"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["kms"]
+kms = ["invokr-common/kms"]
 pg_cron = []
 
 [dependencies]
-invokr-common = { path = "../common" }
+invokr-common = { path = "../common", features = ["prometheus", "actix"] }
 invokr-dashboard = { path = "../dashboard", features = ["ssr"] }
-tokio.workspace = true
 actix-web.workspace = true
-actix-rt.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 tracing.workspace = true
@@ -33,7 +31,6 @@ chrono-tz.workspace = true
 actix-cors = "0.7"
 actix-files = "0.6"
 leptos = { workspace = true, features = ["ssr"] }
-leptos_router = { workspace = true, features = ["ssr"] }
 leptos_actix.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true

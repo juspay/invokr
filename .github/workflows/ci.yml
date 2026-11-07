@@ -24,48 +24,62 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy + feature builds
+    name: clippy (workspace)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev cmake
+      - name: Clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  features:
+    name: features (${{ matrix.args }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        args:
+          - -p invokr-worker --no-default-features
+          - -p invokr-worker --all-features
+          - -p invokr-api --no-default-features
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
+          key: ${{ matrix.args }}
       # libsasl2/zlib headers are needed by the vendored librdkafka the
       # `kafka` feature compiles from source.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev libsasl2-dev zlib1g-dev cmake
-      # --all-targets so test modules are linted too; the feature-gated
-      # dispatchers (kafka, redis-stream) are only reachable with the features on.
-      - name: Clippy (default features)
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      # The optional dispatchers are built by nothing else in CI, so without
-      # this step they rot silently.
-      - name: Clippy (kafka + redis-stream)
+      - name: Clippy
+        run: cargo clippy ${{ matrix.args }} --all-targets -- -D warnings
+      - name: Unit tests
         run: |
-          cargo clippy -p invokr-worker --all-targets \
-            --features kafka,redis-stream -- -D warnings
-          cargo clippy -p invokr-api --all-targets -- -D warnings
+          cargo test ${{ matrix.args }} -- --skip dispatcher::
 
   test:
     name: unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -99,9 +113,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # librdkafka is vendored by rdkafka-sys and compiled from source.
       - name: Install build dependencies
@@ -166,7 +180,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # docker/postgres bakes pg_cron into postgres:16; the pg_cron migration
       # fails against a stock image, so build the same image dev uses.
@@ -217,14 +231,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
         with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with:
-          version: latest
+          version: v0.13.1
 
       # `cargo test`/`clippy` only ever build the dashboard for the host with the
       # `ssr` feature; the `hydrate` (wasm32) side is a separate compile surface
@@ -236,8 +248,9 @@ jobs:
       # Pinned to the same Tailwind release the Dockerfile downloads.
       - name: Install Tailwind CLI
         run: |
-          curl -sSL -o /usr/local/bin/tailwindcss \
+          curl -fsSL -o /usr/local/bin/tailwindcss \
             https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64
+          echo "7d24f7fa191d2193b78cd5f5a42a6093e14409521908529f42d80b11fde1f1d4  /usr/local/bin/tailwindcss" | sha256sum -c -
           chmod +x /usr/local/bin/tailwindcss
 
       - name: Build stylesheet
@@ -249,9 +262,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: crates/client
       # crates/client is excluded from the workspace (own MSRV + runtime stack),
