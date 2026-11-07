@@ -127,7 +127,6 @@ version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92589714878ca59a7626ea19734f0e07a6a875197eec751bb5d3f99e64998c63"
 dependencies = [
- "actix-macros",
  "futures-core",
  "tokio",
 ]
@@ -2800,7 +2799,6 @@ version = "0.5.1"
 dependencies = [
  "actix-cors",
  "actix-files",
- "actix-rt",
  "actix-web",
  "anyhow",
  "async-trait",
@@ -2814,14 +2812,11 @@ dependencies = [
  "jsonschema",
  "leptos",
  "leptos_actix",
- "leptos_router",
  "metrics",
  "metrics-exporter-prometheus",
  "secrecy",
- "serde",
  "serde_json",
  "sqlx",
- "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -2839,14 +2834,10 @@ dependencies = [
  "aws-sdk-kms",
  "base64 0.22.1",
  "chrono",
- "chrono-tz",
  "cron",
  "dashmap 5.5.3",
- "dotenvy",
  "google-cloud-kms",
- "jsonschema",
  "log",
- "metrics",
  "metrics-exporter-prometheus",
  "oci_kms",
  "rand 0.8.5",
@@ -2856,7 +2847,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -2880,15 +2870,12 @@ dependencies = [
 name = "invokr-mock-server"
 version = "0.5.1"
 dependencies = [
- "actix-rt",
  "actix-web",
- "chrono",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

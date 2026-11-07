@@ -46,10 +46,16 @@ invokr-worker = { git = "https://github.com/juspay/invokr", branch = "main" }
 |---------|-------------|
 | `kafka` | Kafka dispatcher support via `rdkafka` |
 | `redis-stream` | Redis Stream dispatcher support via `redis` |
+| `kms` (default) | Cloud KMS secret providers (`aws_kms`, `gcp_kms`, `oci_kms`) for `INVOKR_SECRETS_MANAGER`. Only `AppConfig::from_env` uses them; library mode takes already-decrypted values, so embedders can turn it off with `default-features = false` to skip the cloud SDKs. |
+| `ops-server` (default) | The worker binary's `/health`, `/ready` and `/metrics` server (actix-web + Prometheus exporter). The library never starts it, so embedders can turn it off with `default-features = false`. |
 
 ```toml
 # Example: Kafka + Redis Stream dispatchers
 invokr-worker = { git = "https://github.com/juspay/invokr", branch = "main", features = ["kafka", "redis-stream"] }
+
+# Embedding without the cloud KMS providers or the ops server; you pass
+# already-decrypted config and serve your own probes and metrics
+invokr-worker = { git = "https://github.com/juspay/invokr", branch = "main", default-features = false }
 ```
 
 Without a feature, the corresponding endpoint type returns an `UNSUPPORTED_TYPE` error at dispatch time.

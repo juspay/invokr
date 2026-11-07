@@ -1,5 +1,6 @@
 use invokr_common::{config::AppConfig, tenant::SchemaRegistry};
-use invokr_worker::health::{OpsState, WorkerHealth};
+use invokr_worker::health::WorkerHealth;
+use invokr_worker::ops::{ops_server, OpsState};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -32,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
         metrics: metrics_handle,
         db_probe_timeout: Duration::from_millis(config.health.db_probe_timeout_ms),
     };
-    tokio::spawn(invokr_worker::health::ops_server(
+    tokio::spawn(ops_server(
         ops_port,
         config.health.server_workers,
         ops_state,
