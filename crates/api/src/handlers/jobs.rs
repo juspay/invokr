@@ -2,7 +2,6 @@ use crate::extractors::{AuthenticatedRequest, JobFilters, Workspace};
 use crate::router::AppState;
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
-use invokr_common::metrics as m;
 use invokr_common::{
     db,
     db::DbContext,
@@ -11,76 +10,33 @@ use invokr_common::{
     models::job::{CreateJob, TriggerType, UpdateJob},
     models::pg_cron_expr::PgCronExpr,
     pagination::{encode_cursor, PaginatedResponse, PaginationParams},
+    service::jobs::{self as jobsvc, CreateJobParams, CreateOutcome, CreateTrigger},
 };
 use uuid::Uuid;
 
-// `drop(db)` below is not about running a destructor — it marks the point
-// where the DbContext hands the `&mut tx` borrow back so the transaction
-// can be used (and committed) directly. Keep it: NLL would end the borrow
-// anyway, but the explicit release is what the surrounding comments refer to.
-#[allow(clippy::drop_non_drop)]
 pub async fn create(
     state: web::Data<AppState>,
     _auth: AuthenticatedRequest,
     ws: Workspace,
     body: web::Json<CreateJob>,
 ) -> Result<HttpResponse, AppError> {
+    // Thin adapter over the shared core (`invokr_common::service::jobs`). This
+    // handler owns only HTTP-input concerns: trigger parsing, the IMMEDIATE
+    // server-generated key, CRON next-run computation, and response shaping. The
+    // core owns endpoint fetch, INTERNAL guard, validation, max-attempts,
+    // idempotency short-circuit, the transaction, and pg_cron — shared verbatim
+    // with library mode so the two cannot drift. See juspay/invokr#55.
+
     let prefix = state.prefix();
+    let schema = &ws.0.schema_name;
 
     let trigger = TriggerType::from_str_val(&body.trigger)
         .ok_or_else(|| AppError::InvalidRequest(format!("Invalid trigger: {}", body.trigger)))?;
 
-    let mut conn = invokr_common::db::scoped::scoped_connection(&state.pool, &ws.0.schema_name)
-        .await
-        .map_err(AppError::from)?;
-    let mut db = DbContext::new(&mut conn, prefix);
-
-    let ep = db::endpoints::get(&mut db, &body.endpoint)
-        .await?
-        .ok_or_else(|| AppError::EndpointNotFound(body.endpoint.clone()))?;
-
-    // INTERNAL endpoints back invokr-driven jobs (today: the dogfooded reaper)
-    // and are not user-creatable — see `handlers::endpoints::create`. The same
-    // invariant has to hold on the job side, or a user could stack their own
-    // jobs against an internal endpoint (extra reaper sweeps, or one-off
-    // IMMEDIATE/DELAYED reaper invocations).
-    if EndpointType::from_str_val(&ep.endpoint_type) == Some(EndpointType::INTERNAL) {
-        return Err(AppError::InvalidRequest(format!(
-            "Endpoint '{}' is internal and cannot be used for user-created jobs",
-            body.endpoint
-        )));
-    }
-
-    let retry_policy = ep.get_retry_policy();
-    // Per-job override wins when provided and positive; otherwise the endpoint's policy.
-    let max_attempts = body
-        .max_attempts
-        .filter(|&n| n > 0)
-        .unwrap_or(retry_policy.max_attempts);
-
-    if let Some(ref ps_name) = ep.payload_spec_ref {
-        if let Some(ref input) = body.input {
-            let spec = db::payload_specs::get(&mut db, ps_name)
-                .await?
-                .ok_or_else(|| AppError::InvalidPayloadSpecRef(ps_name.clone()))?;
-            validate_input(input, &spec.schema_json)?;
-        }
-    }
-
-    if let Some(ref key) = body.idempotency_key {
-        if let Some(existing) = db::jobs::get_by_idempotency(&mut db, &body.endpoint, key).await? {
-            let exec = db::executions::get_for_job(&mut db, &existing.job_id).await?;
-            return Ok(HttpResponse::Ok()
-                .json(serde_json::json!({ "data": job_response(&existing, exec.as_ref()) })));
-        }
-    }
-
-    // Drop the scoped connection (and its DbContext) before starting transactions
-    drop(db);
-    drop(conn);
-
     match trigger {
         TriggerType::IMMEDIATE => {
+            // Keyless IMMEDIATE gets a server-generated idempotency key (REST
+            // policy); the library, a trusted in-process caller, may pass None.
             let generated_key;
             let key = match body.idempotency_key.as_deref() {
                 Some(k) => k,
@@ -89,55 +45,38 @@ pub async fn create(
                     &generated_key
                 }
             };
-
-            let mut tx =
-                invokr_common::db::scoped::scoped_transaction(&state.pool, &ws.0.schema_name)
-                    .await
-                    .map_err(AppError::from)?;
-            let mut db = DbContext::new(&mut tx, prefix);
-
-            let result = db::jobs::create_immediate(
-                &mut db,
-                &body.endpoint,
-                &ep.endpoint_type,
-                key,
-                body.input.as_ref(),
-                max_attempts,
-            )
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::Database(ref db_err) if db_err.constraint().is_some() => {
-                    AppError::Conflict("Job with this idempotency key already exists".into())
-                }
-                _ => AppError::from(e),
-            })?;
-
-            drop(db);
-            tx.commit().await.map_err(AppError::from)?;
-
-            metrics::counter!(m::JOBS_CREATED_TOTAL,
-                "trigger_type" => "IMMEDIATE",
-                "endpoint" => body.endpoint.clone(),
-                "schema" => ws.0.schema_name.clone(),
-            )
-            .increment(1);
-
-            Ok(HttpResponse::Created().json(serde_json::json!({ "data": {
-                "job_id": result.job.job_id,
-                "endpoint": result.job.endpoint,
-                "endpoint_type": result.job.endpoint_type,
-                "trigger": result.job.trigger_type,
-                "status": result.job.status,
-                "version": result.job.version,
-                "idempotency_key": result.job.idempotency_key,
-                "input": result.job.input,
-                "execution": {
-                    "execution_id": result.execution_id,
-                    "status": result.execution_status,
-                    "created_at": result.execution_created_at,
-                },
-                "created_at": result.job.created_at,
-            }})))
+            let params = CreateJobParams {
+                endpoint: &body.endpoint,
+                idempotency_key: Some(key),
+                input: body.input.as_ref(),
+                max_attempts_override: body.max_attempts,
+                trigger: CreateTrigger::Immediate,
+            };
+            match jobsvc::create_job(&state.pool, prefix, schema, &params).await? {
+                CreateOutcome::Existing { job, execution } => Ok(HttpResponse::Ok()
+                    .json(serde_json::json!({ "data": job_response(&job, execution.as_ref()) }))),
+                CreateOutcome::Created {
+                    job,
+                    execution_id,
+                    execution_status,
+                    execution_created_at,
+                } => Ok(HttpResponse::Created().json(serde_json::json!({ "data": {
+                    "job_id": job.job_id,
+                    "endpoint": job.endpoint,
+                    "endpoint_type": job.endpoint_type,
+                    "trigger": job.trigger_type,
+                    "status": job.status,
+                    "version": job.version,
+                    "idempotency_key": job.idempotency_key,
+                    "input": job.input,
+                    "execution": {
+                        "execution_id": execution_id,
+                        "status": execution_status,
+                        "created_at": execution_created_at,
+                    },
+                    "created_at": job.created_at,
+                }}))),
+            }
         }
         TriggerType::DELAYED => {
             let key = body.idempotency_key.as_deref().ok_or_else(|| {
@@ -146,51 +85,39 @@ pub async fn create(
             let run_at = body.run_at.ok_or_else(|| {
                 AppError::InvalidRequest("run_at required for DELAYED jobs".into())
             })?;
-
-            let mut tx =
-                invokr_common::db::scoped::scoped_transaction(&state.pool, &ws.0.schema_name)
-                    .await
-                    .map_err(AppError::from)?;
-            let mut db = DbContext::new(&mut tx, prefix);
-
-            let result = db::jobs::create_delayed(
-                &mut db,
-                &body.endpoint,
-                &ep.endpoint_type,
-                key,
-                body.input.as_ref(),
-                run_at,
-                max_attempts,
-            )
-            .await?;
-
-            drop(db);
-            tx.commit().await.map_err(AppError::from)?;
-
-            metrics::counter!(m::JOBS_CREATED_TOTAL,
-                "trigger_type" => "DELAYED",
-                "endpoint" => body.endpoint.clone(),
-                "schema" => ws.0.schema_name.clone(),
-            )
-            .increment(1);
-
-            Ok(HttpResponse::Created().json(serde_json::json!({ "data": {
-                "job_id": result.job.job_id,
-                "endpoint": result.job.endpoint,
-                "endpoint_type": result.job.endpoint_type,
-                "trigger": result.job.trigger_type,
-                "status": result.job.status,
-                "version": result.job.version,
-                "idempotency_key": result.job.idempotency_key,
-                "input": result.job.input,
-                "run_at": result.job.run_at,
-                "execution": {
-                    "execution_id": result.execution_id,
-                    "status": result.execution_status,
-                    "created_at": result.execution_created_at,
-                },
-                "created_at": result.job.created_at,
-            }})))
+            let params = CreateJobParams {
+                endpoint: &body.endpoint,
+                idempotency_key: Some(key),
+                input: body.input.as_ref(),
+                max_attempts_override: body.max_attempts,
+                trigger: CreateTrigger::Delayed { run_at },
+            };
+            match jobsvc::create_job(&state.pool, prefix, schema, &params).await? {
+                CreateOutcome::Existing { job, execution } => Ok(HttpResponse::Ok()
+                    .json(serde_json::json!({ "data": job_response(&job, execution.as_ref()) }))),
+                CreateOutcome::Created {
+                    job,
+                    execution_id,
+                    execution_status,
+                    execution_created_at,
+                } => Ok(HttpResponse::Created().json(serde_json::json!({ "data": {
+                    "job_id": job.job_id,
+                    "endpoint": job.endpoint,
+                    "endpoint_type": job.endpoint_type,
+                    "trigger": job.trigger_type,
+                    "status": job.status,
+                    "version": job.version,
+                    "idempotency_key": job.idempotency_key,
+                    "input": job.input,
+                    "run_at": job.run_at,
+                    "execution": {
+                        "execution_id": execution_id,
+                        "status": execution_status,
+                        "created_at": execution_created_at,
+                    },
+                    "created_at": job.created_at,
+                }}))),
+            }
         }
         TriggerType::CRON => {
             let cron_expr = body
@@ -202,7 +129,6 @@ pub async fn create(
             })?;
 
             let schedule = cron_expr.to_schedule();
-
             let tz: chrono_tz::Tz = tz_str
                 .parse()
                 .map_err(|_| AppError::InvalidRequest(format!("Invalid timezone: {}", tz_str)))?;
@@ -212,79 +138,41 @@ pub async fn create(
                 AppError::InvalidCron("No upcoming run for this cron schedule".into())
             })?;
 
-            let mut tx =
-                invokr_common::db::scoped::scoped_transaction(&state.pool, &ws.0.schema_name)
-                    .await
-                    .map_err(AppError::from)?;
-            let mut db = DbContext::new(&mut tx, prefix);
-
-            let job = db::jobs::create_cron(
-                &mut db,
-                &body.endpoint,
-                &ep.endpoint_type,
-                body.idempotency_key.as_deref(),
-                body.input.as_ref(),
-                cron_expr.as_str(),
-                tz_str,
-                Some(starts_at),
-                body.ends_at,
-                next_run,
-            )
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::Database(ref db_err)
-                    if db_err.kind() == sqlx::error::ErrorKind::UniqueViolation =>
-                {
-                    AppError::Conflict("Job with this idempotency key already exists".into())
+            let params = CreateJobParams {
+                endpoint: &body.endpoint,
+                idempotency_key: body.idempotency_key.as_deref(),
+                input: body.input.as_ref(),
+                max_attempts_override: body.max_attempts,
+                trigger: CreateTrigger::Cron {
+                    expression: cron_expr.as_str(),
+                    timezone: tz_str,
+                    starts_at: Some(starts_at),
+                    ends_at: body.ends_at,
+                    next_run_at: next_run,
+                },
+            };
+            match jobsvc::create_job(&state.pool, prefix, schema, &params).await? {
+                CreateOutcome::Existing { job, execution } => Ok(HttpResponse::Ok()
+                    .json(serde_json::json!({ "data": job_response(&job, execution.as_ref()) }))),
+                CreateOutcome::Created { job, .. } => {
+                    Ok(HttpResponse::Created().json(serde_json::json!({ "data": {
+                        "job_id": job.job_id,
+                        "endpoint": job.endpoint,
+                        "endpoint_type": job.endpoint_type,
+                        "trigger": job.trigger_type,
+                        "status": job.status,
+                        "version": job.version,
+                        "idempotency_key": job.idempotency_key,
+                        "cron": job.cron_expression,
+                        "timezone": job.cron_timezone,
+                        "starts_at": job.cron_starts_at,
+                        "ends_at": job.cron_ends_at,
+                        "next_run_at": job.cron_next_run_at,
+                        "input": job.input,
+                        "created_at": job.created_at,
+                    }})))
                 }
-                sqlx::Error::Database(ref db_err)
-                    if db_err.kind() == sqlx::error::ErrorKind::ForeignKeyViolation =>
-                {
-                    AppError::EndpointNotFound(body.endpoint.clone())
-                }
-                _ => AppError::from(e),
-            })?;
-
-            drop(db);
-
-            // Register with pg_cron for automatic execution materialization.
-            // Run it on the same tx as the row write so the persisted job and
-            // the pg_cron schedule commit (or roll back) together. If pg_cron is
-            // unhealthy the whole create fails and the client can retry.
-            db::jobs::register_pg_cron_conn(
-                &mut tx,
-                prefix,
-                &ws.0.schema_name,
-                &job.job_id,
-                cron_expr.as_str(),
-            )
-            .await?;
-
-            tx.commit().await.map_err(AppError::from)?;
-
-            metrics::counter!(m::JOBS_CREATED_TOTAL,
-                "trigger_type" => "CRON",
-                "endpoint" => body.endpoint.clone(),
-                "schema" => ws.0.schema_name.clone(),
-            )
-            .increment(1);
-
-            Ok(HttpResponse::Created().json(serde_json::json!({ "data": {
-                "job_id": job.job_id,
-                "endpoint": job.endpoint,
-                "endpoint_type": job.endpoint_type,
-                "trigger": job.trigger_type,
-                "status": job.status,
-                "version": job.version,
-                "idempotency_key": job.idempotency_key,
-                "cron": job.cron_expression,
-                "timezone": job.cron_timezone,
-                "starts_at": job.cron_starts_at,
-                "ends_at": job.cron_ends_at,
-                "next_run_at": job.cron_next_run_at,
-                "input": job.input,
-                "created_at": job.created_at,
-            }})))
+            }
         }
     }
 }
@@ -456,57 +344,22 @@ pub async fn update(
     }})))
 }
 
-// `drop(db)` below is not about running a destructor — it marks the point
-// where the DbContext hands the `&mut tx` borrow back so the transaction
-// can be used (and committed) directly. Keep it: NLL would end the borrow
-// anyway, but the explicit release is what the surrounding comments refer to.
-#[allow(clippy::drop_non_drop)]
 pub async fn cancel(
     state: web::Data<AppState>,
     _auth: AuthenticatedRequest,
     ws: Workspace,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
-    let prefix = state.prefix();
-    let mut tx = invokr_common::db::scoped::scoped_transaction(&state.pool, &ws.0.schema_name)
-        .await
-        .map_err(AppError::from)?;
-    let mut db = DbContext::new(&mut tx, prefix);
-    let job_id = path.into_inner();
-    let job = db::jobs::get(&mut db, &job_id)
-        .await?
-        .ok_or_else(|| AppError::JobNotFound(job_id.clone()))?;
-
-    if job.status == "RETIRED" {
-        return Err(AppError::Conflict("Job is already retired".into()));
-    }
-    // INTERNAL jobs are invokr-managed (today: the dogfooded reaper). Cancelling
-    // one would stop the reaper from sweeping this workspace, with no surviving
-    // bootstrap path to bring it back.
-    if EndpointType::from_str_val(&job.endpoint_type) == Some(EndpointType::INTERNAL) {
-        return Err(AppError::Conflict(
-            "Internal invokr jobs cannot be cancelled through the API".into(),
-        ));
-    }
-
-    if job.trigger_type != "CRON" {
-        db::executions::cancel_pending_for_job(&mut db, &job_id).await?;
-    }
-
-    let cancelled = db::jobs::cancel(&mut db, &job_id)
-        .await?
-        .ok_or_else(|| AppError::Conflict("Job could not be cancelled".into()))?;
-
-    drop(db);
-
-    // Unregister from pg_cron if this was a CRON job. Run it on the same tx as
-    // the status flip so the cancel and the pg_cron unschedule commit (or roll
-    // back) atomically — no more RETIRED rows left with a live pg_cron entry.
-    if job.trigger_type == "CRON" {
-        db::jobs::unregister_pg_cron_conn(&mut tx, &ws.0.schema_name, &job_id).await?;
-    }
-
-    tx.commit().await.map_err(AppError::from)?;
+    // Thin adapter: the shared core (`service::jobs::cancel_job`) applies the
+    // RETIRED/INTERNAL guards, cancels pending executions, retires the job, and
+    // unschedules pg_cron — all on one transaction — shared with library mode.
+    let cancelled = invokr_common::service::jobs::cancel_job(
+        &state.pool,
+        state.prefix(),
+        &ws.0.schema_name,
+        &path.into_inner(),
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({ "data": job_summary(&cancelled) })))
 }
@@ -668,17 +521,6 @@ pub async fn list_executions(
         data,
         cursor: next_cursor,
     }))
-}
-
-fn validate_input(input: &serde_json::Value, schema: &serde_json::Value) -> Result<(), AppError> {
-    let compiled = jsonschema::JSONSchema::compile(schema)
-        .map_err(|e| AppError::InvalidSchema(format!("{}", e)))?;
-
-    if let Err(errors) = compiled.validate(input) {
-        let msgs: Vec<String> = errors.map(|e| e.to_string()).collect();
-        return Err(AppError::InputValidationFailed(msgs.join("; ")));
-    }
-    Ok(())
 }
 
 fn compute_next_cron(

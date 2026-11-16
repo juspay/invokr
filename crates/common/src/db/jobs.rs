@@ -13,11 +13,15 @@ pub struct CreateJobResult {
     pub execution_created_at: DateTime<Utc>,
 }
 
+/// `idempotency_key` is `Option` so "no key" binds SQL `NULL` (not `''`): the
+/// partial unique index `(endpoint, idempotency_key) WHERE idempotency_key IS NOT
+/// NULL` only excludes `NULL`, so an empty string would make two keyless jobs on
+/// the same endpoint collide. See `service::jobs` for the callers.
 pub async fn create_immediate(
     db: &mut DbContext<'_>,
     endpoint: &str,
     endpoint_type: &str,
-    idempotency_key: &str,
+    idempotency_key: Option<&str>,
     input: Option<&serde_json::Value>,
     max_attempts: i64,
 ) -> Result<CreateJobResult, sqlx::Error> {
@@ -62,7 +66,7 @@ pub async fn create_delayed(
     db: &mut DbContext<'_>,
     endpoint: &str,
     endpoint_type: &str,
-    idempotency_key: &str,
+    idempotency_key: Option<&str>,
     input: Option<&serde_json::Value>,
     run_at: DateTime<Utc>,
     max_attempts: i64,
