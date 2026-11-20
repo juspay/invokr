@@ -10,6 +10,7 @@ pub mod scoped;
 pub mod secrets;
 pub mod workspaces;
 
+use crate::tenant::TablePrefix;
 use sqlx::PgConnection;
 use sqlx::PgPool;
 
@@ -33,18 +34,41 @@ pub async fn connect_pool(database_url: &str, max_connections: u32) -> Result<Pg
 /// to thread two separate parameters through every DB function signature.
 pub struct DbContext<'a> {
     pub conn: &'a mut PgConnection,
-    pub prefix: &'a str,
+    pub prefix: &'a TablePrefix,
 }
 
 impl<'a> DbContext<'a> {
-    pub fn new(conn: &'a mut PgConnection, prefix: &'a str) -> Self {
+    pub fn new(conn: &'a mut PgConnection, prefix: &'a TablePrefix) -> Self {
         Self { conn, prefix }
     }
 }
 
 /// Build a (potentially prefixed) table name.
 /// `tbl("sched_", "jobs")` → `"sched_jobs"`, `tbl("", "jobs")` → `"jobs"`.
+/// Taking a [`TablePrefix`] means the prefix spliced in here was validated.
 #[inline]
-pub fn tbl(prefix: &str, name: &str) -> String {
-    format!("{prefix}{name}")
+pub fn tbl(prefix: &TablePrefix, name: &str) -> String {
+    format!("{}{name}", prefix.as_str())
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use crate::tenant::InvalidIdentifier;
+    use sqlx::PgPool;
+    use std::time::Duration;
+
+    /// A pool aimed at a closed port. Anything that actually reaches the
+    /// database fails with `PoolTimedOut`, so a test can tell "rejected before
+    /// touching the DB" apart from "ran SQL".
+    pub fn unreachable_pool() -> PgPool {
+        sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
+            .connect_lazy("postgres://invokr:invokr@127.0.0.1:1/invokr_db")
+            .unwrap()
+    }
+
+    /// True when `err` is the up-front identifier rejection.
+    pub fn is_invalid_identifier(err: &sqlx::Error) -> bool {
+        matches!(err, sqlx::Error::Configuration(e) if e.is::<InvalidIdentifier>())
+    }
 }

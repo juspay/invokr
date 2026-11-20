@@ -2,6 +2,7 @@ use crate::{
     db::{tbl, DbContext},
     models::endpoint::EndpointType,
     models::job::{Job, JobStatus, TriggerType},
+    tenant::{check_schema_name, InvalidIdentifier, TablePrefix},
 };
 use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, PgPool};
@@ -370,7 +371,7 @@ pub async fn get_versions(db: &mut DbContext<'_>, job_id: &str) -> Result<Vec<Jo
 /// forever.
 pub async fn retire_expired_cron_jobs(
     conn: &mut PgConnection,
-    prefix: &str,
+    prefix: &TablePrefix,
 ) -> Result<Vec<String>, sqlx::Error> {
     let tj = tbl(prefix, "jobs");
     let rows: Vec<(String,)> = sqlx::query_as(&format!(
@@ -395,11 +396,25 @@ pub async fn retire_expired_cron_jobs(
 /// job's end window. Table names are resolved through `tbl(prefix, ..)` and
 /// schema-qualified because pg_cron runs this command outside any scoped
 /// connection (no search_path).
-fn build_cron_command(prefix: &str, schema_name: &str, job_id: &str) -> String {
+///
+/// The command is stored as text and later run by pg_cron (which accepts
+/// several statements), so nothing here can be a bound parameter. Every value
+/// spliced in is checked first: the schema name against the identifier
+/// allowlist, and `job_id` must parse as a UUID (it is always
+/// `gen_random_uuid()`), so it cannot break out of its `'...'` literal.
+fn build_cron_command(
+    prefix: &TablePrefix,
+    schema_name: &str,
+    job_id: &str,
+) -> Result<String, InvalidIdentifier> {
+    check_schema_name(schema_name)?;
+    if uuid::Uuid::parse_str(job_id).is_err() {
+        return Err(InvalidIdentifier::new("job id", job_id));
+    }
     let te = tbl(prefix, "executions");
     let tj = tbl(prefix, "jobs");
     let tend = tbl(prefix, "endpoints");
-    format!(
+    Ok(format!(
         "INSERT INTO \"{schema}\".\"{te}\" \
             (job_id, endpoint, endpoint_type, idempotency_key, status, input, run_at, max_attempts) \
          SELECT j.job_id, j.endpoint, j.endpoint_type, \
@@ -417,20 +432,20 @@ fn build_cron_command(prefix: &str, schema_name: &str, job_id: &str) -> String {
         tj = tj,
         tend = tend,
         job_id = job_id,
-    )
+    ))
 }
 
 /// Register a CRON job with pg_cron. Uses the pool directly (pg_cron schedules
 /// run outside a transaction) and takes prefix/schema_name explicitly.
 pub async fn register_pg_cron(
     pool: &PgPool,
-    prefix: &str,
+    prefix: &TablePrefix,
     schema_name: &str,
     job_id: &str,
     cron_expression: &str,
 ) -> Result<(), sqlx::Error> {
     let cron_job_name = format!("invokr_{}_{}", schema_name, job_id);
-    let command = build_cron_command(prefix, schema_name, job_id);
+    let command = build_cron_command(prefix, schema_name, job_id)?;
 
     sqlx::query("SELECT cron.schedule($1, $2, $3)")
         .bind(&cron_job_name)
@@ -453,13 +468,13 @@ pub async fn register_pg_cron(
 /// back the surrounding transaction.
 pub async fn register_pg_cron_conn(
     conn: &mut PgConnection,
-    prefix: &str,
+    prefix: &TablePrefix,
     schema_name: &str,
     job_id: &str,
     cron_expression: &str,
 ) -> Result<(), sqlx::Error> {
     let cron_job_name = format!("invokr_{}_{}", schema_name, job_id);
-    let command = build_cron_command(prefix, schema_name, job_id);
+    let command = build_cron_command(prefix, schema_name, job_id)?;
 
     sqlx::query("SELECT cron.schedule($1, $2, $3)")
         .bind(&cron_job_name)
@@ -511,10 +526,57 @@ pub async fn unregister_pg_cron_conn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_support::{is_invalid_identifier, unreachable_pool};
+
+    /// Shape of a real `gen_random_uuid()::TEXT` job id.
+    const JOB_ID: &str = "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b";
+
+    fn cron_cmd(prefix: &str, schema: &str) -> String {
+        build_cron_command(&TablePrefix::new(prefix).unwrap(), schema, JOB_ID).unwrap()
+    }
+
+    #[test]
+    fn cron_command_rejects_job_ids_that_are_not_uuids() {
+        for job_id in [
+            "x' OR '1'='1",
+            "x'; DROP TABLE public.workspaces; --",
+            "job-123",
+            "",
+        ] {
+            assert!(
+                build_cron_command(&TablePrefix::default(), "ws_acme", job_id).is_err(),
+                "expected job id {job_id:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn cron_command_rejects_unsafe_schema_names() {
+        for schema in ["ws\"; DROP SCHEMA public CASCADE; --", "ws.acme", ""] {
+            assert!(
+                build_cron_command(&TablePrefix::default(), schema, JOB_ID).is_err(),
+                "expected schema {schema:?} to be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn register_pg_cron_rejects_hostile_job_id_before_touching_db() {
+        let err = register_pg_cron(
+            &unreachable_pool(),
+            &TablePrefix::default(),
+            "ws_acme",
+            "x'; DROP TABLE public.workspaces; --",
+            "* * * * *",
+        )
+        .await
+        .unwrap_err();
+        assert!(is_invalid_identifier(&err), "got {err:?}");
+    }
 
     #[test]
     fn cron_command_enforces_ends_at_window() {
-        let cmd = build_cron_command("", "ws_acme", "job-123");
+        let cmd = cron_cmd("", "ws_acme");
         // The guard is the whole point of the fix: without it pg_cron keeps
         // materializing executions forever, past the job's end window.
         assert!(
@@ -525,7 +587,7 @@ mod tests {
 
     #[test]
     fn cron_command_enforces_starts_at_window() {
-        let cmd = build_cron_command("", "ws_acme", "job-123");
+        let cmd = cron_cmd("", "ws_acme");
         // pg_cron starts ticking as soon as the job is registered, so the
         // command itself must hold back materialization until starts_at.
         assert!(
@@ -536,10 +598,10 @@ mod tests {
 
     #[test]
     fn cron_command_targets_correct_schema_and_job() {
-        let cmd = build_cron_command("", "ws_acme", "job-123");
+        let cmd = cron_cmd("", "ws_acme");
         assert!(cmd.contains("\"ws_acme\".\"executions\""));
         assert!(cmd.contains("\"ws_acme\".\"jobs\" j"));
-        assert!(cmd.contains("j.job_id = 'job-123'"));
+        assert!(cmd.contains("j.job_id = '3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b'"));
         // Only active jobs should materialize.
         assert!(cmd.contains("j.status = 'ACTIVE'"));
     }
@@ -550,7 +612,7 @@ mod tests {
         // the schema (tbl(prefix, ..)), matching the rest of the DB layer. The
         // prefix carries its own trailing separator (tbl is `{prefix}{name}`),
         // so callers pass "sched_" to get "sched_jobs".
-        let cmd = build_cron_command("sched_", "ws_acme", "job-123");
+        let cmd = cron_cmd("sched_", "ws_acme");
         assert!(cmd.contains("\"ws_acme\".\"sched_executions\""));
         assert!(cmd.contains("\"ws_acme\".\"sched_jobs\" j"));
         assert!(cmd.contains("\"ws_acme\".\"sched_endpoints\" e"));

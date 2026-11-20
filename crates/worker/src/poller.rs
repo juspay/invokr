@@ -119,7 +119,7 @@ async fn claim_and_process(
     schemas: &[String],
     worker_id: &str,
 ) -> bool {
-    let prefix = ctx.table_prefix.as_str();
+    let prefix = &ctx.table_prefix;
 
     for schema_name in schemas {
         let mut tx = match db::scoped::scoped_transaction(pool, schema_name).await {
@@ -210,7 +210,7 @@ mod tests {
         AppConfig, CryptoEnv, DbEnv, MetricsEnv, ReaperEnv, ServerEnv, ServerMode, WorkerEnv,
         WorkerHealthEnv,
     };
-    use invokr_common::tenant::SchemaProvider;
+    use invokr_common::tenant::{SchemaProvider, TablePrefix};
     use sqlx::postgres::PgPoolOptions;
 
     /// Fails every fetch, which drives the loop down its schema-error branch —
@@ -229,7 +229,7 @@ mod tests {
             db: DbEnv {
                 url: "postgres://invokr:invokr@127.0.0.1:1/invokr_db".into(),
                 pool_size: 1,
-                table_prefix: String::new(),
+                table_prefix: TablePrefix::default(),
             },
             server: ServerEnv {
                 listen_addr: "0.0.0.0:0".into(),
