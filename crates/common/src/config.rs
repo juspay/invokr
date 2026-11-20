@@ -1,7 +1,7 @@
 use crate::{
     env::{get_from_env_or_default, get_from_env_unsafe},
     models::pg_cron_expr::PgCronExpr,
-    tenant::validate_table_prefix,
+    tenant::TablePrefix,
 };
 
 // ---------------------------------------------------------------------------
@@ -62,20 +62,20 @@ pub struct DbEnv {
     pub pool_size: u32,
     /// Prefix for all per-workspace Invokr tables. Default empty (tables stay `jobs`, etc.).
     /// Set to e.g. `sched` to get `sched_jobs`, `sched_executions`, etc.
-    pub table_prefix: String,
+    pub table_prefix: TablePrefix,
 }
 
 impl DbEnv {
     async fn new(reader: &SensitiveEnvReader) -> Result<Self, String> {
         let url = reader.read("INVOKR_DATABASE_URL").await?;
         let pool_size = get_from_env_or_default("INVOKR_DB_POOL_SIZE", 50);
-        let table_prefix = get_from_env_or_default("INVOKR_TABLE_PREFIX", String::new());
-        if !validate_table_prefix(&table_prefix) {
-            return Err(format!(
+        let raw_prefix: String = get_from_env_or_default("INVOKR_TABLE_PREFIX", String::new());
+        let table_prefix = TablePrefix::new(&raw_prefix).map_err(|_| {
+            format!(
                 "INVOKR_TABLE_PREFIX '{}' is invalid: only alphanumeric and underscore allowed",
-                table_prefix
-            ));
-        }
+                raw_prefix
+            )
+        })?;
         Ok(Self {
             url,
             pool_size,

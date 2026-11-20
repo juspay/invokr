@@ -4,6 +4,7 @@ use invokr_common::{
     crypto, db,
     db::DbContext,
     metrics as m, template,
+    tenant::TablePrefix,
 };
 use reqwest::Client;
 use sqlx::PgPool;
@@ -18,7 +19,7 @@ pub struct PipelineContext {
     pub config_cache: ConfigCache,
     pub secret_cache: SecretCache,
     pub encryption_key: String,
-    pub table_prefix: String,
+    pub table_prefix: TablePrefix,
 }
 
 // The execution row and its job/endpoint columns are passed through
