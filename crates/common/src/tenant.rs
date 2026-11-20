@@ -25,6 +25,66 @@ pub fn validate_table_prefix(prefix: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// A value was rejected because it is not safe to splice into SQL text
+/// (identifiers cannot be bound as `$n` parameters, so they are allowlisted).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid {kind}: {value:?}")]
+pub struct InvalidIdentifier {
+    pub kind: &'static str,
+    pub value: String,
+}
+
+impl InvalidIdentifier {
+    pub fn new(kind: &'static str, value: &str) -> Self {
+        Self {
+            kind,
+            value: value.to_string(),
+        }
+    }
+}
+
+impl From<InvalidIdentifier> for sqlx::Error {
+    fn from(e: InvalidIdentifier) -> Self {
+        sqlx::Error::Configuration(Box::new(e))
+    }
+}
+
+/// Returns an error unless `name` passes [`validate_schema_name`]. Call this
+/// before any SQL that splices the schema name into its text.
+pub fn check_schema_name(name: &str) -> Result<(), InvalidIdentifier> {
+    if validate_schema_name(name) {
+        Ok(())
+    } else {
+        Err(InvalidIdentifier::new("schema name", name))
+    }
+}
+
+/// A per-workspace table prefix that has passed [`validate_table_prefix`].
+///
+/// The field is private, so [`TablePrefix::new`] is the only way to build one:
+/// every prefix that reaches SQL text through `db::tbl` has been checked.
+///
+/// ```compile_fail
+/// // Building one around an unchecked string must not compile.
+/// let _ = invokr_common::tenant::TablePrefix(String::from("x\"; --"));
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TablePrefix(String);
+
+impl TablePrefix {
+    pub fn new(prefix: &str) -> Result<Self, InvalidIdentifier> {
+        if validate_table_prefix(prefix) {
+            Ok(Self(prefix.to_string()))
+        } else {
+            Err(InvalidIdentifier::new("table prefix", prefix))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Maximum length of an org/workspace slug. Kept well under PostgreSQL's 63-byte
 /// identifier limit so a `{org}_{workspace}` schema name stays addressable.
 pub const MAX_SLUG_LEN: usize = 25;
@@ -146,6 +206,53 @@ mod tests {
             &"a".repeat(MAX_SLUG_LEN + 1),
         ] {
             assert!(!validate_slug(s), "expected '{s}' to be invalid");
+        }
+    }
+
+    /// Hostile or malformed values that must never be spliced into SQL text.
+    const UNSAFE_IDENTIFIERS: &[&str] = &[
+        "x\"; DROP TABLE jobs; --", // breaks out of a quoted identifier
+        "x'; DROP TABLE jobs; --",  // breaks out of a string literal
+        "sched-",                   // hyphen
+        "a b",                      // space
+        "a.b",                      // dot: would re-qualify the name
+        "caf\u{e9}",                // non-ASCII
+    ];
+
+    #[test]
+    fn table_prefix_keeps_safe_prefixes_verbatim() {
+        for p in ["", "sched_", "invokr_v2", "A1_"] {
+            assert_eq!(TablePrefix::new(p).unwrap().as_str(), p);
+        }
+    }
+
+    #[test]
+    fn table_prefix_rejects_unsafe_prefixes() {
+        for p in UNSAFE_IDENTIFIERS {
+            assert!(
+                TablePrefix::new(p).is_err(),
+                "expected {p:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn check_schema_name_accepts_built_schema_names() {
+        for s in ["acme_billing", "a1b2_c3", "org_9f1c_ws"] {
+            assert!(
+                check_schema_name(s).is_ok(),
+                "expected {s:?} to be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn check_schema_name_rejects_empty_and_unsafe_names() {
+        for s in std::iter::once(&"").chain(UNSAFE_IDENTIFIERS) {
+            assert!(
+                check_schema_name(s).is_err(),
+                "expected {s:?} to be rejected"
+            );
         }
     }
 }

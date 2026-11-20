@@ -253,11 +253,12 @@ Both deployment modes support a table prefix to avoid collisions when Invokr tab
 
 ### The `tbl()` Function
 
-In the codebase, table names are constructed using a prefix-aware `DbContext`:
+In the codebase, table names are constructed using a prefix-aware `DbContext`. The prefix is a `TablePrefix`, which can only be built through `TablePrefix::new` (it validates the value), so an unchecked string can't reach SQL:
 
 ```rust
-let mut db = DbContext::new(&mut *conn, prefix);
-// All queries use db.prefix to construct table names
+let prefix = TablePrefix::new("sched_")?; // errors on anything but [A-Za-z0-9_]
+let mut db = DbContext::new(&mut *conn, &prefix);
+// All queries use tbl(db.prefix, "jobs") → "sched_jobs"
 ```
 
 ### The `{p}` Placeholder in workspace_v1.sql
@@ -281,11 +282,11 @@ At provisioning time, `{p}` is replaced with the `table_prefix` verbatim:
 
 ```rust
 // From db/workspaces.rs — provision_schema():
-let ddl = WORKSPACE_SCHEMA_V1.replace("{p}", table_prefix);
+let ddl = WORKSPACE_SCHEMA_V1.replace("{p}", table_prefix.as_str());
 ```
 
 :::info
-The table prefix is validated to contain only alphanumeric characters and underscores. An empty prefix is valid and means no prefix is applied. Pass the full prefix including trailing underscore (e.g. `"sched_"`, not `"sched"`) to get `sched_jobs` instead of `schedjobs`.
+The table prefix is validated to contain only alphanumeric characters and underscores. An invalid prefix is rejected when the config is loaded or when `InvokrLibraryClient::new` is called. An empty prefix is valid and means no prefix is applied. Pass the full prefix including trailing underscore (e.g. `"sched_"`, not `"sched"`) to get `sched_jobs` instead of `schedjobs`.
 :::
 
 ## Related Pages

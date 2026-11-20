@@ -59,6 +59,10 @@ WHERE j.job_id = '{job_id}' AND j.status = 'ACTIVE'
 ON CONFLICT (job_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING;
 ```
 
+:::info
+The command is stored as text and run later by pg_cron, so its values can't be bound parameters. Before building it, Invokr checks that `{schema}` is a valid schema name and that `{job_id}` is a UUID (it always is, since Postgres generates it with `gen_random_uuid()`). If either check fails, registration returns an error and nothing is scheduled.
+:::
+
 ### Idempotency Key for CRON Ticks
 
 Each CRON tick generates an idempotency key with the format `cron_{job_id}_{epoch_ms}`. This key, combined with the `ON CONFLICT DO NOTHING` clause on the `idx_executions_cron_dedup` unique partial index, ensures that even if pg_cron fires twice in the same millisecond, only one execution is created.

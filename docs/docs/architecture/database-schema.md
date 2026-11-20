@@ -263,7 +263,7 @@ CREATE TABLE execution_logs (
 
 ## Table Prefix System
 
-When Invokr tables share a PostgreSQL schema with other application tables, a table prefix prevents name collisions. The `tbl()` function in `DbContext` applies the prefix to all table references.
+When Invokr tables share a PostgreSQL schema with other application tables, a table prefix prevents name collisions. The `tbl()` function in `DbContext` applies the prefix to all table references. It takes a `TablePrefix`, which can only be built through the validating `TablePrefix::new`.
 
 ### How It Works
 
@@ -280,21 +280,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_{p}jobs_idempotency
     WHERE idempotency_key IS NOT NULL;
 ```
 
-At provisioning time, `{p}` is replaced:
+At provisioning time, `{p}` is replaced with the prefix verbatim (no underscore is added, so pass it yourself):
 
 | Prefix | `{p}` Replacement | Example Table Name |
 |--------|-------------------|-------------------|
 | `""` (empty) | `""` | `jobs` |
-| `sched` | `sched_` | `sched_jobs` |
+| `sched_` | `sched_` | `sched_jobs` |
 
 ```rust
-let p = if prefix.is_empty() { String::new() }
-        else { format!("{}_", prefix) };
-let ddl = TEMPLATE.replace("{p}", &p);
+// From db/workspaces.rs — provision_schema():
+let ddl = WORKSPACE_SCHEMA_V1.replace("{p}", table_prefix.as_str());
 ```
 
 :::info
-The table prefix is validated to contain only alphanumeric characters and underscores. An empty prefix is valid and produces unprefixed table names.
+The table prefix is validated to contain only alphanumeric characters and underscores. An invalid prefix is rejected when the config is loaded or when `InvokrLibraryClient::new` is called. An empty prefix is valid and produces unprefixed table names.
 :::
 
 ## Key Indexes
@@ -401,7 +400,7 @@ pub async fn scoped_transaction<'a>(
     pool: &'a PgPool,
     schema_name: &str,
 ) -> Result<sqlx::Transaction<'a, sqlx::Postgres>, sqlx::Error> {
-    assert!(validate_schema_name(schema_name));
+    check_schema_name(schema_name)?;
     let mut tx = pool.begin().await?;
     let set_path = format!("SET search_path TO \"{}\", public", schema_name);
     sqlx::query(&set_path).execute(&mut *tx).await?;
@@ -412,7 +411,7 @@ pub async fn scoped_transaction<'a>(
 This ensures all queries within the transaction automatically resolve unqualified table names to the workspace schema first, then `public` as fallback. Schema names are validated to prevent SQL injection via `search_path` manipulation.
 
 :::danger
-Schema names are validated by `validate_schema_name()` which ensures only alphanumeric characters and underscores. This is critical because schema names are interpolated into `SET search_path` commands. Never bypass this validation.
+Schema names are validated by `check_schema_name()`, which allows only alphanumeric characters and underscores. An invalid name returns an error (`InvalidIdentifier`) before any SQL runs; it does not panic. This is critical because schema names are interpolated into `SET search_path`, `CREATE SCHEMA` and the pg_cron command. Never bypass this validation.
 :::
 
 ## Related Pages
