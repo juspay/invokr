@@ -87,7 +87,7 @@ pub(crate) mod pg_test {
         let pool = PgPool::connect(&url).await.unwrap();
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let schema = format!("invokr_test_{}_{id}", std::process::id());
-        super::workspaces::provision_schema(&pool, &schema, "")
+        super::workspaces::provision_schema(&pool, &schema, &crate::tenant::TablePrefix::default())
             .await
             .unwrap();
         (pool, schema)

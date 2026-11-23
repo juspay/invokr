@@ -763,7 +763,8 @@ mod tests {
         next.cron_expression = Some("*/2 * * * *".into());
         next.version = old.version + 1;
 
-        let mut db = DbContext::new(&mut tx, "");
+        let prefix = TablePrefix::default();
+        let mut db = DbContext::new(&mut tx, &prefix);
         let created = retire_and_replace(&mut db, &old.job_id, &next)
             .await
             .unwrap();

@@ -128,7 +128,8 @@ mod tests {
         .await
         .unwrap();
 
-        let mut db = DbContext::new(&mut conn, "");
+        let prefix = crate::tenant::TablePrefix::default();
+        let mut db = DbContext::new(&mut conn, &prefix);
         let mut referenced = Vec::new();
         for name in ["axb", "a_b", "a%", "a\"b", "c\\d"] {
             referenced.push((name, has_dependent_endpoints(&mut db, name).await.unwrap()));
