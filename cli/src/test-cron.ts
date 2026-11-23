@@ -208,6 +208,10 @@ async function main() {
       log(`FAIL: Expected original job to be RETIRED, got ${oldJobResp.data?.status}`);
       assertionsOk = false;
     }
+    if (oldJobResp.data?.replaced_by_id !== newJobId) {
+      log(`FAIL: Expected replaced_by_id ${newJobId}, got ${oldJobResp.data?.replaced_by_id}`);
+      assertionsOk = false;
+    }
 
     // ── Step 6: Wait for 1 execution on the new version ──────
     log("Waiting for 1 execution on updated job...");

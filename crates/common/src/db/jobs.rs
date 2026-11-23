@@ -186,7 +186,7 @@ enum BindValue {
 
 /// Escapes LIKE metacharacters (`\`, `%`, `_`) so the term matches literally
 /// (pairs with an `ESCAPE '\'` clause).
-fn escape_like(s: &str) -> String {
+pub(crate) fn escape_like(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         if matches!(ch, '\\' | '%' | '_') {
@@ -315,15 +315,6 @@ pub async fn retire_and_replace(
     new_job: &Job,
 ) -> Result<Job, sqlx::Error> {
     let t = tbl(db.prefix, "jobs");
-    sqlx::query(&format!(
-        "UPDATE {t} SET status = 'RETIRED', retired_at = now(), replaced_by_id = $2
-         WHERE job_id = $1 AND status = 'ACTIVE'"
-    ))
-    .bind(old_job_id)
-    .bind(&new_job.job_id)
-    .execute(&mut *db.conn)
-    .await?;
-
     let new = sqlx::query_as::<_, Job>(&format!(
         "INSERT INTO {t} (endpoint, endpoint_type, trigger_type, input, cron_expression, cron_timezone, cron_starts_at, cron_ends_at, cron_next_run_at, version, previous_version_id)
          VALUES ($1, $2, 'CRON', $3, $4, $5, $6, $7, $8, $9, $10)
@@ -340,6 +331,15 @@ pub async fn retire_and_replace(
     .bind(new_job.version)
     .bind(old_job_id)
     .fetch_one(&mut *db.conn)
+    .await?;
+
+    sqlx::query(&format!(
+        "UPDATE {t} SET status = 'RETIRED', retired_at = now(), replaced_by_id = $2
+         WHERE job_id = $1 AND status = 'ACTIVE'"
+    ))
+    .bind(old_job_id)
+    .bind(&new.job_id)
+    .execute(&mut *db.conn)
     .await?;
 
     Ok(new)
@@ -672,5 +672,52 @@ mod tests {
         assert_eq!(escape_like("a_b"), r"a\_b");
         assert_eq!(escape_like("100%"), r"100\%");
         assert_eq!(escape_like(r"a\b"), r"a\\b");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres: docker compose up -d postgres"]
+    async fn retire_and_replace_links_the_retired_version_to_its_replacement() {
+        use crate::db::pg_test::{drop_workspace, temp_workspace};
+        use crate::db::scoped::scoped_transaction;
+
+        let (pool, schema) = temp_workspace().await;
+        let mut tx = scoped_transaction(&pool, &schema).await.unwrap();
+        sqlx::query(
+            "INSERT INTO endpoints (name, endpoint_type, spec) VALUES ('ep', 'HTTP', '{}')",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let old: Job = sqlx::query_as(
+            "INSERT INTO jobs (endpoint, endpoint_type, trigger_type, cron_expression, cron_timezone)
+             VALUES ('ep', 'HTTP', 'CRON', '* * * * *', 'UTC')
+             RETURNING *",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+        let mut next = old.clone();
+        next.cron_expression = Some("*/2 * * * *".into());
+        next.version = old.version + 1;
+
+        let mut db = DbContext::new(&mut tx, "");
+        let created = retire_and_replace(&mut db, &old.job_id, &next)
+            .await
+            .unwrap();
+        let retired = get(&mut db, &old.job_id).await.unwrap().unwrap();
+        tx.rollback().await.unwrap();
+        drop_workspace(&pool, &schema).await;
+
+        assert_ne!(created.job_id, old.job_id);
+        assert_eq!(
+            created.previous_version_id.as_deref(),
+            Some(old.job_id.as_str())
+        );
+        assert_eq!(retired.status, "RETIRED");
+        assert_eq!(
+            retired.replaced_by_id.as_deref(),
+            Some(created.job_id.as_str())
+        );
     }
 }

@@ -48,3 +48,30 @@ impl<'a> DbContext<'a> {
 pub fn tbl(prefix: &str, name: &str) -> String {
     format!("{prefix}{name}")
 }
+
+#[cfg(test)]
+pub(crate) mod pg_test {
+    use sqlx::PgPool;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static NEXT_ID: AtomicU32 = AtomicU32::new(0);
+
+    pub async fn temp_workspace() -> (PgPool, String) {
+        let url = std::env::var("INVOKR_DATABASE_URL")
+            .unwrap_or_else(|_| "postgresql://invokr:invokr@localhost:5434/invokr_db".into());
+        let pool = PgPool::connect(&url).await.unwrap();
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let schema = format!("invokr_test_{}_{id}", std::process::id());
+        super::workspaces::provision_schema(&pool, &schema, "")
+            .await
+            .unwrap();
+        (pool, schema)
+    }
+
+    pub async fn drop_workspace(pool: &PgPool, schema: &str) {
+        sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+}
