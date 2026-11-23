@@ -3,7 +3,7 @@ use crate::db::scoped::scoped_transaction;
 use crate::models::endpoint::EndpointType;
 use crate::models::job::TriggerType;
 use crate::models::workspace::Workspace;
-use crate::tenant::validate_schema_name;
+use crate::tenant::{check_schema_name, TablePrefix};
 use sqlx::PgPool;
 
 const WORKSPACE_SCHEMA_V1: &str = include_str!("../../migrations/workspace_v1.sql");
@@ -21,11 +21,7 @@ pub async fn create(
     schema_name: &str,
     reaper_cron_expression: &str,
 ) -> Result<Workspace, sqlx::Error> {
-    assert!(
-        validate_schema_name(schema_name),
-        "Invalid schema name: {}",
-        schema_name
-    );
+    check_schema_name(schema_name)?;
 
     let workspace = sqlx::query_as::<_, Workspace>(
         "INSERT INTO public.workspaces (org_id, name, slug, schema_name)
@@ -40,7 +36,7 @@ pub async fn create(
     .await?;
 
     // Create the schema and apply workspace DDL
-    provision_schema(pool, schema_name, "").await?;
+    provision_schema(pool, schema_name, &TablePrefix::default()).await?;
 
     // Install invokr's own dogfooded reaper into this workspace. Done as part
     // of provisioning rather than from a background loop, so a freshly-created
@@ -130,8 +126,10 @@ pub async fn resolve_schema(
 pub async fn provision_schema(
     pool: &PgPool,
     schema_name: &str,
-    table_prefix: &str,
+    table_prefix: &TablePrefix,
 ) -> Result<(), sqlx::Error> {
+    // Checked before the first statement: `CREATE SCHEMA` splices the name in.
+    check_schema_name(schema_name)?;
     sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", schema_name))
         .execute(pool)
         .await?;
@@ -142,7 +140,7 @@ pub async fn provision_schema(
     // separator (e.g. "invokr_"), matching the read side (`tbl(prefix, name)` =
     // `{prefix}{name}`). Do NOT append an underscore here, or provisioned tables
     // (`invokr__endpoints`) won't match the names queried at runtime (`invokr_endpoints`).
-    let ddl = WORKSPACE_SCHEMA_V1.replace("{p}", table_prefix);
+    let ddl = WORKSPACE_SCHEMA_V1.replace("{p}", table_prefix.as_str());
     for stmt in ddl.split(';') {
         let stmt = stmt.trim();
         if !stmt.is_empty() {
@@ -202,9 +200,49 @@ async fn provision_reaper(
 
     // Provisioning runs in schema-per-workspace mode with unprefixed tables, so
     // the table prefix is empty here.
-    register_pg_cron_conn(&mut tx, "", schema_name, &job_id, cron_expression).await?;
+    register_pg_cron_conn(
+        &mut tx,
+        &TablePrefix::default(),
+        schema_name,
+        &job_id,
+        cron_expression,
+    )
+    .await?;
 
     tx.commit().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_support::{is_invalid_identifier, unreachable_pool};
+
+    const HOSTILE: &str = "ws\"; DROP SCHEMA public CASCADE; --";
+
+    #[tokio::test]
+    async fn provision_schema_rejects_unsafe_schema_name_before_running_ddl() {
+        // Before the fix, `CREATE SCHEMA "<name>"` ran first, so this reached
+        // the (unreachable) pool instead of being rejected up front.
+        let err = provision_schema(&unreachable_pool(), HOSTILE, &TablePrefix::default())
+            .await
+            .unwrap_err();
+        assert!(is_invalid_identifier(&err), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn create_returns_error_for_unsafe_schema_name() {
+        let err = create(
+            &unreachable_pool(),
+            "org-1",
+            "Billing",
+            "billing",
+            HOSTILE,
+            "* * * * *",
+        )
+        .await
+        .unwrap_err();
+        assert!(is_invalid_identifier(&err), "got {err:?}");
+    }
 }

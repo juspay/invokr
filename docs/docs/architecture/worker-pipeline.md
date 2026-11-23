@@ -115,7 +115,7 @@ pub struct PipelineContext {
     pub config_cache: ConfigCache,
     pub secret_cache: SecretCache,
     pub encryption_key: String,
-    pub table_prefix: String,
+    pub table_prefix: TablePrefix,
 }
 ```
 
@@ -126,7 +126,7 @@ pub struct PipelineContext {
 | `config_cache` | `ConfigCache` | In-memory cache of config values (60s TTL) |
 | `secret_cache` | `SecretCache` | In-memory cache of decrypted secrets (300s TTL) |
 | `encryption_key` | `String` | AES encryption key for decrypting secrets at rest |
-| `table_prefix` | `String` | Table name prefix (e.g. `sched_` or empty string) |
+| `table_prefix` | `TablePrefix` | Validated table name prefix (e.g. `sched_` or empty string) |
 
 The context is wrapped in `Arc` and cloned for each spawned task — all caches and clients are shared, not duplicated.
 

@@ -1,7 +1,7 @@
 use crate::{
     env::{get_from_env_or_default, get_from_env_unsafe},
     models::pg_cron_expr::PgCronExpr,
-    tenant::validate_table_prefix,
+    tenant::TablePrefix,
 };
 
 // ---------------------------------------------------------------------------
@@ -24,9 +24,9 @@ impl SensitiveEnvReader {
 
     /// Read an *optional* sensitive env var. `Ok(None)` when absent or blank.
     ///
-    /// Distinct from [`Self::read_or_default`]: for a credential, "absent" must
-    /// stay distinguishable from "some fallback value", because the fallback
-    /// would itself be an accepted secret.
+    /// There is deliberately no `read_or_default`: for a credential, "absent"
+    /// must stay distinguishable from "some fallback value", because the
+    /// fallback would itself be an accepted secret.
     ///
     /// Returns `Err` when the value is present but cannot be decrypted. The
     /// previous implementation panicked from inside the KMS helper instead.
@@ -41,15 +41,6 @@ impl SensitiveEnvReader {
             .map_err(|e| e.to_string())?;
         Ok(Some(plain).filter(|v| !v.trim().is_empty()))
     }
-
-    /// Read an *optional* sensitive env var, falling back to `default` when
-    /// absent. A present-but-undecryptable value is an error, not a fallback.
-    async fn read_or_default(&self, name: &str, default: String) -> Result<String, String> {
-        match self.read_opt(name).await? {
-            Some(v) => Ok(v),
-            None => Ok(default),
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -62,20 +53,20 @@ pub struct DbEnv {
     pub pool_size: u32,
     /// Prefix for all per-workspace Invokr tables. Default empty (tables stay `jobs`, etc.).
     /// Set to e.g. `sched` to get `sched_jobs`, `sched_executions`, etc.
-    pub table_prefix: String,
+    pub table_prefix: TablePrefix,
 }
 
 impl DbEnv {
     async fn new(reader: &SensitiveEnvReader) -> Result<Self, String> {
         let url = reader.read("INVOKR_DATABASE_URL").await?;
         let pool_size = get_from_env_or_default("INVOKR_DB_POOL_SIZE", 50);
-        let table_prefix = get_from_env_or_default("INVOKR_TABLE_PREFIX", String::new());
-        if !validate_table_prefix(&table_prefix) {
-            return Err(format!(
+        let raw_prefix: String = get_from_env_or_default("INVOKR_TABLE_PREFIX", String::new());
+        let table_prefix = TablePrefix::new(&raw_prefix).map_err(|_| {
+            format!(
                 "INVOKR_TABLE_PREFIX '{}' is invalid: only alphanumeric and underscore allowed",
-                table_prefix
-            ));
-        }
+                raw_prefix
+            )
+        })?;
         Ok(Self {
             url,
             pool_size,
@@ -170,11 +161,28 @@ pub struct CryptoEnv {
     pub encryption_key: String,
 }
 
+const ENCRYPTION_KEY_VAR: &str = "INVOKR_ENCRYPTION_KEY";
+
 impl CryptoEnv {
+    /// Required, with no default. It used to fall back to 64 zeros without a
+    /// word, so a deployment that forgot it, or set it on only one of the API
+    /// and worker, found out only when secrets failed to decrypt.
     async fn new(reader: &SensitiveEnvReader) -> Result<Self, String> {
-        let encryption_key = reader
-            .read_or_default("INVOKR_ENCRYPTION_KEY", "0".repeat(64))
-            .await?;
+        Self::from_value(reader.read_opt(ENCRYPTION_KEY_VAR).await?)
+    }
+
+    /// The validation rules, apart from environment access so they can be
+    /// tested without mutating the process environment.
+    fn from_value(raw: Option<String>) -> Result<Self, String> {
+        let encryption_key = raw.filter(|v| !v.trim().is_empty()).ok_or_else(|| {
+            format!(
+                "{ENCRYPTION_KEY_VAR} is not set. It is required: 64 hex characters \
+                 (generate with `openssl rand -hex 32`), identical on the API and \
+                 the worker."
+            )
+        })?;
+        crate::crypto::validate_key(&encryption_key)
+            .map_err(|e| format!("{ENCRYPTION_KEY_VAR} is invalid: {e}"))?;
         Ok(Self { encryption_key })
     }
 }
@@ -427,5 +435,65 @@ impl AppConfig {
             health,
             reaper,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const VALID_KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn crypto_env_requires_the_encryption_key() {
+        for absent in [None, Some(String::new()), Some("  \n".to_string())] {
+            let err = CryptoEnv::from_value(absent.clone()).unwrap_err();
+            assert!(
+                err.contains("INVOKR_ENCRYPTION_KEY is not set"),
+                "{absent:?} gave: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn crypto_env_accepts_an_explicit_all_zero_key() {
+        let zeros = "0".repeat(64);
+        let env = CryptoEnv::from_value(Some(zeros.clone())).unwrap();
+        assert_eq!(env.encryption_key, zeros);
+    }
+
+    #[test]
+    fn crypto_env_rejects_a_malformed_key() {
+        let err = CryptoEnv::from_value(Some("not-a-key".to_string())).unwrap_err();
+        assert!(
+            err.starts_with("INVOKR_ENCRYPTION_KEY is invalid"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn crypto_env_accepts_a_valid_key() {
+        let env = CryptoEnv::from_value(Some(VALID_KEY.to_string())).unwrap();
+        assert_eq!(env.encryption_key, VALID_KEY);
+    }
+
+    /// Covers the real entry point when the variable is genuinely absent.
+    /// Never mutates the environment, for the reason given on
+    /// `secrets::tests::default_provider_round_trips_plaintext`.
+    #[tokio::test]
+    async fn crypto_env_new_fails_when_the_variable_is_absent() {
+        if std::env::var_os(ENCRYPTION_KEY_VAR).is_some() {
+            eprintln!(
+                "skipped: {ENCRYPTION_KEY_VAR} is set in this environment; \
+                 unsetting it would race other threads reading the environment"
+            );
+            return;
+        }
+
+        let reader = SensitiveEnvReader {
+            provider: Box::new(crate::secrets::NoEncryption),
+        };
+        let err = CryptoEnv::new(&reader).await.unwrap_err();
+        assert!(err.contains("is not set"), "unexpected error: {err}");
     }
 }

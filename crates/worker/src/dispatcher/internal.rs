@@ -12,6 +12,7 @@
 //! through the regular execution pipeline, every sweep becomes a visible
 //! execution in the workspace's own dashboard — self-monitoring via invokr.
 
+use invokr_common::tenant::TablePrefix;
 use serde_json::Value;
 use sqlx::PgConnection;
 
@@ -24,7 +25,7 @@ use crate::reaper;
 /// to, so the task's effects commit atomically with the execution's outcome.
 pub async fn dispatch(
     conn: &mut PgConnection,
-    prefix: &str,
+    prefix: &TablePrefix,
     schema_name: &str,
     spec: &Value,
 ) -> DispatchResult {

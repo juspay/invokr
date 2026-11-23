@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse};
 use invokr_common::config::{AppConfig, ServerMode};
+use invokr_common::tenant::TablePrefix;
 use metrics_exporter_prometheus::PrometheusHandle;
 use sqlx::PgPool;
 
@@ -13,8 +14,8 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn prefix(&self) -> &str {
-        self.config.db.table_prefix.as_str()
+    pub fn prefix(&self) -> &TablePrefix {
+        &self.config.db.table_prefix
     }
 }
 
