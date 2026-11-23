@@ -719,6 +719,7 @@ fn job_summary(job: &invokr_common::models::Job) -> serde_json::Value {
         "trigger": job.trigger_type,
         "status": job.status,
         "version": job.version,
+        "replaced_by_id": job.replaced_by_id,
         "idempotency_key": job.idempotency_key,
         "input": job.input,
         "run_at": job.run_at,
