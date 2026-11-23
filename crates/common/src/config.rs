@@ -164,9 +164,9 @@ pub struct CryptoEnv {
 const ENCRYPTION_KEY_VAR: &str = "INVOKR_ENCRYPTION_KEY";
 
 impl CryptoEnv {
-    /// Required, with no default. The old default was 64 zeros, a key printed
-    /// in the README, so an unset variable meant stored secrets were encrypted
-    /// under a public key and nothing said so.
+    /// Required, with no default. It used to fall back to 64 zeros without a
+    /// word, so a deployment that forgot it, or set it on only one of the API
+    /// and worker, found out only when secrets failed to decrypt.
     async fn new(reader: &SensitiveEnvReader) -> Result<Self, String> {
         Self::from_value(reader.read_opt(ENCRYPTION_KEY_VAR).await?)
     }
@@ -178,9 +178,9 @@ impl CryptoEnv {
             format!(
                 "{ENCRYPTION_KEY_VAR} is not set. It is required: 64 hex characters \
                  (generate with `openssl rand -hex 32`), identical on the API and \
-                 the worker. A deployment that previously ran without it has its \
-                 secrets encrypted under the all-zero key, which is now rejected; \
-                 re-create those secrets under a new key."
+                 the worker. A deployment that previously ran without it was using \
+                 64 zeros; set that value explicitly to keep reading its existing \
+                 secrets."
             )
         })?;
         crate::crypto::validate_key(&encryption_key)
@@ -458,9 +458,10 @@ mod tests {
     }
 
     #[test]
-    fn crypto_env_rejects_the_all_zero_key() {
-        let err = CryptoEnv::from_value(Some("0".repeat(64))).unwrap_err();
-        assert!(err.contains("all zeros"), "unexpected error: {err}");
+    fn crypto_env_accepts_an_explicit_all_zero_key() {
+        let zeros = "0".repeat(64);
+        let env = CryptoEnv::from_value(Some(zeros.clone())).unwrap();
+        assert_eq!(env.encryption_key, zeros);
     }
 
     #[test]

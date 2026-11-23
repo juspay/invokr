@@ -45,21 +45,11 @@ pub fn decrypt(encrypted: &[u8], key_hex: &str) -> anyhow::Result<String> {
 /// AES-256 takes a 32-byte key, written as 64 hex characters.
 const KEY_HEX_LEN: usize = 64;
 
-/// Checks a hex-encoded AES-256 key once, so a bad key stops the process at
-/// startup instead of failing the first secret read or write.
-///
-/// Rejects the all-zero key outright: it was the published default, so
-/// anything encrypted under it is readable by whoever can read the table.
+/// Checks a hex-encoded AES-256 key once, so a malformed key stops the
+/// process at startup instead of failing the first secret read or write.
 /// Error messages never include the key.
 pub fn validate_key(key_hex: &str) -> anyhow::Result<()> {
-    let key = hex_decode(key_hex)?;
-    if key.iter().all(|&b| b == 0) {
-        anyhow::bail!(
-            "the key is all zeros, which is the published development default; \
-             generate one with `openssl rand -hex 32`"
-        );
-    }
-    Ok(())
+    hex_decode(key_hex).map(|_| ())
 }
 
 fn hex_decode(hex: &str) -> anyhow::Result<Vec<u8>> {
@@ -111,9 +101,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_key_rejects_the_all_zero_key() {
-        let err = validate_key(&"0".repeat(64)).unwrap_err().to_string();
-        assert!(err.contains("all zeros"), "unexpected error: {err}");
+    fn validate_key_accepts_the_all_zero_key() {
+        // Existing deployments set it explicitly; their secrets are stored under it.
+        assert!(validate_key(&"0".repeat(64)).is_ok());
     }
 
     #[test]

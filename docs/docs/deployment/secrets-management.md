@@ -90,7 +90,7 @@ The script reads plaintext values from the current environment or falls back to 
 # Defaults used by kms-init.sh:
 INVOKR_DATABASE_URL=postgresql://invokr:invokr@localhost:5434/invokr_db
 INVOKR_API_KEY=dev-api-key
-INVOKR_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+INVOKR_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 ```
 
 To encrypt custom values, set them before running `just kms-init`:

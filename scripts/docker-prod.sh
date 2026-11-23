@@ -85,7 +85,7 @@ echo "    INVOKR_DATABASE_URL      encrypted"
 ENC_API_KEY=$(encrypt_value "dev-api-key")
 echo "    INVOKR_API_KEY           encrypted"
 
-ENC_ENCRYPTION_KEY=$(encrypt_value "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+ENC_ENCRYPTION_KEY=$(encrypt_value "0000000000000000000000000000000000000000000000000000000000000000")
 echo "    INVOKR_ENCRYPTION_KEY    encrypted"
 
 echo ""

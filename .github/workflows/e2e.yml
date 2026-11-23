@@ -24,9 +24,7 @@ env:
   # development identity, which is what these suites exercise -- they test job
   # orchestration, not auth.
   INVOKR_AUTH_MODE: disabled
-  # Also required with no default, and the all-zero key is rejected. A fixed
-  # test key is fine: nothing in these suites outlives the job.
-  INVOKR_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  INVOKR_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
   INVOKR_LISTEN_ADDR: 0.0.0.0:8080
   INVOKR_URL: http://localhost:8080
   MOCK_URL: http://localhost:9999

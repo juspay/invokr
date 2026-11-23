@@ -43,7 +43,7 @@ The worker decrypts secrets at execution time when resolving `{{secret.*}}` temp
 After the cache TTL expires, the decrypted value is evicted and the next request triggers a fresh decrypt from the database.
 
 :::danger
-**`INVOKR_ENCRYPTION_KEY` is required and has no default.** The API and worker refuse to start if it is unset, malformed, or all zeros (`0000...0000`, the former default, which provides no security). Set it to a strong, random 32-byte key (`openssl rand -hex 32`). If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
+**`INVOKR_ENCRYPTION_KEY` is required and has no default.** The API and worker refuse to start if it is unset or malformed. Set it to a strong, random 32-byte key (`openssl rand -hex 32`); the all-zeros key (`0000...0000`) used in development examples provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
 :::
 
 ## Write-only design

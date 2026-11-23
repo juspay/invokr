@@ -306,11 +306,7 @@ Key defaults for local development:
 |----------|---------|-------|
 | `INVOKR_DATABASE_URL` | `postgresql://invokr:invokr@localhost:5434/invokr_db` | Host port 5434 is the Docker mapping for the container’s 5432 |
 | `INVOKR_API_KEY` | `dev-api-key` | Development API key |
-| `INVOKR_ENCRYPTION_KEY` | `0123456789abcdef` × 4 | Development encryption key (no security). The binaries reject the all-zero key |
-
-:::warning
-A `.env` copied from an older `.env.example` still sets `INVOKR_ENCRYPTION_KEY` to 64 zeros, and `.env` wins over the justfile default. The API and worker will refuse to start with `INVOKR_ENCRYPTION_KEY is invalid: the key is all zeros`. Change that line in `.env` to the value in `.env.example`. Secrets already stored in your local database were encrypted under the old key and will no longer decrypt: delete and re-create them.
-:::
+| `INVOKR_ENCRYPTION_KEY` | 64 zeros | Development encryption key (no security) |
 
 :::note
 The `docker-compose.yml` maps PostgreSQL host port **5434** to container port **5432**. Connect from the host on `localhost:5434` — that is what `.env.example`, the justfile, and the Nix dev shell all default to.

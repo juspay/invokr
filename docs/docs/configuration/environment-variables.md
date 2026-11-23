@@ -101,7 +101,7 @@ When scaling workers horizontally, keep `INVOKR_WORKER_MAX_CONCURRENT` per insta
 :::danger
 `INVOKR_ENCRYPTION_KEY` is a **sensitive** variable. When a secrets provider is selected, this must contain base64-encoded ciphertext.
 
-**It has no default.** The API and worker refuse to start if it is unset, blank, not exactly 64 hex characters, or all zeros (the former default, which was published and so provides no security). Generate one with `openssl rand -hex 32`. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
+**It has no default.** The API and worker refuse to start if it is unset, blank, or not exactly 64 hex characters. Generate one with `openssl rand -hex 32`; the all-zeros key used in development examples provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
 :::
 
 :::warning
@@ -251,7 +251,7 @@ INVOKR_RECLAIM_INTERVAL_SEC=30
 INVOKR_STUCK_EXECUTION_TIMEOUT_SEC=300
 
 # Encryption
-INVOKR_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+INVOKR_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 
 # API Key
 INVOKR_API_KEY=dev-api-key
