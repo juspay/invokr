@@ -178,9 +178,7 @@ impl CryptoEnv {
             format!(
                 "{ENCRYPTION_KEY_VAR} is not set. It is required: 64 hex characters \
                  (generate with `openssl rand -hex 32`), identical on the API and \
-                 the worker. A deployment that previously ran without it was using \
-                 64 zeros; set that value explicitly to keep reading its existing \
-                 secrets."
+                 the worker."
             )
         })?;
         crate::crypto::validate_key(&encryption_key)
