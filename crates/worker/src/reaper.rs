@@ -21,7 +21,7 @@
 //! so exactly one pod ends up running each sweep. The previous advisory lock
 //! is no longer needed.
 
-use invokr_common::{db, metrics as m};
+use invokr_common::{db, metrics as m, tenant::TablePrefix};
 use sqlx::PgConnection;
 
 /// Retire expired CRON jobs in a single schema and unschedule their pg_cron
@@ -37,7 +37,7 @@ use sqlx::PgConnection;
 /// so an already-removed entry is a no-op rather than an error.
 pub async fn reap_schema(
     conn: &mut PgConnection,
-    prefix: &str,
+    prefix: &TablePrefix,
     schema_name: &str,
 ) -> Result<Vec<String>, sqlx::Error> {
     let retired = db::jobs::retire_expired_cron_jobs(conn, prefix).await?;

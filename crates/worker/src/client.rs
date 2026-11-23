@@ -5,7 +5,7 @@ use invokr_common::{
     db,
     db::DbContext,
     models::Execution,
-    tenant::{validate_table_prefix, SchemaProvider},
+    tenant::{SchemaProvider, TablePrefix},
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -128,12 +128,12 @@ impl InvokrLibraryClient {
         encryption_key: &str,
         http_client: Option<Client>,
     ) -> anyhow::Result<Self> {
-        if !validate_table_prefix(table_prefix) {
-            anyhow::bail!(
+        let table_prefix = TablePrefix::new(table_prefix).map_err(|_| {
+            anyhow::anyhow!(
                 "table_prefix '{}' is invalid: only alphanumeric and underscore allowed",
                 table_prefix
-            );
-        }
+            )
+        })?;
 
         let ctx = Arc::new(PipelineContext {
             pool: pool.clone(),
@@ -141,7 +141,7 @@ impl InvokrLibraryClient {
             config_cache: ConfigCache::new(60),
             secret_cache: SecretCache::new(300),
             encryption_key: encryption_key.to_string(),
-            table_prefix: table_prefix.to_string(),
+            table_prefix,
         });
 
         Ok(Self { pool, ctx })
@@ -178,7 +178,7 @@ impl InvokrLibraryClient {
         trigger: JobTrigger,
         idempotency_key: Option<&str>,
     ) -> anyhow::Result<String> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let ikey = idempotency_key.unwrap_or("");
 
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
@@ -256,7 +256,7 @@ impl InvokrLibraryClient {
         spec: serde_json::Value,
         retry_policy: Option<serde_json::Value>,
     ) -> anyhow::Result<()> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
 
@@ -289,7 +289,7 @@ impl InvokrLibraryClient {
 
     /// Delete an endpoint from the given workspace schema.
     pub async fn delete_endpoint(&self, schema_name: &str, name: &str) -> anyhow::Result<()> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
         db::endpoints::delete(&mut db, name).await?;
@@ -304,7 +304,7 @@ impl InvokrLibraryClient {
         name: &str,
         plaintext: &str,
     ) -> anyhow::Result<()> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let encrypted = invokr_common::crypto::encrypt(plaintext, &self.ctx.encryption_key)?;
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
@@ -318,7 +318,7 @@ impl InvokrLibraryClient {
 
     /// Delete a secret from the given workspace schema. No-op if the secret does not exist.
     pub async fn delete_secret(&self, schema_name: &str, name: &str) -> anyhow::Result<()> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
         db::secrets::delete(&mut db, name).await?;
@@ -330,7 +330,7 @@ impl InvokrLibraryClient {
     // unschedule runs on the pool; it is a borrow handoff, not a destructor.
     #[allow(clippy::drop_non_drop)]
     pub async fn cancel_job(&self, schema_name: &str, job_id: &str) -> anyhow::Result<()> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
 
@@ -355,7 +355,7 @@ impl InvokrLibraryClient {
         schema_name: &str,
         execution_id: &str,
     ) -> anyhow::Result<Option<Execution>> {
-        let prefix = self.ctx.table_prefix.as_str();
+        let prefix = &self.ctx.table_prefix;
         let mut conn = db::scoped::scoped_connection(&self.pool, schema_name).await?;
         let mut db = DbContext::new(&mut conn, prefix);
         Ok(db::executions::get(&mut db, execution_id).await?)
@@ -820,5 +820,39 @@ impl InvokrClient for InvokrHttpClient {
         let json: serde_json::Value = resp.json().await?;
         let execution: Execution = serde_json::from_value(json["data"].clone())?;
         Ok(Some(execution))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    fn unreachable_pool() -> PgPool {
+        PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
+            .connect_lazy("postgres://invokr:invokr@127.0.0.1:1/invokr_db")
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn new_rejects_unsafe_table_prefix() {
+        // The embedder's prefix is spliced into every table name, so a bad one
+        // must fail construction rather than be quietly replaced or used.
+        for prefix in ["x\"; DROP TABLE jobs; --", "sched-", "a.b"] {
+            assert!(
+                InvokrLibraryClient::new(unreachable_pool(), prefix, "key", None).is_err(),
+                "expected prefix {prefix:?} to be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn new_keeps_safe_table_prefix() {
+        for prefix in ["", "sched_"] {
+            let client = InvokrLibraryClient::new(unreachable_pool(), prefix, "key", None)
+                .unwrap_or_else(|e| panic!("prefix {prefix:?} rejected: {e}"));
+            assert_eq!(client.ctx.table_prefix.as_str(), prefix);
+        }
     }
 }
