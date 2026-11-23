@@ -120,7 +120,7 @@ working default. Values marked sensitive must be base64 KMS ciphertext whenever
 | Variable | Read by | Set to | Notes |
 | --- | --- | --- | --- |
 | `INVOKR_DATABASE_URL` | API, worker | writer endpoint URL | Required. Sensitive. |
-| `INVOKR_ENCRYPTION_KEY` | API, worker | 64 hex characters | Sensitive. **Silently defaults to all zeros if unset.** Must be identical on API and worker, and never changed once secrets are stored. |
+| `INVOKR_ENCRYPTION_KEY` | API, worker | 64 hex characters | Required. Sensitive. Startup fails if it is unset or malformed. Must be identical on API and worker, and never changed once secrets are stored. |
 | `INVOKR_SECRETS_MANAGER` | API, worker | `aws_kms`, `gcp_kms`, `oci_kms` or `no_encryption` | Default `no_encryption`. AWS uses the standard credential chain (`AWS_REGION`, IRSA). |
 | `INVOKR_GCP_KMS_KEY_NAME` | API, worker | `projects/…/cryptoKeys/<k>` | Only with `gcp_kms`. |
 | `INVOKR_OCI_KMS_CRYPTO_ENDPOINT`, `INVOKR_OCI_KMS_KEY_ID` | API, worker | vault crypto endpoint, key OCID | Only with `oci_kms`. |

@@ -33,7 +33,7 @@ Secrets are encrypted using AES-256-GCM (Galois/Counter Mode), which provides bo
 | Decryption | Worker decrypts on cache miss, stores decrypted value in memory |
 
 :::danger
-**In production, always set `INVOKR_ENCRYPTION_KEY` to a strong, random 32-byte key.** The default all-zeros key (`0000...0000`) provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
+**`INVOKR_ENCRYPTION_KEY` is required: set it to a strong, random 32-byte key** (`openssl rand -hex 32`). Startup fails if it is unset or malformed. The all-zeros key (`0000...0000`) used in development examples provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
 :::
 
 :::info
