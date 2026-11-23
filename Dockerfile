@@ -30,7 +30,7 @@ RUN if [ "$INCLUDE_DASHBOARD" = "true" ]; then \
     fi
 
 # ── Stage 1: Plan dependencies (cargo-chef) ─────────────────────────────
-FROM lukemathwalker/cargo-chef:0.1.77-rust-1.94.1-bookworm AS chef
+FROM lukemathwalker/cargo-chef:0.1.77-rust-1.94.1-trixie AS chef
 WORKDIR /app
 
 FROM chef AS planner
@@ -77,12 +77,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
     && cp /app/target/release/"$BINARY" /usr/local/bin/app
 
 # ── Stage 3: Runtime ────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+# trixie, not bookworm: bookworm's glibc carries CVEs Debian won't fix there.
+# No curl: libcurl has unfixed CVEs in every Debian stable. Compose
+# healthchecks use bash's /dev/tcp instead; k8s probes are httpGet.
+FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
-    libssl3 \
+    libssl3t64 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/bin/app /usr/local/bin/app

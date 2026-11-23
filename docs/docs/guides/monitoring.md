@@ -206,7 +206,8 @@ Similarly, update Docker healthcheck URLs if using `docker-compose.prod.yml`:
 
 ```yaml
 healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:8080/invokr/health"]
+  # The image has no curl; bash's /dev/tcp sends the GET
+  test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /invokr/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
 ```
 
 ## Running with monitoring in development
