@@ -54,7 +54,7 @@ redis = { version = "0.25", features = ["tokio-comp", "aio"] }
 
 # Crypto
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.10"
 
 # JSON Schema validation
 jsonschema = "0.18"
