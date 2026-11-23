@@ -246,7 +246,7 @@ mod tests {
                 shutdown_timeout_sec: 1,
             },
             crypto: CryptoEnv {
-                encryption_key: "0".repeat(64),
+                encryption_key: "0123456789abcdef".repeat(4),
             },
             metrics: MetricsEnv { port: 0 },
             health: WorkerHealthEnv {

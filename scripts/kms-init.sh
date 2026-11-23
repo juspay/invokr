@@ -52,7 +52,7 @@ echo "    Saved key ID to .kms-key-id"
 # Plaintext values to encrypt
 DB_URL="${INVOKR_DATABASE_URL:-postgresql://invokr:invokr@localhost:5434/invokr_db}"
 API_KEY="${INVOKR_API_KEY:-dev-api-key}"
-ENCRYPTION_KEY="${INVOKR_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
+ENCRYPTION_KEY="${INVOKR_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
 
 echo ""
 echo "==> Encrypting sensitive env vars ..."

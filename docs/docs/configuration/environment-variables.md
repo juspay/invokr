@@ -96,12 +96,12 @@ When scaling workers horizontally, keep `INVOKR_WORKER_MAX_CONCURRENT` per insta
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INVOKR_ENCRYPTION_KEY` | `0000...0000` (64 zeros) | AES-256-GCM encryption key for secrets, as a hex string (32 bytes = 64 hex chars). Used to encrypt/decrypt secret values at rest. |
+| `INVOKR_ENCRYPTION_KEY` | — (required) | AES-256-GCM encryption key for secrets, as a hex string (32 bytes = 64 hex chars). Used to encrypt/decrypt secret values at rest. |
 
 :::danger
 `INVOKR_ENCRYPTION_KEY` is a **sensitive** variable. When a secrets provider is selected, this must contain base64-encoded ciphertext.
 
-**In production, always set this to a strong, random 32-byte key.** The default all-zeros key provides no security. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
+**It has no default.** The API and worker refuse to start if it is unset, blank, not exactly 64 hex characters, or all zeros (the former default, which was published and so provides no security). Generate one with `openssl rand -hex 32`. If the key is rotated, existing secrets encrypted with the old key cannot be decrypted.
 :::
 
 :::warning
@@ -251,7 +251,7 @@ INVOKR_RECLAIM_INTERVAL_SEC=30
 INVOKR_STUCK_EXECUTION_TIMEOUT_SEC=300
 
 # Encryption
-INVOKR_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+INVOKR_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
 # API Key
 INVOKR_API_KEY=dev-api-key

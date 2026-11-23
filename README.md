@@ -564,7 +564,7 @@ All configuration is via environment variables prefixed with `INVOKR_`:
 | `INVOKR_DATABASE_URL` | *required* | PostgreSQL connection string |
 | `INVOKR_LISTEN_ADDR` | `0.0.0.0:8080` | API server bind address |
 | `INVOKR_API_KEY` | `dev-api-key` | Bearer token for authentication |
-| `INVOKR_ENCRYPTION_KEY` | 64 zeros | AES key for secret encryption (hex, 32+ bytes) |
+| `INVOKR_ENCRYPTION_KEY` | — (required) | AES-256 key for secret encryption: 64 hex characters (32 bytes). Startup fails if it is unset, malformed or all zeros |
 | `INVOKR_DB_POOL_SIZE` | `50` | Database connection pool size |
 | `INVOKR_WORKER_MAX_CONCURRENT` | `50` | Max concurrent job executions per worker |
 | `INVOKR_WORKER_POLL_INTERVAL_MS` | `200` | Worker DB polling interval |
