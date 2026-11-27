@@ -102,12 +102,14 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    let cors_origins = parse_cors_origins(std::env::var(CORS_ORIGINS_VAR).ok())?;
+    match &cors_origins {
+        Some(origins) => tracing::info!("CORS allowed origins: {}", origins.join(", ")),
+        None => tracing::info!("CORS: any origin (set {CORS_ORIGINS_VAR} to restrict)"),
+    }
+
     HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
-            .max_age(3600);
+        let cors = build_cors(cors_origins.as_deref());
 
         let mut app = App::new()
             .app_data(web::Data::new(app_state.clone()))
@@ -145,4 +147,134 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
+}
+
+const CORS_ORIGINS_VAR: &str = "INVOKR_CORS_ALLOWED_ORIGINS";
+
+/// Reads `INVOKR_CORS_ALLOWED_ORIGINS`: comma-separated browser origins
+/// allowed to call the API. `None` (unset, blank or `*`) keeps any origin,
+/// which is safe on its own: CORS here never allows credentials and the
+/// session cookie is `SameSite=Lax`, so another site can neither send it nor
+/// read a signed-in response. Production should still list its origins.
+fn parse_cors_origins(raw: Option<String>) -> anyhow::Result<Option<Vec<String>>> {
+    let Some(raw) = raw.filter(|v| !v.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let origins: Vec<String> = raw
+        .split(',')
+        .map(|o| o.trim().trim_end_matches('/').to_owned())
+        .filter(|o| !o.is_empty())
+        .collect();
+    if origins.iter().any(|o| o == "*") {
+        return Ok(None);
+    }
+    for origin in &origins {
+        // scheme://host[:port] — no path, which is what browsers send.
+        let host = origin
+            .strip_prefix("https://")
+            .or_else(|| origin.strip_prefix("http://"));
+        let looks_like_origin = host.is_some_and(|h| !h.is_empty() && !h.contains('/'))
+            && actix_web::http::header::HeaderValue::from_str(origin).is_ok();
+        if !looks_like_origin {
+            anyhow::bail!(
+                "{CORS_ORIGINS_VAR}: '{origin}' is not an origin like https://app.example.com"
+            );
+        }
+    }
+    Ok(Some(origins))
+}
+
+fn build_cors(origins: Option<&[String]>) -> Cors {
+    let cors = Cors::default()
+        .allow_any_method()
+        .allow_any_header()
+        .max_age(3600);
+    match origins {
+        None => cors.allow_any_origin(),
+        Some(list) => list.iter().fold(cors, |cors, o| cors.allowed_origin(o)),
+    }
+}
+
+#[cfg(test)]
+mod cors_tests {
+    use super::*;
+    // Not `use actix_web::test`: it would shadow the built-in `#[test]`.
+    use actix_web::http::header;
+    use actix_web::test as atest;
+
+    fn parse(raw: &str) -> Option<Vec<String>> {
+        parse_cors_origins(Some(raw.to_string())).unwrap()
+    }
+
+    #[test]
+    fn unset_blank_or_star_means_any_origin() {
+        assert_eq!(parse_cors_origins(None).unwrap(), None);
+        assert_eq!(parse(" "), None);
+        assert_eq!(parse("*"), None);
+    }
+
+    #[test]
+    fn parses_a_trimmed_list() {
+        assert_eq!(
+            parse(" https://a.example , https://b.example/ "),
+            Some(vec![
+                "https://a.example".to_string(),
+                "https://b.example".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn rejects_values_that_are_not_origins() {
+        for bad in [
+            "a.example",
+            "ftp://a.example",
+            "https://a.example/path",
+            "https://",
+        ] {
+            assert!(
+                parse_cors_origins(Some(bad.to_string())).is_err(),
+                "{bad:?}"
+            );
+        }
+    }
+
+    async fn acao_for(origins: Option<Vec<String>>, origin: &str) -> (Option<String>, bool) {
+        let app = atest::init_service(
+            App::new()
+                .wrap(build_cors(origins.as_deref()))
+                .route("/x", web::get().to(HttpResponse::Ok)),
+        )
+        .await;
+        let req = atest::TestRequest::get()
+            .uri("/x")
+            .insert_header((header::ORIGIN, origin))
+            .to_request();
+        let res = atest::call_service(&app, req).await;
+        let headers = res.headers();
+        (
+            headers
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .map(|v| v.to_str().unwrap().to_string()),
+            headers.contains_key(header::ACCESS_CONTROL_ALLOW_CREDENTIALS),
+        )
+    }
+
+    #[actix_web::test]
+    async fn default_allows_any_origin_but_never_credentials() {
+        let (acao, creds) = acao_for(None, "https://anywhere.example").await;
+        assert!(acao.is_some());
+        assert!(!creds, "credentials must never be allowed cross-origin");
+    }
+
+    #[actix_web::test]
+    async fn allowlist_admits_listed_origins_only() {
+        let list = Some(vec!["https://dash.example".to_string()]);
+        let (acao, creds) = acao_for(list.clone(), "https://dash.example").await;
+        assert_eq!(acao.as_deref(), Some("https://dash.example"));
+        assert!(!creds);
+
+        let (acao, _) = acao_for(list, "https://evil.example").await;
+        assert_eq!(acao, None, "unlisted origin must not be allowed");
+    }
 }

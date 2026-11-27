@@ -21,9 +21,10 @@ export INVOKR_ENCRYPTION_KEY := env("INVOKR_ENCRYPTION_KEY", "000000000000000000
 setup: db-up db-migrate build-sdk cli-install
     @echo "Setup complete. Run 'just dev' to start all services."
 
-# Create .env from example if it doesn't exist
+# Create .env from example if it doesn't exist, with a fresh encryption key
 init-env:
-    @[ -f .env ] || cp .env.example .env && echo ".env ready"
+    @[ -f .env ] || sed "s/^INVOKR_ENCRYPTION_KEY=$/INVOKR_ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env.example > .env
+    @echo ".env ready"
 
 # ─── Database ─────────────────────────────────────────────────
 

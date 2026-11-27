@@ -137,7 +137,7 @@ impl InvokrLibraryClient {
 
         let ctx = Arc::new(PipelineContext {
             pool: pool.clone(),
-            http_client: http_client.unwrap_or_default(),
+            http_client: http_client.unwrap_or_else(crate::dispatcher::egress::client),
             config_cache: ConfigCache::new(60),
             secret_cache: SecretCache::new(300),
             encryption_key: encryption_key.to_string(),

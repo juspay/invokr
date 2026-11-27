@@ -55,8 +55,8 @@ services:
     networks:
       - invokr-net
     healthcheck:
-      # The invokr images ship without curl; bash's /dev/tcp does the GET.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9999 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      # Distroless images have no shell or curl; invokr-healthcheck does the GET.
+      test: ["CMD", "/usr/local/bin/invokr-healthcheck", "9999", "/health"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -87,7 +87,7 @@ services:
       localstack:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /invokr/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      test: ["CMD", "/usr/local/bin/invokr-healthcheck", "8080", "/invokr/health"]
       interval: 5s
       timeout: 3s
       retries: 15
@@ -117,7 +117,7 @@ services:
     healthcheck:
       # Liveness. The worker's ops routes are unprefixed — INVOKR_PATH_PREFIX
       # only moves the API's mount point, not the worker's ops port.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      test: ["CMD", "/usr/local/bin/invokr-healthcheck", "9090", "/health"]
       interval: 5s
       timeout: 3s
       retries: 15

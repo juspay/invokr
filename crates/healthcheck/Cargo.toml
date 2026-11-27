@@ -1,0 +1,10 @@
+[package]
+name = "invokr-healthcheck"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Std-only on purpose: it ships in the distroless runtime image, which has no
+# shell or curl to run a healthcheck with.
+[dependencies]

@@ -4,6 +4,7 @@ members = [
     "crates/api",
     "crates/worker",
     "crates/mock-server",
+    "crates/healthcheck",
     "crates/dashboard",
     "examples/library-mode",
 ]

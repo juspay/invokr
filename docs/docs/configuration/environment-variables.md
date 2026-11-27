@@ -31,6 +31,7 @@ The `just` task runner has `set dotenv-load` enabled, so variables defined in a 
 | `INVOKR_API_KEY` | `dev-api-key` | Bearer token for API authentication. All requests require `Authorization: Bearer <api_key>`. |
 | `INVOKR_PATH_PREFIX` | *(empty)* | URL path prefix for all API routes (e.g. `/invokr`). When set, routes become `/invokr/health`, `/invokr/v1/jobs`, etc. `GET /` returns a `302` redirect to `{prefix}/health`. |
 | `INVOKR_MODE` | `api` | Server mode: `api` (REST API only), `dashboard` (dashboard only), or `both` (API + dashboard SSR). |
+| `INVOKR_CORS_ALLOWED_ORIGINS` | *(any origin)* | Comma-separated browser origins allowed to call the API (e.g. `https://dash.example.com,https://docs.example.com`). Unset or `*` allows any origin; credentials are never allowed cross-origin either way. Set it in production. The bundled dashboard is same-origin and needs no entry. |
 
 :::warning
 `INVOKR_API_KEY` is a **sensitive** variable. When a secrets provider is selected, this must contain base64-encoded ciphertext. In production, always set this to a strong, unique key — never use the default `dev-api-key`.
@@ -211,7 +212,7 @@ scrape_configs:
 **Docker healthchecks** (`docker-compose.prod.yml`):
 ```yaml
 healthcheck:
-  test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /invokr/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+  test: ["CMD", "/usr/local/bin/invokr-healthcheck", "8080", "/invokr/health"]
   # was: GET /health
 ```
 
@@ -251,7 +252,9 @@ INVOKR_RECLAIM_INTERVAL_SEC=30
 INVOKR_STUCK_EXECUTION_TIMEOUT_SEC=300
 
 # Encryption
-INVOKR_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+# Required: 64 hex chars, identical on the API and worker. `just init-env`
+# fills this in; otherwise generate one with `openssl rand -hex 32`.
+INVOKR_ENCRYPTION_KEY=
 
 # API Key
 INVOKR_API_KEY=dev-api-key

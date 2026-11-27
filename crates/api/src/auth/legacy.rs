@@ -55,10 +55,37 @@ impl Authenticator<InvokrProfile> for LegacyApiKeyAuthenticator {
         // `Err` from any authenticator ends it immediately — so rejecting here
         // would stop a perfectly good JWT or `ivk_` token from ever being tried,
         // purely because it is not this key.
-        if token.expose_secret() != self.key.expose_secret() {
+        if !keys_match(token.expose_secret(), self.key.expose_secret()) {
             return Ok(Verdict::NotApplicable);
         }
 
         Ok(Verdict::Authenticated(Caller::legacy_api_key()))
+    }
+}
+
+/// Constant-time comparison. `==` on strings returns at the first differing
+/// byte, a timing side channel on the one key that unlocks every tenant.
+/// Comparing SHA-256 digests also keeps the time independent of the presented
+/// token's length.
+fn keys_match(presented: &str, expected: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    use subtle::ConstantTimeEq;
+
+    Sha256::digest(presented.as_bytes())
+        .ct_eq(&Sha256::digest(expected.as_bytes()))
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keys_match;
+
+    #[test]
+    fn matches_only_the_exact_key() {
+        assert!(keys_match("dev-api-key", "dev-api-key"));
+        assert!(!keys_match("dev-api-kez", "dev-api-key"));
+        assert!(!keys_match("dev-api-key-longer", "dev-api-key"));
+        assert!(!keys_match("dev", "dev-api-key"));
+        assert!(!keys_match("", "dev-api-key"));
     }
 }

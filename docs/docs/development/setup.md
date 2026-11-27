@@ -292,6 +292,8 @@ Copy `.env.example` to `.env` and customize as needed:
 
 ```bash
 cp .env.example .env
+# then set INVOKR_ENCRYPTION_KEY in .env:
+openssl rand -hex 32
 ```
 
 Or use the `just` helper:

@@ -1,3 +1,4 @@
+pub mod egress;
 pub mod http;
 pub mod internal;
 #[cfg(feature = "kafka")]
