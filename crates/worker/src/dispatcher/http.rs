@@ -17,6 +17,22 @@ pub async fn dispatch(client: &Client, spec: &Value, idempotency_key: &str) -> D
         })
         .unwrap_or_else(|| vec![200, 201, 202, 204]);
 
+    // Also covers callers that bring their own `Client` (library mode), which
+    // lack `egress::client`'s resolver and redirect checks.
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        if let Err(reason) = super::egress::check_url(&parsed) {
+            metrics::counter!(m::DISPATCH_TOTAL,
+                "endpoint_type" => "HTTP",
+                "status" => "FAILURE",
+                "error_type" => "BLOCKED_DESTINATION",
+            )
+            .increment(1);
+            return DispatchResult::Failure {
+                error: serde_json::json!({ "type": "BLOCKED_DESTINATION", "message": reason }),
+            };
+        }
+    }
+
     let mut req = match method.to_uppercase().as_str() {
         "GET" => client.get(url),
         "POST" => client.post(url),
@@ -112,10 +128,12 @@ pub async fn dispatch(client: &Client, spec: &Value, idempotency_key: &str) -> D
             )
             .increment(1);
 
+            // `without_url`: the URL can carry `{{secret.*}}` values, and this
+            // message is stored where the API serves it back.
             DispatchResult::Failure {
                 error: serde_json::json!({
                     "type": error_type,
-                    "message": e.to_string(),
+                    "message": e.without_url().to_string(),
                 }),
             }
         }
@@ -227,5 +245,42 @@ mod tests {
 
         let result = dispatch(&client, &spec, "test-http-dispatch-with-headers").await;
         assert!(result.is_success(), "expected success with custom headers");
+    }
+}
+
+#[cfg(test)]
+mod leak_and_egress_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The URL can hold a resolved `{{secret.*}}`; the stored error must not.
+    #[tokio::test]
+    async fn transport_errors_do_not_echo_the_url() {
+        let spec = json!({
+            "url": "http://127.0.0.1:19998/hook?api_key=s3cr3t-value",
+            "method": "POST",
+            "timeout_ms": 2000,
+        });
+        let result = dispatch(&Client::new(), &spec, "no-url-in-error").await;
+        let DispatchResult::Failure { error } = result else {
+            panic!("expected a connection failure");
+        };
+        let text = error.to_string();
+        assert!(!text.contains("s3cr3t-value"), "secret leaked: {text}");
+        assert!(!text.contains("19998/hook"), "URL leaked: {text}");
+    }
+
+    #[tokio::test]
+    async fn metadata_destinations_are_refused_before_sending() {
+        let spec = json!({
+            "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+            "method": "GET",
+            "timeout_ms": 2000,
+        });
+        let result = dispatch(&Client::new(), &spec, "blocked-destination").await;
+        let DispatchResult::Failure { error } = result else {
+            panic!("expected the metadata URL to be refused");
+        };
+        assert_eq!(error["type"], "BLOCKED_DESTINATION");
     }
 }

@@ -37,3 +37,5 @@ metrics-exporter-prometheus.workspace = true
 authn_kit = { workspace = true, features = ["actix", "oidc"] }
 async-trait = "0.1"
 secrecy = "0.10"
+sha2 = "0.10"
+subtle = "2"

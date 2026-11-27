@@ -74,20 +74,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
     else \
       cargo build --release --bin "$BINARY"; \
     fi \
-    && cp /app/target/release/"$BINARY" /usr/local/bin/app
+    && cargo build --release --bin invokr-healthcheck \
+    && cp /app/target/release/"$BINARY" /usr/local/bin/app \
+    && cp /app/target/release/invokr-healthcheck /usr/local/bin/invokr-healthcheck
 
 # ── Stage 3: Runtime ────────────────────────────────────────────────────
-# trixie, not bookworm: bookworm's glibc carries CVEs Debian won't fix there.
-# No curl: libcurl has unfixed CVEs in every Debian stable. Compose
-# healthchecks use bash's /dev/tcp instead; k8s probes are httpGet.
-FROM debian:trixie-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl3t64 \
-    && rm -rf /var/lib/apt/lists/*
+# Distroless, not debian-slim: no shell, apt, coreutils, util-linux, perl,
+# ncurses, sqlite or tar — slim carries high CVEs in those that Debian has no
+# fix for. cc-debian13 = trixie glibc + libgcc/libstdc++ + libssl3t64 +
+# ca-certificates, matching the trixie builder. The tag tracks Debian security
+# updates, so rebuild to pick them up. No shell, so compose healthchecks run
+# invokr-healthcheck; k8s probes are httpGet.
+FROM gcr.io/distroless/cc-debian13
 
 COPY --from=builder /usr/local/bin/app /usr/local/bin/app
+COPY --from=builder /usr/local/bin/invokr-healthcheck /usr/local/bin/invokr-healthcheck
 COPY --from=dashboard-builder /app/crates/dashboard/pkg /app/dashboard-dist
 
 ENV INVOKR_DASHBOARD_DIST_DIR=/app/dashboard-dist

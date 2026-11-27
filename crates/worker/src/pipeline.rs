@@ -153,6 +153,7 @@ pub async fn process_execution(
     ) {
         Ok(v) => v,
         Err(e) => {
+            let e = redact_secrets_in_str(&e, &secret_values);
             tracing::error!(execution_id, "Template resolution failed: {}", e);
             let _ = db::executions::complete_failed(db, execution_id).await;
             record_attempt(
@@ -257,7 +258,9 @@ pub async fn process_execution(
             )
             .await;
         }
-        DispatchResult::Failure { error } => {
+        DispatchResult::Failure { mut error } => {
+            // Everything below is persisted to rows the API serves back.
+            redact_secrets(&mut error, &secret_values);
             record_attempt(
                 db,
                 execution_id,
@@ -429,5 +432,102 @@ async fn log_execution(
         db::execution_logs::insert(db, execution_id, attempt_number, level, message).await
     {
         tracing::error!(execution_id, "Failed to write execution log: {}", e);
+    }
+}
+
+const REDACTED: &str = "[REDACTED]";
+
+/// Blanks every resolved secret value out of `text`. Secrets are interpolated
+/// into the dispatch spec, so error text derived from it (a URL in a transport
+/// error, a broker or Redis URL) can carry them into `execution_logs` and
+/// `attempts.error` — rows the API serves back to callers.
+fn redact_secrets_in_str(text: &str, secrets: &HashMap<String, String>) -> String {
+    let mut values: Vec<&str> = secrets
+        .values()
+        .map(String::as_str)
+        .filter(|v| !v.is_empty())
+        .collect();
+    // Longest first, so a secret that contains another is blanked whole.
+    values.sort_unstable_by_key(|v| std::cmp::Reverse(v.len()));
+
+    let mut out = text.to_owned();
+    for value in values {
+        if out.contains(value) {
+            out = out.replace(value, REDACTED);
+        }
+    }
+    out
+}
+
+/// [`redact_secrets_in_str`] applied to every string inside a JSON value.
+fn redact_secrets(value: &mut serde_json::Value, secrets: &HashMap<String, String>) {
+    if secrets.is_empty() {
+        return;
+    }
+    match value {
+        serde_json::Value::String(s) => *s = redact_secrets_in_str(s, secrets),
+        serde_json::Value::Array(items) => {
+            items.iter_mut().for_each(|v| redact_secrets(v, secrets));
+        }
+        serde_json::Value::Object(map) => {
+            map.values_mut().for_each(|v| redact_secrets(v, secrets));
+        }
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn secrets(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn redacts_secret_values_in_text() {
+        let s = secrets(&[("token", "s3cr3t-abc")]);
+        assert_eq!(
+            redact_secrets_in_str("GET https://x.io/?key=s3cr3t-abc failed", &s),
+            "GET https://x.io/?key=[REDACTED] failed"
+        );
+    }
+
+    #[test]
+    fn redacts_the_longer_secret_whole_when_one_contains_another() {
+        let s = secrets(&[("short", "abcd"), ("long", "abcd-efgh")]);
+        assert_eq!(
+            redact_secrets_in_str("a=abcd-efgh b=abcd", &s),
+            "a=[REDACTED] b=[REDACTED]"
+        );
+    }
+
+    #[test]
+    fn ignores_empty_secret_values() {
+        let s = secrets(&[("blank", "")]);
+        assert_eq!(redact_secrets_in_str("unchanged", &s), "unchanged");
+    }
+
+    #[test]
+    fn redacts_nested_json_strings_only() {
+        let s = secrets(&[("pw", "hunter22")]);
+        let mut error = json!({
+            "type": "CONNECTION_ERROR",
+            "message": "redis://user:hunter22@cache:6379 refused",
+            "details": ["hunter22", 42, null],
+        });
+        redact_secrets(&mut error, &s);
+        assert_eq!(
+            error,
+            json!({
+                "type": "CONNECTION_ERROR",
+                "message": "redis://user:[REDACTED]@cache:6379 refused",
+                "details": ["[REDACTED]", 42, null],
+            })
+        );
     }
 }

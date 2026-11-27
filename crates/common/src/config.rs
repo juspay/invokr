@@ -183,6 +183,13 @@ impl CryptoEnv {
         })?;
         crate::crypto::validate_key(&encryption_key)
             .map_err(|e| format!("{ENCRYPTION_KEY_VAR} is invalid: {e}"))?;
+        // Still accepted (dev and CI use it), but it is public knowledge.
+        if encryption_key.bytes().all(|b| b == b'0') {
+            tracing::warn!(
+                "{ENCRYPTION_KEY_VAR} is the all-zero development key: stored secrets \
+                 are NOT protected. Generate a real one with `openssl rand -hex 32`."
+            );
+        }
         Ok(Self { encryption_key })
     }
 }

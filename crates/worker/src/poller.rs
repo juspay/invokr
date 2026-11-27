@@ -5,7 +5,6 @@ use invokr_common::{
     metrics as m,
     tenant::SchemaProvider,
 };
-use reqwest::Client;
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -30,7 +29,7 @@ pub async fn run<S: SchemaProvider>(
 
     let ctx = Arc::new(PipelineContext {
         pool: pool.clone(),
-        http_client: Client::new(),
+        http_client: crate::dispatcher::egress::client(),
         config_cache: ConfigCache::new(config.worker.config_cache_ttl_sec),
         secret_cache: SecretCache::new(config.worker.secret_cache_ttl_sec),
         encryption_key: config.crypto.encryption_key.clone(),
